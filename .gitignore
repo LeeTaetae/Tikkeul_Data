@@ -1,3 +1,57 @@
 .env
 *.key
 __pycache__/
+
+# 환경변수 / 인증정보 (.env.example 은 추적)
+.env.*
+!.env.example
+*.pem
+
+# Node / Expo / React Native
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+expo-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+android/
+ios/
+
+# Python / FastAPI
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# AI 모델 가중치 (저장 방식 TBD)
+*.pt
+*.onnx
+*.tflite
+
+# IDE
+.idea/
+*.swp
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Claude Code 개인 설정 (.claude/agents/ 는 추적)
+.claude/settings.local.json
