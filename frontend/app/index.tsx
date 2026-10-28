@@ -7,6 +7,7 @@ import { Screen } from '../src/components/Screen';
 import { SpeedSign } from '../src/components/SpeedSign';
 import { StatusBanner } from '../src/components/StatusBanner';
 import { SAMPLE_ALERTS } from '../src/data/sample';
+import { KakaoMap } from '../src/map/KakaoMap';
 import { colors, radius, space } from '../src/theme';
 
 export default function HomeScreen() {
@@ -16,8 +17,9 @@ export default function HomeScreen() {
 
   return (
     <Screen>
+      <KakaoMap />
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">
+        <Text style={styles.title} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
           {t('home.title')}
         </Text>
         <LanguageSwitcher />
@@ -74,8 +76,8 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.ink },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  title: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: colors.ink },
   subtitle: { fontSize: 16, lineHeight: 24, color: colors.muted },
   zone: {
     flexDirection: 'row',

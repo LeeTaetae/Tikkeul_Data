@@ -21,7 +21,7 @@ export default function MapScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">
+        <Text style={styles.title} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
           {t('map.title')}
         </Text>
         <LanguageSwitcher />
@@ -92,8 +92,8 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.ink },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  title: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: colors.ink },
   form: {
     backgroundColor: colors.surface,
     borderColor: colors.line,

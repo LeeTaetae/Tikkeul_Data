@@ -14,8 +14,20 @@ export default function RootLayout() {
         tabBarActiveTintColor: colors.ink,
         tabBarInactiveTintColor: colors.muted,
         tabBarIcon: () => null,
-        tabBarLabelStyle: { fontSize: 14, fontWeight: '700' },
+        tabBarIconStyle: { display: 'none' },
+        tabBarLabelPosition: 'beside-icon',
+        tabBarLabelStyle: {
+          fontSize: 14,
+          fontWeight: '700',
+          textAlign: 'center',
+          marginStart: 0,
+          marginEnd: 0,
+        },
         tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.line },
+        tabBarItemStyle: {
+          justifyContent: 'center',
+          alignItems: 'center'
+        },
       }}
     >
       <Tabs.Screen name="index" options={{ title: t('tabs.home') }} />

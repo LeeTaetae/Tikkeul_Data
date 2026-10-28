@@ -14,6 +14,16 @@ export default function Root({ children }: PropsWithChildren) {
         <title>티끌모아Data</title>
         <ScrollViewStyleReset />
         {headNodes}
+        <style>{`
+          html, body {
+            height: 100%;
+            height: 100dvh;
+          }
+          #root {
+            height: 100%;
+            min-height: 0;
+          }
+        `}</style>
       </head>
       <body {...bodyAttributes}>
         {children}

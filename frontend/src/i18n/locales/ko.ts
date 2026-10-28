@@ -6,7 +6,7 @@ const ko = {
     offline: '네트워크 연결 없음',
     offlineHint: '마지막으로 받은 정보를 보여줍니다.',
   },
-  lang: { label: '언어', ko: '한국어', en: 'English', zh: '中文' },
+  lang: { label: '언어', ko: '한국어', en: '영어', zh: '중국어' },
   home: {
     title: '티끌모아Data',
     subtitle: '운전 중 놓치기 쉬운 위험 가능성을 알려드려요.',
@@ -30,6 +30,9 @@ const ko = {
     toPlaceholder: '도착지를 입력하세요',
     search: '경로 검색',
     mapNotice: '지도 연동은 준비 중입니다. 아래는 경로 모양을 나타낸 그림입니다.',
+    keyMissing: '카카오 키가 설정되지 않았습니다.',
+    loading: '지도를 불러오는 중입니다.',
+    loadError: '지도를 불러오지 못했습니다.',
     routes: '추천 경로',
     minutes: '{{n}}분',
     km: '{{n}}km',
