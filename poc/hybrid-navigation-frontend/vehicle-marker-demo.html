@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>카카오맵 차량 마커 애니메이션 PoC</title>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+  #map { width: 100%; height: 100%; }
+  .vehicle-icon {
+    width: 28px; height: 28px;
+    transform-origin: 50% 50%;
+    transition: none; /* 회전은 JS가 매 프레임 직접 세팅 */
+  }
+  #no-key-notice {
+    position: absolute; top: 12px; left: 12px; right: 12px;
+    background: #fff3cd; border: 1px solid #e0b000; border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="no-key-notice" hidden>
+  appkey가 없습니다. <code>?appkey=발급받은키</code> 쿼리스트링으로 접속하세요. (README 참고)
+</div>
+
+<script>
+// ---- 1. 최단 경로 회전 보간: 가장 자주 틀리는 부분이라 자가 테스트부터 ----
+function shortestAngleDelta(fromDeg, toDeg) {
+  let delta = (toDeg - fromDeg) % 360;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return delta;
+}
+
+console.assert(shortestAngleDelta(350, 10) === 20, 'FAIL: 350->10 should be +20, got ' + shortestAngleDelta(350, 10));
+console.assert(shortestAngleDelta(10, 350) === -20, 'FAIL: 10->350 should be -20, got ' + shortestAngleDelta(10, 350));
+console.assert(shortestAngleDelta(0, 180) === 180, 'FAIL: 0->180 should be 180, got ' + shortestAngleDelta(0, 180));
+console.assert(shortestAngleDelta(90, 90) === 0, 'FAIL: 90->90 should be 0, got ' + shortestAngleDelta(90, 90));
+console.log('shortestAngleDelta self-check passed');
+
+// ---- 2. 위치+회전 동시 애니메이션 ----
+function animateVehicle(overlay, state, target, durationMs) {
+  const start = performance.now();
+  const from = { lat: state.lat, lng: state.lng, heading: state.heading };
+  const headingDelta = shortestAngleDelta(from.heading, target.heading);
+
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    state.lat = from.lat + (target.lat - from.lat) * t;
+    state.lng = from.lng + (target.lng - from.lng) * t;
+    state.heading = from.heading + headingDelta * t;
+
+    overlay.setPosition(new kakao.maps.LatLng(state.lat, state.lng));
+    const el = overlay.getContent();
+    if (el) el.style.transform = `rotate(${state.heading}deg)`;
+
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// ---- 3. 샘플 경로로 데모 구동 (실제 GPS 연동 없음) ----
+const SAMPLE_PATH = [
+  { lat: 37.5665, lng: 126.9780, heading: 0 },
+  { lat: 37.5670, lng: 126.9790, heading: 35 },
+  { lat: 37.5680, lng: 126.9800, heading: 70 },
+  { lat: 37.5685, lng: 126.9815, heading: 340 }, // 70도 -> 340도: 최단경로는 역방향 90도
+  { lat: 37.5690, lng: 126.9830, heading: 300 },
+];
+
+function runDemo(appkey) {
+  const container = document.getElementById('map');
+  const map = new kakao.maps.Map(container, {
+    center: new kakao.maps.LatLng(SAMPLE_PATH[0].lat, SAMPLE_PATH[0].lng),
+    level: 4,
+  });
+
+  const iconEl = document.createElement('div');
+  iconEl.className = 'vehicle-icon';
+  iconEl.innerHTML = '<svg viewBox="0 0 24 24"><polygon points="12,2 20,22 12,17 4,22" fill="#7055d8"/></svg>';
+
+  const overlay = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(SAMPLE_PATH[0].lat, SAMPLE_PATH[0].lng),
+    content: iconEl,
+    yAnchor: 0.5,
+    xAnchor: 0.5,
+  });
+  overlay.setMap(map);
+
+  const state = { ...SAMPLE_PATH[0] };
+  let i = 1;
+  function nextStep() {
+    if (i >= SAMPLE_PATH.length) return;
+    animateVehicle(overlay, state, SAMPLE_PATH[i], 800);
+    i += 1;
+    setTimeout(nextStep, 1200);
+  }
+  setTimeout(nextStep, 1200);
+}
+
+// ---- 4. appkey 쿼리스트링으로 SDK 동적 로드 ----
+const appkey = new URLSearchParams(location.search).get('appkey');
+if (!appkey) {
+  document.getElementById('no-key-notice').hidden = false;
+} else {
+  const script = document.createElement('script');
+  script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=false`;
+  script.onload = () => kakao.maps.load(() => runDemo(appkey));
+  document.head.appendChild(script);
+}
+</script>
+</body>
+</html>
