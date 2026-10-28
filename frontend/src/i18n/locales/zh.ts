@@ -9,6 +9,7 @@ const zh: Resources = {
     offlineHint: '显示最近一次获取的信息。',
   },
   lang: { label: '语言', ko: '韩语', en: '英语', zh: '中文' },
+  menu: { label: '分类菜单' },
   home: {
     title: '积少成多 Data',
     subtitle: '提醒您驾驶中容易忽略的潜在风险。',
@@ -35,6 +36,9 @@ const zh: Resources = {
     keyMissing: '未设置 Kakao 密钥。',
     loading: '正在加载地图…',
     loadError: '无法加载地图。',
+    myLocation: '我的位置',
+    locationDenied: '位置权限未开启，显示默认位置。',
+    locationFailed: '无法获取当前位置。',
     routes: '推荐路线',
     minutes: '{{n}} 分钟',
     km: '{{n}} 公里',

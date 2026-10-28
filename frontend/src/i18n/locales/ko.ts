@@ -7,6 +7,7 @@ const ko = {
     offlineHint: '마지막으로 받은 정보를 보여줍니다.',
   },
   lang: { label: '언어', ko: '한국어', en: '영어', zh: '중국어' },
+  menu: { label: '카테고리 메뉴' },
   home: {
     title: '티끌모아Data',
     subtitle: '운전 중 놓치기 쉬운 위험 가능성을 알려드려요.',
@@ -33,6 +34,9 @@ const ko = {
     keyMissing: '카카오 키가 설정되지 않았습니다.',
     loading: '지도를 불러오는 중입니다.',
     loadError: '지도를 불러오지 못했습니다.',
+    myLocation: '내 위치',
+    locationDenied: '위치 권한이 꺼져 있어 기본 위치를 보여줍니다.',
+    locationFailed: '현재 위치를 가져오지 못했습니다.',
     routes: '추천 경로',
     minutes: '{{n}}분',
     km: '{{n}}km',

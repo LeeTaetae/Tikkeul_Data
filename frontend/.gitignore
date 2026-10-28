@@ -42,3 +42,8 @@ yarn-error.*
 
 # local env files
 .env
+.env.*
+!.env.example
+
+# Vercel local configuration
+.vercel/

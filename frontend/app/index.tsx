@@ -1,124 +1,102 @@
-import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import { CategoryMenu } from '../src/components/CategoryMenu';
 import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
-import { Screen } from '../src/components/Screen';
-import { SpeedSign } from '../src/components/SpeedSign';
-import { StatusBanner } from '../src/components/StatusBanner';
-import { SAMPLE_ALERTS } from '../src/data/sample';
+import { Logo } from '../src/components/Logo';
 import { KakaoMap } from '../src/map/KakaoMap';
-import { colors, radius, space } from '../src/theme';
+import type { KakaoMapHandle } from '../src/map/types';
+import { MAX_CONTENT_WIDTH, colors, radius, space } from '../src/theme';
 
+// 전체 화면 지도 위에 검색창·버튼을 겹쳐 놓는다. 탭 바 위쪽 영역만 이 화면이 차지한다.
 export default function HomeScreen() {
   const { t } = useTranslation();
-  const router = useRouter();
-  const count = (kind: string) => SAMPLE_ALERTS.filter((a) => a.kind === kind).length;
+  const insets = useSafeAreaInsets();
+  const mapRef = useRef<KakaoMapHandle>(null);
 
   return (
-    <Screen>
-      <KakaoMap />
-      <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-          {t('home.title')}
-        </Text>
-        <LanguageSwitcher />
+    <View style={styles.root}>
+      <View style={styles.mapLayer}>
+        <KakaoMap ref={mapRef} />
       </View>
-      <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
 
-      {/* 보호구역 경고: 이 화면의 중심. 표지판처럼 노랑 판 + 제한속도 원 */}
-      <View style={styles.zone}>
-        <SpeedSign limit={30} size={72} />
-        <View style={styles.zoneText}>
-          <Text style={styles.zoneTitle}>{t('home.zoneTitle')}</Text>
-          <Text style={styles.zoneBody}>{t('home.zoneBody')}</Text>
-          <Text style={styles.zoneMeta}>{t('home.zoneMeta')}</Text>
+      {/* 빈 곳은 터치를 지도로 통과시킨다(box-none). 안 하면 지도 드래그가 막힌다. */}
+      <View style={[styles.overlay, { paddingTop: insets.top + space.md }]}>
+        <View style={styles.column}>
+          <View style={styles.header}>
+            <Logo />
+            <LanguageSwitcher />
+            <CategoryMenu />
+          </View>
+          <TextInput
+            style={styles.search}
+            accessibilityLabel={t('map.to')}
+            placeholder={t('map.toPlaceholder')}
+            placeholderTextColor={colors.muted}
+            returnKeyType="search"
+          />
+          <Pressable
+            style={styles.fab}
+            onPress={() => mapRef.current?.moveToMyLocation()}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.myLocation')}
+          >
+            <Text style={styles.fabIcon}>◎</Text>
+          </Pressable>
         </View>
       </View>
-
-      <View style={styles.card}>
-        <View style={styles.cardRow}>
-          <Text style={styles.cardTitle}>{t('home.cameraTitle')}</Text>
-          <Text style={styles.badge}>{t('home.cameraStatus')}</Text>
-        </View>
-        <Text style={styles.cardBody}>{t('home.cameraBody')}</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{t('home.summary')}</Text>
-        <Text style={styles.cardBody}>
-          {t('home.summaryCount', { jam: count('jam'), work: count('work'), block: count('block') })}
-        </Text>
-      </View>
-
-      <StatusBanner />
-
-      <View style={styles.actions}>
-        <Pressable
-          style={[styles.button, styles.buttonPrimary]}
-          onPress={() => router.push('/map')}
-          accessibilityRole="link"
-        >
-          <Text style={styles.buttonPrimaryText}>{t('home.goMap')}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.button, styles.buttonGhost]}
-          onPress={() => router.push('/alerts')}
-          accessibilityRole="link"
-        >
-          <Text style={styles.buttonGhostText}>{t('home.goAlerts')}</Text>
-        </Pressable>
-      </View>
-
-      <Text style={styles.disclaimer}>{t('home.disclaimer')}</Text>
-    </Screen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  title: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: colors.ink },
-  subtitle: { fontSize: 16, lineHeight: 24, color: colors.muted },
-  zone: {
+  root: { flex: 1, backgroundColor: colors.paper },
+  // zIndex: 카카오 지도 내부 요소가 오버레이를 덮지 않도록 층을 나눈다(웹).
+  mapLayer: { ...StyleSheet.absoluteFill, zIndex: 0 },
+  overlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 1,
+    alignItems: 'center',
+    paddingHorizontal: space.lg,
+    pointerEvents: 'box-none',
+  },
+  column: { width: '100%', maxWidth: MAX_CONTENT_WIDTH, gap: space.md, pointerEvents: 'box-none' },
+  header: {
+    // zIndex: 펼친 카테고리 메뉴가 검색창·버튼에 가려지지 않게 헤더를 위로 올린다.
+    zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.lg,
-    backgroundColor: colors.zone,
-    borderColor: colors.ink,
-    borderWidth: 3,
+    gap: space.sm,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.lg,
     borderRadius: radius.md,
-    padding: space.lg,
+    backgroundColor: colors.primary,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
   },
-  zoneText: { flex: 1, gap: 2 },
-  zoneTitle: { fontSize: 20, fontWeight: '800', color: colors.ink },
-  zoneBody: { fontSize: 16, lineHeight: 22, color: colors.ink },
-  zoneMeta: { fontSize: 13, color: colors.zoneInk },
-  card: {
+  search: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    borderColor: colors.line,
+    borderWidth: 1,
+    paddingHorizontal: space.lg,
+    fontSize: 16,
+    color: colors.ink,
+    backgroundColor: colors.surface,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
+  },
+  fab: {
+    alignSelf: 'flex-end',
+    width: 48,
+    height: 48,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: space.lg,
-    gap: space.xs,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
   },
-  cardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
-  cardBody: { fontSize: 15, lineHeight: 22, color: colors.muted },
-  badge: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.muted,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
-  },
-  actions: { flexDirection: 'row', gap: space.md },
-  button: { flex: 1, minHeight: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md },
-  buttonPrimary: { backgroundColor: colors.ink },
-  buttonPrimaryText: { color: colors.surface, fontSize: 16, fontWeight: '700' },
-  buttonGhost: { backgroundColor: colors.surface, borderColor: colors.ink, borderWidth: 2 },
-  buttonGhostText: { color: colors.ink, fontSize: 16, fontWeight: '700' },
-  disclaimer: { fontSize: 13, color: colors.muted, textAlign: 'center' },
+  fabIcon: { fontSize: 22, color: colors.ink },
 });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { CategoryMenu } from '../src/components/CategoryMenu';
 import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
 import { Screen } from '../src/components/Screen';
 import { StatusBanner } from '../src/components/StatusBanner';
@@ -25,6 +26,7 @@ export default function MapScreen() {
           {t('map.title')}
         </Text>
         <LanguageSwitcher />
+        <CategoryMenu />
       </View>
 
       <View style={styles.form}>
@@ -92,7 +94,8 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  // zIndex: 펼친 카테고리 메뉴가 아래 콘텐츠에 가려지지 않게 헤더를 위로 올린다(웹 View 는 기본 zIndex 0).
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm, zIndex: 10 },
   title: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: colors.ink },
   form: {
     backgroundColor: colors.surface,
@@ -113,7 +116,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     backgroundColor: colors.paper,
   },
-  button: { minHeight: 48, borderRadius: radius.md, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: space.xs },
+  button: { minHeight: 48, borderRadius: radius.md, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center', marginTop: space.xs },
   buttonText: { color: colors.surface, fontSize: 16, fontWeight: '700' },
   map: {
     height: 180,

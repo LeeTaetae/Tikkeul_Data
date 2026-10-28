@@ -1,8 +1,14 @@
+import { useImperativeHandle } from 'react';
+import type { Ref } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, radius } from '../theme';
+import { colors } from '../theme';
+import type { KakaoMapHandle } from './types';
 
-export function KakaoMap() {
+// 모바일(WebView) 지도는 다음 단계에서 구현한다. 웹은 KakaoMap.web.tsx 를 쓴다.
+export function KakaoMap({ ref }: { ref?: Ref<KakaoMapHandle> }) {
+  useImperativeHandle(ref, () => ({ moveToMyLocation: () => {} }));
+
   return (
     <View style={styles.box}>
       <Text style={styles.text}>모바일 지도는 준비 중입니다.</Text>
@@ -12,11 +18,8 @@ export function KakaoMap() {
 
 const styles = StyleSheet.create({
   box: {
-    height: 240,
+    flex: 1,
     backgroundColor: colors.paper,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },

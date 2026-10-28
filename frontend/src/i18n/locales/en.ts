@@ -9,6 +9,7 @@ const en: Resources = {
     offlineHint: 'Showing the last information received.',
   },
   lang: { label: 'Language', ko: 'Korean', en: 'English', zh: 'Chinese' },
+  menu: { label: 'Category menu' },
   home: {
     title: 'Tikkeul Data',
     subtitle: 'Heads-up on road risks that are easy to miss while driving.',
@@ -35,6 +36,9 @@ const en: Resources = {
     keyMissing: 'The Kakao key is not configured.',
     loading: 'Loading the map…',
     loadError: 'Could not load the map.',
+    myLocation: 'My location',
+    locationDenied: 'Location permission is off. Showing the default area.',
+    locationFailed: 'Could not get your current location.',
     routes: 'Suggested routes',
     minutes: '{{n}} min',
     km: '{{n}} km',

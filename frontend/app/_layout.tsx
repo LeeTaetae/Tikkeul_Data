@@ -12,7 +12,7 @@ export default function RootLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.ink,
-        tabBarInactiveTintColor: colors.muted,
+        tabBarInactiveTintColor: colors.primaryMuted,
         tabBarIcon: () => null,
         tabBarIconStyle: { display: 'none' },
         tabBarLabelPosition: 'beside-icon',
@@ -23,7 +23,7 @@ export default function RootLayout() {
           marginStart: 0,
           marginEnd: 0,
         },
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.line },
+        tabBarStyle: { backgroundColor: colors.primary, borderTopColor: colors.primary },
         tabBarItemStyle: {
           justifyContent: 'center',
           alignItems: 'center'
