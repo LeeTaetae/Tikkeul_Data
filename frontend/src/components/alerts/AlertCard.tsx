@@ -3,9 +3,10 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 
 import { localizeAlert } from '../../lib/localizeAlert';
-import { formatTimeKst } from '../../lib/time';
+import { formatDateTimeKst, formatTimeKst } from '../../lib/time';
 import { colors, radius, space } from '../../theme';
 import type { AlertType, RoadAlert } from '../../types/alert';
+import { OriginalTag } from './OriginalTag';
 
 // 유형별 색. tint=아이콘 타일 배경, accent=아이콘 선, strong=배지 배경(흰 글자 대비 4.5:1 이상)
 export const TYPE_STYLE: Record<AlertType, { tint: string; accent: string; strong: string }> = {
@@ -75,6 +76,12 @@ export function AlertCard({ alert, expanded = false, onPress }: AlertCardProps) 
   const s = TYPE_STYLE[alert.type];
   const text = localizeAlert(alert, i18n.language);
   const lines = expanded ? undefined : 2;
+  // 번역이 없는 실제 데이터(공공 API 한국어 원문)는 한국어가 아닌 화면에서 '한국어 원문'으로 표시한다.
+  const isOriginal = !alert.isSample && !alert.translations;
+  const timeText =
+    alert.timeKind === 'started'
+      ? t('alerts.startedAt', { time: formatDateTimeKst(alert.updatedAt) })
+      : t('common.updatedAt', { time: formatTimeKst(alert.updatedAt) });
 
   return (
     <Pressable
@@ -109,7 +116,8 @@ export function AlertCard({ alert, expanded = false, onPress }: AlertCardProps) 
                 <Text style={styles.sampleText}>{t('alerts.sample')}</Text>
               </View>
             )}
-            <Text style={styles.time}>{t('common.updatedAt', { time: formatTimeKst(alert.updatedAt) })}</Text>
+            {isOriginal && <OriginalTag />}
+            {alert.updatedAt !== '' && <Text style={styles.time}>{timeText}</Text>}
           </View>
           <View style={styles.more}>
             <Text style={styles.moreText}>{expanded ? t('alerts.collapse') : t('alerts.detail')}</Text>
@@ -150,7 +158,8 @@ const styles = StyleSheet.create({
     rowGap: space.xs,
     marginTop: space.sm,
   },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  // 좁은 화면에서 태그와 시각이 카드 밖으로 넘치지 않게 줄바꿈한다.
+  meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.sm, flexShrink: 1, minWidth: 0 },
   sampleTag: {
     borderRadius: radius.pill,
     borderWidth: 1,

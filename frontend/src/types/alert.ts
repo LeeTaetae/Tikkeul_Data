@@ -15,8 +15,10 @@ export interface RoadAlert {
   /** 발생 위치(도로명·주소). 한국어 원문. 다른 언어는 translations 로 제공한다. */
   location: string;
   description: string;
-  /** ISO 8601 (+09:00). 표시는 formatTimeKst 로 한다. */
+  /** ISO 8601 (+09:00). 카드에 표시할 시각. 없으면 빈 문자열(시각을 보여주지 않는다). */
   updatedAt: string;
+  /** updatedAt 이 무엇의 시각인지. 기본은 'updated'(갱신), 실제 돌발정보는 발생 시각이라 'started'. */
+  timeKind?: 'updated' | 'started';
   /** 위험 위치. 경로 매칭(src/lib/routeHazards.ts)과 추후 지도 마커에 쓴다. */
   latitude: number;
   longitude: number;
