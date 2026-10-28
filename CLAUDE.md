@@ -57,7 +57,8 @@
 - **제외**: 포트홀 탐지 · 졸음 감지 · 전·후면 동시 카메라 촬영
 
 ## 3. 실행법
-TBD — 코드 추가 시 채워넣기 (예: `npx expo start` / `uvicorn app.main:app --reload`). 실제 프로젝트 설정이 생기기 전에는 명령어를 확정하지 않는다.
+- 프론트엔드: `cd frontend && npm install && npm run web` (빌드 확인 `npx expo export --platform web`)
+- 백엔드: TBD (`uvicorn app.main:app --reload` 등, 프로젝트 설정이 생기기 전에는 확정하지 않는다)
 
 ## 4. Git 규칙
 

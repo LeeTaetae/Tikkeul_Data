@@ -43,12 +43,12 @@ cd Tikkeul_Data
 
 | 항목 | 내용 |
 |---|---|
-| 설치 | TBD — 코드 추가 후 확정 |
-| 프론트엔드 실행 | TBD |
+| 설치 (프론트엔드) | `cd frontend && npm install` |
+| 프론트엔드 실행 | `npm run web` (웹) · `npm start` (Expo Go/기기) · 타입 검사 `npm run typecheck` |
 | 백엔드 실행 | TBD |
 | 테스트 실행 | TBD |
-| 배포 (Vercel) | TBD |
-| 환경변수 | `.env.example` 생성 후 안내 (TBD). 실제 `.env`는 Git에 올리지 않는다. |
+| 배포 (Vercel) | Root Directory `frontend` 로 지정. `frontend/vercel.json` 이 `expo export --platform web` → `dist` 배포 |
+| 환경변수 | `frontend/.env.example` 을 `frontend/.env` 로 복사. `EXPO_PUBLIC_*` 는 번들에 공개되므로 비밀값 금지. 실제 `.env`는 Git에 올리지 않는다. |
 
 ## 문서
 

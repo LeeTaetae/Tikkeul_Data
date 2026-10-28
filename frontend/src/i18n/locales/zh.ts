@@ -1,0 +1,58 @@
+import type { Resources } from './ko';
+
+const zh: Resources = {
+  tabs: { home: '首页', map: '地图·路线', alerts: '风险提醒' },
+  common: {
+    updatedAt: '更新于 {{time}}',
+    sample: '示例数据',
+    offline: '网络未连接',
+    offlineHint: '显示最近一次获取的信息。',
+  },
+  lang: { label: '语言', ko: '한국어', en: 'English', zh: '中文' },
+  home: {
+    title: '积少成多 Data',
+    subtitle: '提醒您驾驶中容易忽略的潜在风险。',
+    zoneTitle: '儿童保护区附近',
+    zoneBody: '前方约 300 米，请减速慢行并注意安全。',
+    zoneMeta: '工作日 08–20 时 · 限速 30km/h',
+    cameraTitle: '后置摄像头检测',
+    cameraBody: '摄像头检测尚未接入。',
+    cameraStatus: '准备中',
+    goMap: '搜索路线',
+    goAlerts: '查看提醒',
+    summary: '周边情况',
+    summaryCount: '拥堵 {{jam}} · 施工 {{work}} · 管制 {{block}}',
+    disclaimer: 'AI 结果仅作为提示潜在风险的参考信息。',
+  },
+  map: {
+    title: '地图·路线',
+    from: '出发地',
+    to: '目的地',
+    fromPlaceholder: '当前位置',
+    toPlaceholder: '请输入目的地',
+    search: '搜索路线',
+    mapNotice: '地图功能准备中。下图仅为路线形状示意。',
+    routes: '推荐路线',
+    minutes: '{{n}} 分钟',
+    km: '{{n}} 公里',
+    risks: '注意路段 {{n}} 处',
+    noRisks: '无注意路段',
+    routeFast: '最快',
+    routeFree: '优先免费道路',
+    routeSafe: '注意路段最少',
+    empty: '输入目的地后显示路线。',
+  },
+  alerts: {
+    title: '风险提醒',
+    filterAll: '全部',
+    jam: '拥堵',
+    work: '施工',
+    block: '管制',
+    zone: '保护区',
+    empty: '没有可显示的提醒。',
+    caution: '注意',
+  },
+  notFound: { title: '找不到页面', back: '返回首页' },
+};
+
+export default zh;

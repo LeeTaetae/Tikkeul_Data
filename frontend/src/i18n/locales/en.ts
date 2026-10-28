@@ -1,0 +1,58 @@
+import type { Resources } from './ko';
+
+const en: Resources = {
+  tabs: { home: 'Home', map: 'Map & route', alerts: 'Alerts' },
+  common: {
+    updatedAt: 'Updated {{time}}',
+    sample: 'Sample data',
+    offline: 'No network connection',
+    offlineHint: 'Showing the last information received.',
+  },
+  lang: { label: 'Language', ko: '한국어', en: 'English', zh: '中文' },
+  home: {
+    title: 'Tikkeul Data',
+    subtitle: 'Heads-up on road risks that are easy to miss while driving.',
+    zoneTitle: 'Near a school zone',
+    zoneBody: 'About 300 m ahead. Slow down and stay alert.',
+    zoneMeta: 'Weekdays 08–20 · Speed limit 30 km/h',
+    cameraTitle: 'Rear camera detection',
+    cameraBody: 'Camera detection is not connected yet.',
+    cameraStatus: 'Coming soon',
+    goMap: 'Search route',
+    goAlerts: 'View alerts',
+    summary: 'Nearby status',
+    summaryCount: 'Congestion {{jam}} · Roadwork {{work}} · Closures {{block}}',
+    disclaimer: 'AI results are reference info about possible risks.',
+  },
+  map: {
+    title: 'Map & route',
+    from: 'From',
+    to: 'To',
+    fromPlaceholder: 'Current location',
+    toPlaceholder: 'Enter a destination',
+    search: 'Search route',
+    mapNotice: 'Map integration is coming soon. The sketch below shows route shapes.',
+    routes: 'Suggested routes',
+    minutes: '{{n}} min',
+    km: '{{n}} km',
+    risks: '{{n}} caution areas',
+    noRisks: 'No caution areas',
+    routeFast: 'Fastest',
+    routeFree: 'Toll-free first',
+    routeSafe: 'Fewest caution areas',
+    empty: 'Enter a destination to see routes.',
+  },
+  alerts: {
+    title: 'Alerts',
+    filterAll: 'All',
+    jam: 'Congestion',
+    work: 'Roadwork',
+    block: 'Closure',
+    zone: 'School zone',
+    empty: 'No alerts to show.',
+    caution: 'Caution',
+  },
+  notFound: { title: 'Page not found', back: 'Go to Home' },
+};
+
+export default en;
