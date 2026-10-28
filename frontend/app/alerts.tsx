@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { CategoryMenu } from '../src/components/CategoryMenu';
 import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
 import { Screen } from '../src/components/Screen';
 import { StatusBanner } from '../src/components/StatusBanner';
@@ -27,10 +28,11 @@ export default function AlertsScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">
+        <Text style={styles.title} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
           {t('alerts.title')}
         </Text>
         <LanguageSwitcher />
+        <CategoryMenu />
       </View>
 
       <StatusBanner />
@@ -75,8 +77,9 @@ export default function AlertsScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.ink },
+  // zIndex: 펼친 카테고리 메뉴가 아래 콘텐츠에 가려지지 않게 헤더를 위로 올린다(웹 View 는 기본 zIndex 0).
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm, zIndex: 10 },
+  title: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: colors.ink },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   chip: {
     minHeight: 44,
@@ -87,7 +90,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: colors.surface,
   },
-  chipSelected: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipSelected: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   chipTextSelected: { color: colors.surface },
   item: {

@@ -40,7 +40,10 @@ yarn-error.*
 /ios
 /android
 
-# local env files
+## local env files
 .env
+.env.*
+!.env.example
 
-.vercel
+# Vercel local configuration
+.vercel/

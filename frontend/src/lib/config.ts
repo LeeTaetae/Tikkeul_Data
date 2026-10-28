@@ -4,3 +4,6 @@ const DEV_FALLBACK = 'http://localhost:8000';
 
 export const API_BASE_URL: string =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? (__DEV__ ? DEV_FALLBACK : '');
+  
+export const KAKAO_JS_KEY: string =
+  process.env.EXPO_PUBLIC_KAKAO_JS_KEY ?? '';

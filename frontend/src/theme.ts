@@ -10,6 +10,13 @@ export const colors = {
   danger: '#D93A2B',
   guide: '#0B7A5A',
   info: '#2A5BD7',
+  // 브랜드 프라이머리(라벤더). 헤더·하단 탭 배경. primaryMuted 는 라벤더 위 비활성 글자(대비 4.5:1 이상)
+  primary: '#C3B5F0',
+  primaryMuted: '#4B4170',
+  // 로고 "Data" 글자색(보라). 라벤더 primary 위에서 큰 글자 대비 3:1 이상
+  brand: '#6D3FE0',
+  // 라벤더 위에 얹는 연한 배경(언어 선택 알약)
+  primarySoft: '#F1EDFC',
 } as const;
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 } as const;
