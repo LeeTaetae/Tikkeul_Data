@@ -3,9 +3,12 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
 import { CategoryMenu } from '../src/components/CategoryMenu';
 import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
 import { Logo } from '../src/components/Logo';
+import { HazardSimulator, useHazardSimulation } from '../src/dev/HazardSimulator';
+import { useHazardWarning } from '../src/lib/useHazardWarning';
 import { KakaoMap } from '../src/map/KakaoMap';
 import type { KakaoMapHandle } from '../src/map/types';
 import { MAX_CONTENT_WIDTH, colors, radius, space } from '../src/theme';
@@ -15,12 +18,22 @@ export default function HomeScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<KakaoMapHandle>(null);
+  // 내비게이션 안내·GPS 가 생기기 전까지는 개발용 시뮬레이터가 안내 상태와 남은 거리를 대신한다.
+  const sim = useHazardSimulation();
+  const { warning, dismiss } = useHazardWarning({
+    active: sim.active,
+    routeKey: sim.routeKey,
+    hazards: sim.hazards,
+  });
 
   return (
     <View style={styles.root}>
       <View style={styles.mapLayer}>
         <KakaoMap ref={mapRef} />
       </View>
+
+      {/* 위험 경고는 상단 오버레이(메뉴·시뮬레이터)보다 먼저 그려 그 아래에 깔린다. */}
+      {warning && <NavigationHazardAlert key={`${warning.alert.id}:${warning.stage}`} warning={warning} onClose={dismiss} />}
 
       {/* 빈 곳은 터치를 지도로 통과시킨다(box-none). 안 하면 지도 드래그가 막힌다. */}
       <View style={[styles.overlay, { paddingTop: insets.top + space.md }]}>
@@ -45,6 +58,7 @@ export default function HomeScreen() {
           >
             <Text style={styles.fabIcon}>◎</Text>
           </Pressable>
+          {__DEV__ && <HazardSimulator sim={sim} />}
         </View>
       </View>
     </View>
