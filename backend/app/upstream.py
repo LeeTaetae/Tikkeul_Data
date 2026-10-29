@@ -1,6 +1,7 @@
 """공공 API 호출. 키가 담긴 URL·파라미터를 로그나 예외 메시지로 내보내지 않는다."""
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -14,6 +15,24 @@ logger = logging.getLogger(__name__)
 KAKAO_KA_HEADER = "os/web origin/http://localhost:8081"
 
 _ITS_CODE_MAP = {4001: "UPSTREAM_RATE_LIMIT", 4002: "UPSTREAM_BAD_REQUEST", 4005: "UPSTREAM_AUTH"}
+_LOCAL_RELAY_HOSTS = ("127.0.0.1", "localhost")  # 개발 중에만 평문 HTTP 를 허용한다
+
+
+def _relay_url_allowed(url: str) -> bool:
+    """토큰을 평문으로 내보내지 않는 주소인가: https 이거나, 이 PC 안(127.0.0.1, localhost)의 http."""
+    parts = urlsplit(url)
+    return bool(parts.hostname) and (parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in _LOCAL_RELAY_HOSTS))
+
+
+def _relay_status_error(status: int) -> str:
+    """중계(또는 Cloudflare)가 ITS 응답이 아닌 자기 오류를 냈을 때의 오류 코드. ITS 본문이 있으면 이 함수를 쓰지 않는다."""
+    if status in (401, 403, 404):
+        return "UPSTREAM_AUTH"  # 중계 토큰이 틀렸거나 주소가 틀렸다
+    if status == 504:
+        return "UPSTREAM_TIMEOUT"  # 중계가 ITS 에 연결하지 못했다
+    if status >= 500:
+        return "UPSTREAM_UNAVAILABLE"  # 중계가 꺼졌거나 터널이 끊겼다(Cloudflare 530 등)
+    return "UPSTREAM_BAD_RESPONSE"
 
 
 def _log_failure(url: str, exc: Exception) -> None:
@@ -42,9 +61,11 @@ class Upstream:
         self._client = client
         self._settings = settings
 
-    async def _get_json(self, url: str, params: Dict[str, Any]) -> Tuple[int, Any]:
+    async def _get_json(
+        self, url: str, params: Dict[str, Any], headers: Optional[Dict[str, str]] = None, relay: bool = False
+    ) -> Tuple[int, Any]:
         try:
-            response = await self._client.get(url, params=params)
+            response = await self._client.get(url, params=params, headers=headers)
         except httpx.TimeoutException as exc:
             _log_failure(url, exc)
             raise api_error("UPSTREAM_TIMEOUT") from None  # 원인 예외에는 키가 든 URL 이 있어 연결하지 않는다
@@ -54,6 +75,9 @@ class Upstream:
         try:
             return response.status_code, response.json()
         except ValueError:
+            if relay:
+                logger.warning("ITS 중계 응답 해석 실패 status=%d", response.status_code)
+                raise api_error(_relay_status_error(response.status_code)) from None
             raise api_error("UPSTREAM_BAD_RESPONSE") from None
 
     def _key(self, name: str) -> str:
@@ -64,11 +88,22 @@ class Upstream:
 
     async def its(self, path: str, key_name: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """ITS OpenAPI 호출. 성공하면 body.items 배열을 돌려준다(빈 영역은 빈 배열)."""
-        query = dict(params, apiKey=self._key(key_name), getType="json")
-        status, data = await self._get_json(self._settings.its_base_url + "/" + path, query)
+        relay_url = self._settings.its_relay_url.strip()
+        if relay_url:
+            # 중계 모드: 인증키는 중계 PC 에만 있다. 이 서버의 키는 보내지 않고 토큰 헤더로만 인증한다.
+            token = self._settings.secret("its_relay_token")
+            if token is None or not _relay_url_allowed(relay_url):
+                raise api_error("NOT_CONFIGURED")  # 토큰이 없거나, 토큰을 평문 HTTP 로 보내게 되는 주소
+            url, query, headers = relay_url.rstrip("/") + "/" + path, dict(params, getType="json"), {"X-Relay-Token": token}
+        else:
+            url, query, headers = self._settings.its_base_url + "/" + path, dict(params, apiKey=self._key(key_name), getType="json"), None
+        status, data = await self._get_json(url, query, headers, relay=bool(relay_url))
         header = data.get("header") if isinstance(data, dict) else None
         code = _as_int(header.get("resultCode")) if isinstance(header, dict) else None
         if code is None:
+            if relay_url:
+                logger.warning("ITS 중계 응답에 ITS 헤더가 없음 status=%d", status)
+                raise api_error(_relay_status_error(status))
             raise api_error("UPSTREAM_BAD_RESPONSE")
         if code != 0 or not 200 <= status < 300:
             raise api_error(_ITS_CODE_MAP.get(code, "UPSTREAM_ERROR"))
