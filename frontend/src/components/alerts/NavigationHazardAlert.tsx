@@ -16,6 +16,7 @@ const BAND: Record<AlertType, { bg: string; fg: string }> = {
   accident: { bg: colors.danger, fg: colors.surface },
   construction: { bg: '#E8820C', fg: colors.ink },
   congestion: { bg: colors.zone, fg: colors.ink },
+  school_zone: { bg: '#0B7A5A', fg: colors.surface },
 };
 
 // 단계 알약. 가까울수록 진하게 해서 색 말고 글자로도 구분된다.
@@ -89,7 +90,8 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
       <Field label={t('hazard.description')}>
         <Text style={styles.value}>{text.description}</Text>
       </Field>
-      <Text style={styles.time}>{t('common.updatedAt', { time: formatTimeKst(alert.updatedAt) })}</Text>
+      {/* 보호구역처럼 등록 현황 데이터는 갱신 시각이 없다(updatedAt === ''). AlertCard.tsx 와 같은 기준. */}
+      {alert.updatedAt !== '' && <Text style={styles.time}>{t('common.updatedAt', { time: formatTimeKst(alert.updatedAt) })}</Text>}
     </ScrollView>
   );
 
@@ -167,10 +169,11 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
 
 const styles = StyleSheet.create({
   // 빈 곳은 터치를 지도로 통과시킨다. 하단 탭 바는 Tabs 가 따로 차지하므로 바닥 여백만 둔다.
-  // zIndex 는 홈의 상단 오버레이와 같다. 부모가 이 컴포넌트를 오버레이보다 먼저 그려야 메뉴가 팝업 위로 뜬다.
+  // zIndex: 홈 화면의 안내 중 하단 패널(app/index.tsx 의 bottomPanel, zIndex 2)보다 위에 떠야
+  // 안내 중에도 경고가 패널에 가리지 않는다. 안전 경고가 카테고리 메뉴보다 우선이라 그보다도 위로 둔다.
   layer: {
     ...StyleSheet.absoluteFill,
-    zIndex: 1,
+    zIndex: 3,
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: space.lg,

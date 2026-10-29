@@ -80,7 +80,7 @@ const en: Resources = {
   alerts: {
     title: 'Alerts',
     filterAll: 'All',
-    type: { accident: 'Accident', construction: 'Roadwork', congestion: 'Congestion' },
+    type: { accident: 'Accident', construction: 'Roadwork', congestion: 'Congestion', school_zone: 'School zone' },
     severity: { danger: 'Danger', caution: 'Caution', busy: 'Heavy' },
     sample: 'Sample',
     detail: 'Details',
@@ -154,11 +154,13 @@ const en: Resources = {
       accident: 'Accident {{distance}} ahead',
       construction: 'Roadwork {{distance}} ahead',
       congestion: 'Congestion {{distance}} ahead',
+      school_zone: 'School zone {{distance}} ahead',
     },
     advance: {
       accident: 'An accident has been reported {{distance}} ahead',
       construction: 'Roadwork is underway {{distance}} ahead',
       congestion: 'Traffic is congested {{distance}} ahead',
+      school_zone: 'A school zone is {{distance}} ahead. Slow down',
     },
     stage: { caution: 'Caution', approach: 'Warning', final: 'Final warning' },
     close: 'Close',

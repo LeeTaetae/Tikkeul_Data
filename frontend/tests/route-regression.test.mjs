@@ -25,6 +25,13 @@ test('방향 정보가 없는 위험은 경로 위에 있어도 제외', () => {
   assert.deepEqual(matchHazardsToRoute(MOCK_ROUTE_A, [noHeading]).rejected.map((r) => r.reason), ['unknownDirection']);
 });
 
+test('omnidirectional 위험은 방향 정보가 없어도 경로 위 위험으로 매칭된다', () => {
+  const zone = { ...MOCK_ALERTS[0], id: 'z1', headingDeg: undefined, omnidirectional: true };
+  const result = matchHazardsToRoute(MOCK_ROUTE_A, [zone]);
+  assert.deepEqual(result.onRoute.map((h) => h.alert.id), ['z1']);
+  assert.equal(result.rejected.length, 0);
+});
+
 test('남은 거리는 경로를 따라 계산하고 통과하면 0 이하', () => {
   const onRoute = matchHazardsToRoute(MOCK_ROUTE_A, MOCK_ALERTS).onRoute;
   const m1 = onRoute[0];

@@ -78,7 +78,7 @@ const ko = {
   alerts: {
     title: '위험 알림',
     filterAll: '전체',
-    type: { accident: '사고', construction: '공사', congestion: '정체' },
+    type: { accident: '사고', construction: '공사', congestion: '정체', school_zone: '어린이보호구역' },
     severity: { danger: '위험', caution: '주의', busy: '혼잡' },
     sample: '예시 데이터',
     detail: '상세 보기',
@@ -152,11 +152,13 @@ const ko = {
       accident: '전방 {{distance}} 교통사고',
       construction: '전방 {{distance}} 도로 공사',
       congestion: '전방 {{distance}} 교통 정체',
+      school_zone: '전방 {{distance}} 어린이보호구역',
     },
     advance: {
       accident: '전방 {{distance}} 교통사고가 발생했어요',
       construction: '전방 {{distance}} 도로 공사 중이에요',
       congestion: '전방 {{distance}} 교통이 정체돼 있어요',
+      school_zone: '전방 {{distance}} 어린이보호구역이 있어요. 서행하세요',
     },
     stage: { caution: '주의', approach: '접근 경고', final: '최종 경고' },
     close: '닫기',

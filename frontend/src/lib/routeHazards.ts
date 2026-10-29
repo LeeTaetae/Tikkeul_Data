@@ -119,6 +119,13 @@ export function matchHazardsToRoute(route: Route, alerts: RoadAlert[], options: 
       continue;
     }
 
+    // omnidirectional 위험(보호구역 등 구역 전체에 적용되는 위험)은 방향 없이 가장 가까운 선분으로 판정한다.
+    if (alert.omnidirectional) {
+      const best = near.reduce((a, b) => (b.lateralM < a.lateralM ? b : a));
+      result.onRoute.push({ alert, offsetM: best.offsetM });
+      continue;
+    }
+
     // 확장 지점: alert.roadLinkId / alert.direction 이 있고 경로가 구간 ID·방향 정보를 가지면,
     // 아래 방위각 비교보다 먼저 그 정보로 판정한다. 현재는 두 필드를 쓰지 않는다.
     if (alert.headingDeg == null) {
