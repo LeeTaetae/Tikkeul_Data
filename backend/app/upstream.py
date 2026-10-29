@@ -1,4 +1,5 @@
 """공공 API 호출. 키가 담긴 URL·파라미터를 로그나 예외 메시지로 내보내지 않는다."""
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -6,7 +7,19 @@ import httpx
 from app.config import Settings
 from app.errors import ApiError, api_error
 
+logger = logging.getLogger(__name__)
+
+# Kakao 게이트웨이는 dapi.kakao.com 호출마다 KA 헤더(os + origin)를 요구한다. 없으면 키가 유효해도 401 로 거절한다.
+# navigation/providers.py 의 KakaoRoutingProvider 와 같은 값이다(그쪽은 실호출로 확인했다). origin 값 자체는 검증되지 않는다.
+KAKAO_KA_HEADER = "os/web origin/http://localhost:8081"
+
 _ITS_CODE_MAP = {4001: "UPSTREAM_RATE_LIMIT", 4002: "UPSTREAM_BAD_REQUEST", 4005: "UPSTREAM_AUTH"}
+
+
+def _log_failure(url: str, exc: Exception) -> None:
+    """운영 로그에서 원인(ConnectTimeout, ReadTimeout, ConnectError ...)을 구분하기 위한 기록. 호스트와 예외 종류만 남기고,
+    URL 전체·쿼리(인증키·좌표)·예외 메시지는 남기지 않는다."""
+    logger.warning("공공 API 호출 실패 host=%s error=%s", httpx.URL(url).host, type(exc).__name__)
 
 
 def _as_int(value: Any) -> Optional[int]:
@@ -32,9 +45,11 @@ class Upstream:
     async def _get_json(self, url: str, params: Dict[str, Any]) -> Tuple[int, Any]:
         try:
             response = await self._client.get(url, params=params)
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
+            _log_failure(url, exc)
             raise api_error("UPSTREAM_TIMEOUT") from None  # 원인 예외에는 키가 든 URL 이 있어 연결하지 않는다
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            _log_failure(url, exc)
             raise api_error("UPSTREAM_UNAVAILABLE") from None
         try:
             return response.status_code, response.json()
@@ -68,14 +83,17 @@ class Upstream:
             response = await self._client.get(
                 self._settings.kakao_region_url,
                 params={"x": "%.6f" % lon, "y": "%.6f" % lat},
-                headers={"Authorization": "KakaoAK " + key},
+                headers={"Authorization": "KakaoAK " + key, "KA": KAKAO_KA_HEADER},
             )
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
+            _log_failure(self._settings.kakao_region_url, exc)
             raise api_error("UPSTREAM_TIMEOUT") from None
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            _log_failure(self._settings.kakao_region_url, exc)
             raise api_error("UPSTREAM_UNAVAILABLE") from None
         status = response.status_code
         if status in (401, 403):
+            logger.warning("Kakao 인증 거절 status=%d", status)
             raise api_error("UPSTREAM_AUTH")
         if status == 429:
             raise api_error("UPSTREAM_RATE_LIMIT")
