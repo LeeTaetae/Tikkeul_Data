@@ -20,8 +20,10 @@ from app.models import (
     PredictionItem,
     ProtectionZone,
     Region,
+    SpeedBump,
     TrafficFlowItem,
 )
+from app.speed_bumps import query_bbox as speed_bumps_in_bbox
 from app.timeutil import KST, now_kst
 from app.errors import api_error
 from app.upstream import Upstream
@@ -117,6 +119,10 @@ class TrafficService:
         if not include_geometry:
             zones = [z.model_copy(update={"geometry": None}) for z in zones]
         return zones, self._meta("경찰청 전국 보호구역 현황", DataKind.registry, fetched_at, stale)
+
+    async def speed_bumps(self, bbox: BBox) -> Tuple[List[SpeedBump], Meta]:
+        # 외부 API 가 아니라 로컬 SQLite 조회라 캐시·stale 처리가 필요 없다.
+        return speed_bumps_in_bbox(bbox), self._meta("행정안전부 과속방지턱정보(로컬 데이터)", DataKind.registry, now_kst(), False)
 
 
 def default_forecast_time() -> datetime:

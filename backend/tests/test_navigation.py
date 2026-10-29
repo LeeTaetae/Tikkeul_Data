@@ -11,7 +11,7 @@ import pytest
 
 from app.navigation import routers as nav_routers
 from app.navigation.config import Settings as NavSettings
-from app.navigation.schemas import LatLng, RouteOption, TransitRouteOption
+from app.navigation.schemas import LatLng, RouteInstruction, RouteOption, TransitRouteOption
 from app.navigation.service import (
     LONG_DISTANCE_KM_THRESHOLD,
     ROUTE_STYLE_SEARCH_OPTIONS,
@@ -89,7 +89,7 @@ class FakeStyledTmapProvider:
         if search_option in self.fail_options:
             raise RuntimeError("tmap 호출 실패")
         route = RouteOption(provider="tmap", distance_km=float(search_option), duration_min=1, path=[])
-        return route, ["option %s 안내" % search_option]
+        return route, [RouteInstruction(text="option %s 안내" % search_option)]
 
 
 def test_get_route_styles_calls_all_five_search_options():
@@ -108,7 +108,7 @@ def test_get_route_styles_drops_failed_styles():
 
 class FakePedestrianTmapProvider:
     async def get_pedestrian_route(self, origin, destination):
-        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[]), ["보행자도로를 따라 이동"]
+        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[]), [RouteInstruction(text="보행자도로를 따라 이동")]
 
 
 class FakeKakaoRoutingProvider:
@@ -117,11 +117,11 @@ class FakeKakaoRoutingProvider:
 
     async def get_bicycle_route(self, origin, destination):
         self.called_with.append("cycling")
-        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[]), ["자전거도로를 따라 이동"]
+        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[]), [RouteInstruction(text="자전거도로를 따라 이동")]
 
     async def get_transit_route(self, origin, destination):
         self.called_with.append("transit")
-        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[]), ["2호선 탑승"]
+        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[]), [RouteInstruction(text="2호선 탑승")]
 
 
 def test_get_mode_route_walking_uses_tmap_pedestrian():
@@ -148,10 +148,10 @@ class StubTmap:
 
     async def get_route_styled(self, origin, destination, search_option="0"):
         route = RouteOption(provider="tmap", distance_km=float(search_option), duration_min=2.0, path=[origin, destination])
-        return route, ["직진"]
+        return route, [RouteInstruction(text="직진")]
 
     async def get_pedestrian_route(self, origin, destination):
-        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[origin, destination]), ["도보 안내"]
+        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[origin, destination]), [RouteInstruction(text="도보 안내")]
 
 
 class StubNaver:
@@ -169,10 +169,10 @@ class StubKakao:
         pass
 
     async def get_bicycle_route(self, origin, destination):
-        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[origin, destination]), ["자전거 안내"]
+        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[origin, destination]), [RouteInstruction(text="자전거 안내")]
 
     async def get_transit_route(self, origin, destination):
-        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[origin, destination]), ["2호선 탑승"]
+        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[origin, destination]), [RouteInstruction(text="2호선 탑승")]
 
     async def get_transit_routes(self, origin, destination):
         option = TransitRouteOption(

@@ -163,6 +163,7 @@ const zh: Resources = {
       school_zone: '前方{{distance}}处有儿童保护区，请减速慢行',
     },
     stage: { caution: '注意', approach: '接近警告', final: '最终警告' },
+    speedBump: '前方有减速带',
     close: '关闭',
     detail: '查看详情',
     collapse: '收起',

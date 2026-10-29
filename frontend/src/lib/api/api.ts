@@ -3,6 +3,7 @@ import type {
   IncidentsResponse,
   PredictionsResponse,
   ProtectionZonesResponse,
+  SpeedBumpsResponse,
   TrafficFlowResponse,
 } from '../../types/traffic';
 import type { Region } from '../../types/geo';
@@ -37,6 +38,9 @@ export const trafficApi = {
 
   flow: (bbox: BBox, options?: RequestOptions) =>
     client.get<TrafficFlowResponse>('/api/traffic/flow', bboxParams(bbox), options),
+
+  speedBumps: (bbox: BBox, options?: RequestOptions) =>
+    client.get<SpeedBumpsResponse>('/api/traffic/speed-bumps', bboxParams(bbox), options),
 
   predictions: (params: { sectionId: string; routeNo: string; forecastFor?: string }, options?: RequestOptions) =>
     client.get<PredictionsResponse>(

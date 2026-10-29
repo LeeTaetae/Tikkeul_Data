@@ -19,12 +19,18 @@ export type RouteStyle =
 
 export type TravelMode = 'driving' | 'walking' | 'cycling' | 'transit';
 
+// point 가 있으면 그 지점 근처에서 TTS 로 읽을 수 있다(없으면 텍스트만 표시).
+export interface RouteInstruction {
+  text: string;
+  point: RoutePoint | null;
+}
+
 export interface StyledRoute {
   style: RouteStyle;
   distanceKm: number;
   durationMin: number;
   path: RoutePoint[];
-  instructions: string[];
+  instructions: RouteInstruction[];
 }
 
 function parseRoutes(data: unknown): StyledRoute[] | null {
@@ -35,7 +41,9 @@ function parseRoutes(data: unknown): StyledRoute[] | null {
     distanceKm: r.distance_km,
     durationMin: r.duration_min,
     path: r.path,
-    instructions: Array.isArray(r.instructions) ? r.instructions : [],
+    instructions: Array.isArray(r.instructions)
+      ? r.instructions.map((i: any) => ({ text: i.text, point: i.point ?? null }))
+      : [],
   }));
 }
 

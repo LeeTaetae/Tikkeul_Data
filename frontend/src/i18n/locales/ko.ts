@@ -161,6 +161,7 @@ const ko = {
       school_zone: '전방 {{distance}} 어린이보호구역이 있어요. 서행하세요',
     },
     stage: { caution: '주의', approach: '접근 경고', final: '최종 경고' },
+    speedBump: '전방에 과속방지턱이 있습니다',
     close: '닫기',
     detail: '상세 보기',
     collapse: '접기',
