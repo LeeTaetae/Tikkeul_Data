@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.cache import TtlCache
 from app.config import Settings, get_settings
 from app.errors import ApiError
+from app.navigation.routers import geocode_router, router as navigation_router
 from app.routers import geo, traffic
 from app.service import TrafficService
 from app.upstream import Upstream
@@ -45,7 +46,7 @@ def create_app(
 
     app = FastAPI(title="티끌모아Data API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
-        CORSMiddleware, allow_origins=settings.cors_origins(), allow_methods=["GET"], allow_headers=["*"]
+        CORSMiddleware, allow_origins=settings.cors_origins(), allow_methods=["GET", "POST"], allow_headers=["*"]
     )
 
     @app.exception_handler(ApiError)
@@ -57,8 +58,15 @@ def create_app(
         # 키 값이 아니라 설정 여부(true/false)만 알려준다.
         return {"status": "ok", "configured": {name: settings.secret(name) is not None for name in _KEY_NAMES}}
 
+    # 내비게이션 PoC 와 같은 경로(/health). Render 상태 확인과 기존 PoC 호출자용.
+    @app.get("/health", tags=["health"])
+    async def health_simple():
+        return {"status": "ok"}
+
     app.include_router(traffic.router)
     app.include_router(geo.router)
+    app.include_router(navigation_router)
+    app.include_router(geocode_router)
     return app
 
 
