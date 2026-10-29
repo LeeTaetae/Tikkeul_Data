@@ -1,0 +1,34 @@
+# Render Blueprint. 비밀값은 여기 쓰지 않는다: sync:false 항목은 Blueprint 생성 시 대시보드에서 입력한다.
+services:
+  - type: web
+    name: tikkeul-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
+    healthCheckPath: /api/health
+    envVars:
+      # 3.9.13 고정. 올리지 않는다(backend/README.md, tests/test_environment.py).
+      - key: PYTHON_VERSION
+        value: 3.9.13
+      # Vercel 웹 출처. 새 도메인을 쓰면 여기에 추가한다(쉼표 구분).
+      - key: CORS_ALLOW_ORIGINS
+        value: https://tikkeul-data.vercel.app,https://tikkeul-data-lee-taetae.vercel.app,https://tikkeul-data-git-main-lee-taetae.vercel.app
+      - key: ITS_TRAFFIC_API_KEY
+        sync: false
+      - key: ITS_EVENT_API_KEY
+        sync: false
+      - key: ITS_PREDICTION_API_KEY
+        sync: false
+      - key: ITS_CAUTION_API_KEY
+        sync: false
+      - key: PROTECTION_ZONE_SERVICE_KEY
+        sync: false
+      - key: KAKAO_REST_API_KEY
+        sync: false
+      - key: TMAP_APP_KEY
+        sync: false
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false
