@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "ko-KR"
+early_access: false
+
+chat:
+  auto_reply: true
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: false
+  auto_approvals:
+    enabled: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  pre_merge_checks:
+    description:
+      mode: warning
+    docstrings:
+      mode: off
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/__pycache__/**"
+    - "!**/.venv/**"
+    - "!**/.expo/**"
+    - "!**/dist/**"
+    - "!**/*.pyc"
+    - "!**/package-lock.json"
+    - "!**/*.lock"
+
+  path_instructions:
+    - path: "frontend/**/*.{ts,tsx}"
+      instructions: |
+        이 저장소의 팀 규칙(CLAUDE.md)을 기준으로 리뷰한다:
+        - 타입을 명확히 선언하고 불필요한 any를 쓰지 않는다.
+        - 컴포넌트·함수는 단일 책임을 유지한다.
+        - API 응답 타입을 명확히 정의한다.
+        - 요청받지 않은 기능·추상화·과도한 예외처리를 추가하지 않는다(Simplicity First).
+        - API 키·비밀값이 코드에 하드코딩되지 않았는지 확인한다.
+        - 카메라 원본 영상을 서버로 전송하는 코드가 없는지, 위치정보 수집이 최소화되어 있는지 확인한다.
+        - 민감정보가 로그에 남지 않는지 확인한다.
+
+    - path: "backend/**/*.py"
+      instructions: |
+        이 저장소의 팀 규칙(CLAUDE.md)을 기준으로 리뷰한다:
+        - PEP 8, 타입 힌트를 사용한다.
+        - Pydantic으로 요청·응답을 검증한다.
+        - 라우터와 비즈니스 로직을 분리한다.
+        - API 키·비밀값이 코드나 로그에 노출되지 않는지 확인한다.
+        - AI 탐지 결과를 사고·충돌 확정으로 표현하지 않는지 확인한다("위험 가능성", "주의" 등 표현 사용).
+
+    - path: "**/*.env.example"
+      instructions: |
+        .env.example 에 실제 비밀값이 들어있지 않은지, 변수명만 있는지 확인한다.
