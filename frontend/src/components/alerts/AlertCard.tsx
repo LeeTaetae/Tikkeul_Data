@@ -13,6 +13,7 @@ export const TYPE_STYLE: Record<AlertType, { tint: string; accent: string; stron
   accident: { tint: '#FDECEA', accent: '#E5483A', strong: '#B42318' },
   construction: { tint: '#FFF1DF', accent: '#E8820C', strong: '#A24A00' },
   congestion: { tint: '#FFF7D6', accent: '#E0A800', strong: '#6B4E00' },
+  school_zone: { tint: '#E3F4EE', accent: '#0B7A5A', strong: '#0B7A5A' },
 };
 
 export function TypeIcon({ type, color }: { type: AlertType; color: string }) {
@@ -42,6 +43,13 @@ export function TypeIcon({ type, color }: { type: AlertType; color: string }) {
           <Path d="M6 11 L8 6.5 H16 L18 11" {...p} />
           <Path d="M6.5 14.2 H8.5 M15.5 14.2 H17.5" {...p} />
           <Path d="M6 17.5 V20 M18 17.5 V20" {...p} />
+        </>
+      )}
+      {type === 'school_zone' && (
+        // 보호 방패
+        <>
+          <Path d="M12 3 L19.5 6 V11.5 C19.5 16 16.5 19.5 12 21 C7.5 19.5 4.5 16 4.5 11.5 V6 Z" {...p} />
+          <Path d="M9 12 L11 14 L15 10" {...p} />
         </>
       )}
     </Svg>

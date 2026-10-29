@@ -11,9 +11,10 @@ const ALERT_TYPE: Partial<Record<IncidentKind, AlertType>> = {
 };
 
 // 배지 문구(위험/주의/혼잡)는 유형별 화면 표기다. 공공 API 가 준 심각도 값이 아니다.
-const BADGE_BY_TYPE: Record<AlertType, AlertSeverity> = { accident: 'danger', construction: 'caution', congestion: 'busy' };
+// school_zone 은 incidentToAlert 가 만들지 않지만(ALERT_TYPE 에 없음), AlertType 전체를 키로 받는 타입이라 채워 둔다.
+const BADGE_BY_TYPE: Record<AlertType, AlertSeverity> = { accident: 'danger', construction: 'caution', congestion: 'busy', school_zone: 'caution' };
 
-const ORDER: Record<AlertType, number> = { accident: 0, congestion: 1, construction: 2 };
+const ORDER: Record<AlertType, number> = { accident: 0, congestion: 1, construction: 2, school_zone: 3 };
 
 export function incidentToAlert(incident: Incident, fallbackLocation: string): RoadAlert | null {
   const type = ALERT_TYPE[incident.kind];
@@ -44,6 +45,30 @@ export function incidentsToAlerts(incidents: Incident[], fallbackLocation: strin
     .map((i) => incidentToAlert(i, fallbackLocation))
     .filter((a): a is RoadAlert => a !== null)
     .sort((a, b) => ORDER[a.type] - ORDER[b.type] || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+
+/**
+ * 어린이보호구역(zone_type: 'child') → 경로 매칭용 RoadAlert.
+ * 좌표(center)가 없는 구역은 경로에 매칭할 수 없어 뺀다. 방향이 없는 구역 전체 위험이라 omnidirectional 로 표시한다.
+ */
+export function protectionZoneToAlert(zone: ProtectionZone): RoadAlert | null {
+  if (zone.zone_type !== 'child' || !zone.center) return null;
+  return {
+    id: zone.id,
+    type: 'school_zone',
+    severity: 'caution',
+    location: zone.road_address || zone.lot_address || zone.name,
+    description: zone.name,
+    updatedAt: '',
+    latitude: zone.center.lat,
+    longitude: zone.center.lon,
+    omnidirectional: true,
+    // headingDeg, translations 는 일부러 넣지 않는다. 방향이 없는 구역 위험이고, 번역은 공공 API 가 주지 않는다.
+  };
+}
+
+export function childProtectionZonesToAlerts(zones: ProtectionZone[]): RoadAlert[] {
+  return zones.map(protectionZoneToAlert).filter((a): a is RoadAlert => a !== null);
 }
 
 export function sortCautionZones(zones: CautionZone[]): CautionZone[] {

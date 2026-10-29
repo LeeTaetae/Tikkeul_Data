@@ -1,5 +1,5 @@
 import type * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   Pressable,
@@ -18,6 +18,11 @@ import { CategoryMenu } from '../src/components/CategoryMenu';
 import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
 import { Logo } from '../src/components/Logo';
 import { HazardSimulator, useHazardSimulation } from '../src/dev/HazardSimulator';
+import { geoApi, trafficApi } from '../src/lib/api/api';
+import { childProtectionZonesToAlerts } from '../src/lib/api/convert';
+import { useApi } from '../src/lib/api/useApi';
+import { regionQueryFor } from '../src/lib/location/geo';
+import { matchHazardsToRoute, projectOntoRoute, remainingHazards, type Route } from '../src/lib/routeHazards';
 import { useHazardWarning } from '../src/lib/useHazardWarning';
 import { KakaoMap } from '../src/map/KakaoMap';
 import { DEMO_ORIGIN, findDemoDestination } from '../src/map/demoDestinations';
@@ -224,11 +229,70 @@ export default function HomeScreen() {
   const [transitResult, setTransitResult] = useState<TransitRoutesResult | null>(null);
   const [transitCategory, setTransitCategory] = useState<TransitCategory>('all');
   const [activeRoute, setActiveRoute] = useState<StyledRoute | null>(null);
+  // 안내가 (재)시작될 때마다 늘어난다. useHazardWarning 의 routeKey 로 써서, 재탐색 시 이력을 새로 시작한다.
+  const [routeSeq, setRouteSeq] = useState(0);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState(false);
   const [searched, setSearched] = useState(false);
   // 처음엔 "검색" 한 칸만 보이다가, 경로검색 버튼을 누르거나 그 칸을 건드리면 출발/도착 두 칸으로 바뀐다.
   const [plannerOpen, setPlannerOpen] = useState(false);
+
+  // 어린이보호구역: 실제 안내 경로에 실제 보호구역 데이터를 매칭해 접근 경고를 띄운다.
+  // 보호구역 조회는 시군구 단위라 경로 시작점의 시군구만 쓴다. 경로가 다른 시군구로 넘어가면 그 구간의
+  // 보호구역은 빠질 수 있다 — 데모/도심 경로 범위에서는 괜찮은 근사다.
+  const routeOrigin = activeRoute?.path[0] ?? null;
+  const zoneRegionQuery = routeOrigin ? regionQueryFor({ latitude: routeOrigin.lat, longitude: routeOrigin.lng }) : null;
+  const zoneRegion = useApi((signal) => geoApi.region(zoneRegionQuery!.lat, zoneRegionQuery!.lon, { signal }), {
+    key: zoneRegionQuery?.key ?? '',
+    enabled: !!zoneRegionQuery,
+  });
+  const zoneSggCd = zoneRegion.state.status === 'success' ? zoneRegion.state.data.sgg_cd : '';
+  const zoneData = useApi((signal) => trafficApi.protectionZones(zoneSggCd, { signal }), {
+    key: zoneSggCd,
+    enabled: !!zoneSggCd,
+  });
+  // activeRoute 가 바뀔 때만(안내 시작·종료·재탐색) 새로 만든다. 그래야 아래 useMemo 의존성이 매 렌더
+  // 바뀌지 않아, 경로·위험 데이터가 그대로인 렌더에서는 matchHazardsToRoute 를 다시 돌리지 않는다.
+  const schoolZoneRoute: Route | null = useMemo(
+    () => (activeRoute ? { id: String(routeSeq), points: activeRoute.path.map((p) => ({ latitude: p.lat, longitude: p.lng })) } : null),
+    [activeRoute, routeSeq],
+  );
+  const schoolZoneOnRoute = useMemo(() => {
+    if (!schoolZoneRoute || zoneData.state.status !== 'success') return [];
+    return matchHazardsToRoute(schoolZoneRoute, childProtectionZonesToAlerts(zoneData.state.data.items)).onRoute;
+  }, [schoolZoneRoute, zoneData.state.data]);
+
+  // shortcut: 연속 위치추적(watchPosition) 대신 5초 간격으로 현재 위치를 다시 읽는다. 실제 내비게이션
+  // GPS 추적이 생기면(sim 주석 참고) 그 값을 함께 쓰도록 바꾼다.
+  const [liveProgressM, setLiveProgressM] = useState(0);
+  useEffect(() => {
+    if (!schoolZoneRoute) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    let cancelled = false;
+    const tick = () => {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          if (cancelled) return;
+          const p = projectOntoRoute(schoolZoneRoute, { latitude: coords.latitude, longitude: coords.longitude });
+          if (p) setLiveProgressM(p.offsetM);
+        },
+        () => {},
+        { maximumAge: 10000, timeout: 8000 },
+      );
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [schoolZoneRoute]);
+
+  const schoolZoneWarning = useHazardWarning({
+    active: !!schoolZoneRoute,
+    routeKey: schoolZoneRoute?.id ?? '',
+    hazards: remainingHazards(schoolZoneOnRoute, liveProgressM),
+  });
 
   const onChangeDestination = (text: string) => {
     setPlannerOpen(true);
@@ -370,6 +434,7 @@ export default function HomeScreen() {
 
   const onStartGuidance = (route: StyledRoute) => {
     setActiveRoute(route);
+    setRouteSeq((n) => n + 1);
     mapRef.current?.showRoute(route.path);
   };
 
@@ -421,6 +486,13 @@ export default function HomeScreen() {
 
       {/* 위험 경고는 상단 오버레이(메뉴·시뮬레이터)보다 먼저 그려 그 아래에 깔린다. */}
       {warning && <NavigationHazardAlert key={`${warning.alert.id}:${warning.stage}`} warning={warning} onClose={dismiss} />}
+      {schoolZoneWarning.warning && (
+        <NavigationHazardAlert
+          key={`${schoolZoneWarning.warning.alert.id}:${schoolZoneWarning.warning.stage}`}
+          warning={schoolZoneWarning.warning}
+          onClose={schoolZoneWarning.dismiss}
+        />
+      )}
 
       {/* 빈 곳은 터치를 지도로 통과시킨다(box-none). 안 하면 지도 드래그가 막힌다. */}
       <View style={[styles.overlay, { paddingTop: insets.top + space.md }]}>

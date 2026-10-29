@@ -1,5 +1,5 @@
 // 위험 알림 카드용 타입. 추후 FastAPI 응답(필드명 변환 후)으로 그대로 교체할 수 있게 둔다.
-export type AlertType = 'accident' | 'construction' | 'congestion';
+export type AlertType = 'accident' | 'construction' | 'congestion' | 'school_zone';
 export type AlertSeverity = 'danger' | 'caution' | 'busy';
 
 /** 원문(한국어) 외 언어로 번역된 표시 문구. */
@@ -27,6 +27,8 @@ export interface RoadAlert {
 
   /** 위험이 영향을 주는 진행 방향(방위각, 북=0, 시계 방향). 없으면 경로 방향을 판단할 수 없어 경로상 위험으로 보지 않는다. */
   headingDeg?: number;
+  /** true 면 headingDeg 와 무관하게 경로상 위험으로 본다(차로 방향이 아니라 구역 전체에 적용되는 위험, 예: 보호구역). */
+  omnidirectional?: boolean;
   /** 도로 구간 ID. API 연동용 자리이며 현재 경로 매칭은 쓰지 않는다(routeHazards.ts 의 확장 지점 참고). */
   roadLinkId?: string;
   /** 상행/하행. API 연동용 자리이며 현재 경로 매칭은 쓰지 않는다. */

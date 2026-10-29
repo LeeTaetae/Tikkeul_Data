@@ -2,7 +2,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { incidentToAlert, incidentsToAlerts, sortCautionZones, sortProtectionZones } from '../src/lib/api/convert.ts';
+import {
+  childProtectionZonesToAlerts,
+  incidentToAlert,
+  incidentsToAlerts,
+  protectionZoneToAlert,
+  sortCautionZones,
+  sortProtectionZones,
+} from '../src/lib/api/convert.ts';
 import { localizeAlert } from '../src/lib/localizeAlert.ts';
 import { MATCH_MAX_LATERAL_M, matchHazardsToRoute } from '../src/lib/routeHazards.ts';
 import { MOCK_ROUTE_A } from '../src/dev/mockRoute.ts';
@@ -71,4 +78,44 @@ test('주의운전구간은 priority 순, 보호구역은 어린이 → 노인 �
   assert.deepEqual(sortCautionZones([z('b', null), z('a', 2), z('c', 1)]).map((x) => x.id), ['c', 'a', 'b']);
   const p = (name, zone_type) => ({ name, zone_type });
   assert.deepEqual(sortProtectionZones([p('나', 'senior'), p('다', 'child'), p('가', 'child')]).map((x) => x.name), ['가', '다', '나']);
+});
+
+const zone = (over = {}) => ({
+  id: 'z1', name: '행복초등학교', zone_type: 'child', facility_detail_code: '', parent_id: '', in_use: true,
+  sgg_cd: '', emdong_code: '', std_code: '', assignment: 'priority',
+  road_address: '서울특별시 강남구 테헤란로 1', road_address_detail: '', lot_address: '', lot_address_detail: '',
+  registered_on: null, center: { lat: 37.5, lon: 127.03 }, geometry: null, ...over,
+});
+
+test('어린이보호구역만 경로 매칭용 알림으로 바꾸고, 다른 보호구역·좌표 없는 구역은 뺀다', () => {
+  assert.equal(protectionZoneToAlert(zone({ zone_type: 'senior' })), null);
+  assert.equal(protectionZoneToAlert(zone({ center: null })), null);
+  const a = protectionZoneToAlert(zone());
+  assert.equal(a.type, 'school_zone');
+  assert.equal(a.severity, 'caution');
+  assert.equal(a.location, '서울특별시 강남구 테헤란로 1');
+  assert.equal(a.description, '행복초등학교');
+  assert.equal(a.latitude, 37.5);
+  assert.equal(a.longitude, 127.03);
+  assert.equal(a.omnidirectional, true);
+  assert.ok(!('headingDeg' in a), '방향을 만들어 넣지 않는다');
+});
+
+test('도로명주소가 없으면 지번주소, 둘 다 없으면 시설명을 위치로 쓴다', () => {
+  assert.equal(protectionZoneToAlert(zone({ road_address: '', lot_address: '강남구 역삼동 1' })).location, '강남구 역삼동 1');
+  assert.equal(protectionZoneToAlert(zone({ road_address: '', lot_address: '' })).location, '행복초등학교');
+});
+
+test('어린이보호구역은 방향 없이도(omnidirectional) 경로 위 위험으로 매칭된다', () => {
+  const p = MOCK_ROUTE_A.points[1];
+  const a = protectionZoneToAlert(zone({ center: { lat: p.latitude, lon: p.longitude } }));
+  const result = matchHazardsToRoute(MOCK_ROUTE_A, [a]);
+  assert.equal(result.onRoute.length, 1);
+  assert.equal(result.rejected.length, 0);
+  assert.ok(MATCH_MAX_LATERAL_M > 0);
+});
+
+test('childProtectionZonesToAlerts: 어린이 외 유형과 좌표 없는 항목은 걸러낸다', () => {
+  const zones = [zone({ id: 'c1' }), zone({ id: 's1', zone_type: 'senior' }), zone({ id: 'c2', center: null })];
+  assert.deepEqual(childProtectionZonesToAlerts(zones).map((a) => a.id), ['c1']);
 });
