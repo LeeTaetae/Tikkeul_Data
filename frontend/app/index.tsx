@@ -21,9 +21,12 @@ import { HazardSimulator, useHazardSimulation } from '../src/dev/HazardSimulator
 import { geoApi, trafficApi } from '../src/lib/api/api';
 import { childProtectionZonesToAlerts } from '../src/lib/api/convert';
 import { useApi } from '../src/lib/api/useApi';
-import { regionQueryFor } from '../src/lib/location/geo';
+import { bboxForPoints, regionQueryFor } from '../src/lib/location/geo';
 import { matchHazardsToRoute, projectOntoRoute, remainingHazards, type Route } from '../src/lib/routeHazards';
+import { dedupeInstructions, formatInstructionText } from '../src/lib/routeInstructions';
 import { useHazardWarning } from '../src/lib/useHazardWarning';
+import { useSpeedBumpSpeech } from '../src/lib/useSpeedBumpSpeech';
+import { useTurnInstructionSpeech } from '../src/lib/useTurnInstructionSpeech';
 import { KakaoMap } from '../src/map/KakaoMap';
 import { DEMO_ORIGIN, findDemoDestination } from '../src/map/demoDestinations';
 import {
@@ -179,7 +182,7 @@ function toStyledRoute(option: TransitRouteOption): StyledRoute {
     distanceKm: option.distanceKm,
     durationMin: option.durationMin,
     path: option.path,
-    instructions: option.instructions,
+    instructions: option.instructions.map((text) => ({ text, point: null })),
   };
 }
 
@@ -201,7 +204,7 @@ function getCurrentLocation(): Promise<RoutePoint> {
 
 // 전체 화면 지도 위에 검색창·결과를 겹쳐 놓는다. 길찾기는 전부 이 화면에서 끝난다.
 export default function HomeScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const mapRef = useRef<KakaoMapHandle>(null);
@@ -253,6 +256,12 @@ export default function HomeScreen() {
   });
   // activeRoute 가 바뀔 때만(안내 시작·종료·재탐색) 새로 만든다. 그래야 아래 useMemo 의존성이 매 렌더
   // 바뀌지 않아, 경로·위험 데이터가 그대로인 렌더에서는 matchHazardsToRoute 를 다시 돌리지 않는다.
+  // 상세 경로 화면 표시용: 턴 설명 뒤에 같은 구간을 또 요약하는 중복 줄을 빼고, 거리를 km 단위로 다듬는다.
+  // TTS(useTurnInstructionSpeech)는 원문 그대로 읽어야 해서 activeRoute.instructions 를 따로 그대로 쓴다.
+  const displayInstructions = useMemo(
+    () => (activeRoute ? dedupeInstructions(activeRoute.instructions).map((i) => formatInstructionText(i.text)) : []),
+    [activeRoute],
+  );
   const schoolZoneRoute: Route | null = useMemo(
     () => (activeRoute ? { id: String(routeSeq), points: activeRoute.path.map((p) => ({ latitude: p.lat, longitude: p.lng })) } : null),
     [activeRoute, routeSeq],
@@ -261,6 +270,31 @@ export default function HomeScreen() {
     if (!schoolZoneRoute || zoneData.state.status !== 'success') return [];
     return matchHazardsToRoute(schoolZoneRoute, childProtectionZonesToAlerts(zoneData.state.data.items)).onRoute;
   }, [schoolZoneRoute, zoneData.state.data]);
+
+  // 과속방지턱: 경로 전체를 덮는 영역으로 한 번만 조회한다(위험구간처럼 시군구 단위가 아니라 좌표 전체 범위).
+  const routeBbox = useMemo(
+    () => (activeRoute ? bboxForPoints(activeRoute.path.map((p) => ({ latitude: p.lat, longitude: p.lng })), 300) : null),
+    [activeRoute],
+  );
+  const routeBboxKey = routeBbox ? `${routeBbox.minLon},${routeBbox.maxLon},${routeBbox.minLat},${routeBbox.maxLat}` : '';
+  const speedBumpData = useApi((signal) => trafficApi.speedBumps(routeBbox!, { signal }), {
+    key: routeBboxKey,
+    enabled: !!routeBbox,
+  });
+  // useMemo 로 참조를 고정한다(아니면 매 렌더 새 배열이라 음성 훅의 effect 가 불필요하게 다시 돈다).
+  // 좌표를 5자리(~1m)로 반올림해 중복 등록된 같은 방지턱도 한 번만 남긴다(행정안전부 데이터에 중복이 있다).
+  const speedBumpPoints = useMemo(() => {
+    const items = speedBumpData.state.status === 'success' ? speedBumpData.state.data.items : [];
+    const seen = new Set<string>();
+    const points: { lat: number; lng: number }[] = [];
+    for (const item of items) {
+      const key = `${item.location.lat.toFixed(5)},${item.location.lon.toFixed(5)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      points.push({ lat: item.location.lat, lng: item.location.lon });
+    }
+    return points;
+  }, [speedBumpData.state.data]);
 
   // shortcut: 연속 위치추적(watchPosition) 대신 5초 간격으로 현재 위치를 다시 읽는다. 실제 내비게이션
   // GPS 추적이 생기면(sim 주석 참고) 그 값을 함께 쓰도록 바꾼다.
@@ -292,6 +326,25 @@ export default function HomeScreen() {
     active: !!schoolZoneRoute,
     routeKey: schoolZoneRoute?.id ?? '',
     hazards: remainingHazards(schoolZoneOnRoute, liveProgressM),
+  });
+
+  // 턴바이턴 음성 안내. schoolZoneRoute 가 activeRoute 와 같은 경로(좌표)라 그대로 재사용한다.
+  useTurnInstructionSpeech({
+    active: !!activeRoute,
+    routeKey: schoolZoneRoute?.id ?? '',
+    route: schoolZoneRoute,
+    instructions: activeRoute?.instructions ?? [],
+    progressM: liveProgressM,
+    language: i18n.language,
+  });
+
+  // 과속방지턱 음성 경고. 상세 경로에는 표시하지 않는다 — 음성 전용.
+  useSpeedBumpSpeech({
+    active: !!activeRoute,
+    routeKey: schoolZoneRoute?.id ?? '',
+    route: schoolZoneRoute,
+    bumps: speedBumpPoints,
+    progressM: liveProgressM,
   });
 
   const onChangeDestination = (text: string) => {
@@ -685,12 +738,12 @@ export default function HomeScreen() {
               <Text style={styles.stopButtonText}>{t('map.stopGuidance')}</Text>
             </Pressable>
           </View>
-          {activeRoute.instructions.length > 0 && (
+          {displayInstructions.length > 0 && (
             <View style={styles.instructions}>
               <Text style={styles.instructionsTitle}>{t('map.detailedRoute')}</Text>
-              {activeRoute.instructions.map((step, i) => (
+              {displayInstructions.map((text, i) => (
                 <Text key={i} style={styles.instructionStep}>
-                  {i + 1}. {step}
+                  {i + 1}. {text}
                 </Text>
               ))}
             </View>

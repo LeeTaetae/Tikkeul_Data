@@ -40,6 +40,28 @@ export function bboxAround(center: Coords, radiusM: number = SEARCH_RADIUS_M): B
   };
 }
 
+/** 여러 좌표(경로)를 전부 덮는 영역. paddingM 만큼 여유를 둔다. 좌표가 많을 수 있어 스프레드 대신 reduce 로 훑는다. */
+export function bboxForPoints(points: Coords[], paddingM: number): BBox {
+  const extent = points.reduce(
+    (acc, p) => ({
+      minLat: Math.min(acc.minLat, p.latitude),
+      maxLat: Math.max(acc.maxLat, p.latitude),
+      minLon: Math.min(acc.minLon, p.longitude),
+      maxLon: Math.max(acc.maxLon, p.longitude),
+    }),
+    { minLat: points[0].latitude, maxLat: points[0].latitude, minLon: points[0].longitude, maxLon: points[0].longitude },
+  );
+  const midLat = (extent.minLat + extent.maxLat) / 2;
+  const dLat = paddingM / M_PER_DEG;
+  const dLon = paddingM / (M_PER_DEG * Math.cos((midLat * Math.PI) / 180));
+  return {
+    minLon: extent.minLon - dLon,
+    maxLon: extent.maxLon + dLon,
+    minLat: extent.minLat - dLat,
+    maxLat: extent.maxLat + dLat,
+  };
+}
+
 export interface SearchArea {
   /** 같은 격자 안의 위치는 같은 key 가 된다. 데이터 조회를 다시 할지 판단하는 기준이다. */
   key: string;

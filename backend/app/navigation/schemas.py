@@ -20,6 +20,12 @@ class RouteOption(BaseModel):
     path: list[LatLng]
 
 
+# 턴바이턴 안내 한 토막. point 가 있으면 그 지점 근처에서 TTS 로 읽을 수 있다(없으면 텍스트만 표시).
+class RouteInstruction(BaseModel):
+    text: str
+    point: Optional[LatLng] = None
+
+
 class NavigationResponse(BaseModel):
     routes: list[RouteOption]
 
@@ -44,7 +50,7 @@ class StyledRoute(BaseModel):
     distance_km: float
     duration_min: float
     path: list[LatLng]
-    instructions: list[str] = []
+    instructions: list[RouteInstruction] = []
 
 
 class RouteStylesResponse(BaseModel):

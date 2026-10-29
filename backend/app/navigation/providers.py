@@ -2,7 +2,7 @@ from typing import Optional, Protocol
 
 import httpx
 
-from .schemas import LatLng, RouteOption, TransitRouteOption, TransitStep, TransitStop, TransitVehicle
+from .schemas import LatLng, RouteInstruction, RouteOption, TransitRouteOption, TransitStep, TransitStop, TransitVehicle
 
 
 class NavigationProvider(Protocol):
@@ -25,7 +25,7 @@ class TmapProvider:
     # 0=교통최적+추천, 1=무료우선, 4=고속도로우선, 10=최단거리, 19=어린이보호구역 회피.
     async def get_route_styled(
         self, origin: LatLng, destination: LatLng, search_option: str = "0"
-    ) -> tuple[RouteOption, list[str]]:
+    ) -> tuple[RouteOption, list[RouteInstruction]]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
                 "https://apis.openapi.sk.com/tmap/routes?version=1",
@@ -50,7 +50,7 @@ class TmapProvider:
             for coord in _coerce_coordinates(feature["geometry"])
         ]
         instructions = [
-            f["properties"]["description"]
+            RouteInstruction(text=f["properties"]["description"], point=_feature_point(f))
             for f in data["features"][1:]
             if f["properties"].get("description")
         ]
@@ -62,7 +62,7 @@ class TmapProvider:
         )
         return route, instructions
 
-    async def get_pedestrian_route(self, origin: LatLng, destination: LatLng) -> tuple[RouteOption, list[str]]:
+    async def get_pedestrian_route(self, origin: LatLng, destination: LatLng) -> tuple[RouteOption, list[RouteInstruction]]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
                 "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1",
@@ -88,7 +88,7 @@ class TmapProvider:
             for coord in _coerce_coordinates(feature["geometry"])
         ]
         instructions = [
-            f["properties"]["description"]
+            RouteInstruction(text=f["properties"]["description"], point=_feature_point(f))
             for f in data["features"][1:]
             if f["properties"].get("description")
         ]
@@ -149,12 +149,12 @@ class KakaoRoutingProvider:
     def __init__(self, rest_api_key: str) -> None:
         self._rest_api_key = rest_api_key
 
-    async def get_bicycle_route(self, origin: LatLng, destination: LatLng) -> tuple[RouteOption, list[str]]:
+    async def get_bicycle_route(self, origin: LatLng, destination: LatLng) -> tuple[RouteOption, list[RouteInstruction]]:
         return await self._get_route(
             "https://dapi.kakao.com/v2/routing/bicycle", origin, destination, nested_key="route"
         )
 
-    async def get_transit_route(self, origin: LatLng, destination: LatLng) -> tuple[RouteOption, list[str]]:
+    async def get_transit_route(self, origin: LatLng, destination: LatLng) -> tuple[RouteOption, list[RouteInstruction]]:
         return await self._get_route(
             "https://dapi.kakao.com/v2/routing/publictraffic", origin, destination, nested_key="routes"
         )
@@ -223,7 +223,7 @@ class KakaoRoutingProvider:
 
     async def _get_route(
         self, url: str, origin: LatLng, destination: LatLng, *, nested_key: str
-    ) -> tuple[RouteOption, list[str]]:
+    ) -> tuple[RouteOption, list[RouteInstruction]]:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(
                 url,
@@ -244,7 +244,11 @@ class KakaoRoutingProvider:
             root = data["routes"][0]
             steps = root["steps"]
         properties = root["properties"]
-        instructions = [s["properties"]["guidance"] for s in steps if s["properties"].get("guidance")]
+        instructions = [
+            RouteInstruction(text=s["properties"]["guidance"], point=_step_point(s))
+            for s in steps
+            if s["properties"].get("guidance")
+        ]
         path = [
             LatLng(lat=point[1], lng=point[0])
             for step in steps
@@ -284,3 +288,15 @@ def _coerce_coordinates(geometry: dict) -> list[list[float]]:
     if geometry["type"] == "Point":
         return [geometry["coordinates"]]
     return []
+
+
+# Tmap 안내지점(guide) feature 의 좌표. Point geometry 는 좌표 하나뿐이다.
+def _feature_point(feature: dict) -> Optional[LatLng]:
+    coords = _coerce_coordinates(feature["geometry"])
+    return LatLng(lat=coords[0][1], lng=coords[0][0]) if coords else None
+
+
+# 카카오 step 의 시작 지점. TTS 로 "이 지점 근처에서" 읽을 위치로 쓴다.
+def _step_point(step: dict) -> Optional[LatLng]:
+    points = step.get("path", {}).get("points", [])
+    return LatLng(lat=points[0][1], lng=points[0][0]) if points else None

@@ -9,6 +9,7 @@ from app.models import (
     IncidentsResponse,
     PredictionsResponse,
     ProtectionZonesResponse,
+    SpeedBumpsResponse,
     TrafficFlowResponse,
 )
 from app.service import TrafficService, default_forecast_time
@@ -71,6 +72,12 @@ async def protection_zones(
 ):
     items, meta = await service.protection_zones(sgg_cd, include_geometry)
     return ProtectionZonesResponse(meta=meta, items=items)
+
+
+@router.get("/speed-bumps", response_model=SpeedBumpsResponse, summary="과속방지턱 - 행정안전부 등록 현황(로컬 데이터)")
+async def speed_bumps(bbox: BBox = Depends(bbox_params), service: TrafficService = Depends(get_service)):
+    items, meta = await service.speed_bumps(bbox)
+    return SpeedBumpsResponse(meta=meta, items=items)
 
 
 @router.get("/flow", response_model=TrafficFlowResponse, summary="교통소통(링크별 속도) - 실시간")
