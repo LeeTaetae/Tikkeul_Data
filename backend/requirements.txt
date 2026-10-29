@@ -1,0 +1,8 @@
+# Runtime deps pinned to versions resolved and verified on Python 3.9.13.
+# Keep this file ASCII-only: pip on Korean Windows reads it as cp949.
+fastapi==0.128.8
+uvicorn==0.39.0
+pydantic==2.13.5
+pydantic-settings==2.11.0
+httpx==0.28.1
+pyproj==3.6.1

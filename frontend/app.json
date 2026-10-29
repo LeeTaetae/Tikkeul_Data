@@ -26,7 +26,15 @@
       "output": "static",
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [["expo-router", { "sitemap": false }]],
+    "plugins": [
+      ["expo-router", { "sitemap": false }],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "주변 돌발 정보와 보호구역을 보여주기 위해 현재 위치를 사용합니다."
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
     }
