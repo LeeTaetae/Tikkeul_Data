@@ -4,14 +4,33 @@ import { useTranslation } from 'react-i18next';
 
 import { KAKAO_JS_KEY } from '../lib/config';
 import { colors, radius, space } from '../theme';
-import type { KakaoMapHandle } from './types';
+import type { KakaoMapHandle, RoutePoint } from './types';
 
 interface KakaoMapInstance {
   setCenter: (position: object) => void;
+  setBounds: (bounds: object) => void;
 }
 
 interface KakaoOverlay {
   setPosition: (position: object) => void;
+  setMap: (map: object | null) => void;
+}
+
+interface KakaoPolyline {
+  setMap: (map: object | null) => void;
+}
+
+interface KakaoLatLngBounds {
+  extend: (position: object) => void;
+}
+
+interface KakaoLatLngInstance {
+  getLat: () => number;
+  getLng: () => number;
+}
+
+interface KakaoMouseEvent {
+  latLng: KakaoLatLngInstance;
 }
 
 declare global {
@@ -19,7 +38,8 @@ declare global {
     kakao?: {
       maps: {
         load: (callback: () => void) => void;
-        LatLng: new (lat: number, lng: number) => object;
+        LatLng: new (lat: number, lng: number) => KakaoLatLngInstance;
+        LatLngBounds: new () => KakaoLatLngBounds;
         Map: new (container: HTMLElement, options: { center: object; level: number }) => KakaoMapInstance;
         CustomOverlay: new (options: {
           map: object;
@@ -28,6 +48,17 @@ declare global {
           xAnchor: number;
           yAnchor: number;
         }) => KakaoOverlay;
+        Polyline: new (options: {
+          map: object;
+          path: object[];
+          strokeWeight: number;
+          strokeColor: string;
+          strokeOpacity: number;
+        }) => KakaoPolyline;
+        event: {
+          addListener: (target: object, type: string, handler: (event: KakaoMouseEvent) => void) => void;
+          removeListener: (target: object, type: string, handler: (event: KakaoMouseEvent) => void) => void;
+        };
       };
     };
   }
@@ -56,12 +87,21 @@ function createLocationDot(label: string): HTMLElement {
   return dot;
 }
 
-export function KakaoMap({ ref }: { ref?: Ref<KakaoMapHandle> }) {
+interface KakaoMapProps {
+  ref?: Ref<KakaoMapHandle>;
+  onMapClick?: (point: RoutePoint) => void;
+}
+
+export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const markerRef = useRef<KakaoOverlay | null>(null);
+  const polylineRef = useRef<KakaoPolyline | null>(null);
   const mountedRef = useRef(true);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // 클릭 리스너는 지도 초기화 시 한 번만 등록하므로, 최신 콜백을 ref로 들고 있다가 그걸 읽는다.
+  const onMapClickRef = useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'keyMissing' | 'loadError'>(
     KAKAO_JS_KEY ? 'loading' : 'keyMissing',
@@ -110,7 +150,34 @@ export function KakaoMap({ ref }: { ref?: Ref<KakaoMapHandle> }) {
     );
   };
 
-  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true) }));
+  // 백엔드가 Tmap/Naver 중 고른 경로를 그대로 Polyline 으로 그린다. 지도 레이어(Kakao)와
+  // 경로 계산(Tmap/Naver)은 서로 다른 레이어라, 좌표 배열만 넘기면 출처와 무관하게 그려진다.
+  const clearRoute = () => {
+    polylineRef.current?.setMap(null);
+    polylineRef.current = null;
+  };
+
+  const showRoute = (path: RoutePoint[]) => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    if (!kakao || !map || path.length === 0) return;
+
+    clearRoute();
+    const points = path.map((p) => new kakao.maps.LatLng(p.lat, p.lng));
+    polylineRef.current = new kakao.maps.Polyline({
+      map,
+      path: points,
+      strokeWeight: 5,
+      strokeColor: colors.brand,
+      strokeOpacity: 0.85,
+    });
+
+    const bounds = new kakao.maps.LatLngBounds();
+    points.forEach((point) => bounds.extend(point));
+    map.setBounds(bounds);
+  };
+
+  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, clearRoute }));
 
   useEffect(() => {
     mountedRef.current = true;
@@ -140,6 +207,9 @@ export function KakaoMap({ ref }: { ref?: Ref<KakaoMapHandle> }) {
         if (canceled) return;
         const center = new kakao.maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
         mapRef.current = new kakao.maps.Map(container, { center, level: 4 });
+        kakao.maps.event.addListener(mapRef.current, 'click', (event: KakaoMouseEvent) => {
+          onMapClickRef.current?.({ lat: event.latLng.getLat(), lng: event.latLng.getLng() });
+        });
         setStatus('ready');
         locate(false);
       });

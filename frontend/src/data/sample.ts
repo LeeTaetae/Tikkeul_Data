@@ -8,13 +8,6 @@ export interface TrafficAlert {
   distanceM: number;
 }
 
-export interface RouteOption {
-  id: 'fast' | 'free' | 'safe';
-  minutes: number;
-  km: number;
-  riskCount: number;
-}
-
 export const SAMPLE_UPDATED_AT = '2026-10-28T09:20:00+09:00';
 
 export const SAMPLE_ALERTS: TrafficAlert[] = [
@@ -23,10 +16,4 @@ export const SAMPLE_ALERTS: TrafficAlert[] = [
   { id: 'a3', kind: 'work', place: '테헤란로 역삼역 사거리', distanceM: 2100 },
   { id: 'a4', kind: 'block', place: '세종대로 광화문 광장 일대', distanceM: 4800 },
   { id: 'a5', kind: 'zone', place: '새싹어린이집 주변', distanceM: 5300 },
-];
-
-export const SAMPLE_ROUTES: RouteOption[] = [
-  { id: 'fast', minutes: 24, km: 11.8, riskCount: 3 },
-  { id: 'free', minutes: 31, km: 13.2, riskCount: 2 },
-  { id: 'safe', minutes: 28, km: 12.4, riskCount: 0 },
 ];
