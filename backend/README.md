@@ -62,6 +62,7 @@ copy .env.example .env   # 그 다음 .env 에 키를 직접 입력한다
 | `ITS_CAUTION_API_KEY` | ITS 주의운전구간정보 |
 | `PROTECTION_ZONE_SERVICE_KEY` | 공공데이터포털 경찰청 전국 보호구역 현황 |
 | `KAKAO_REST_API_KEY` | Kakao Local 좌표→시군구 변환. **REST API 키**이며 지도용 JavaScript 키와 다르다. 서버에서만 쓴다 |
+| `ITS_RELAY_URL`, `ITS_RELAY_TOKEN` (선택) | ITS 중계(`relay/`) 주소와 인증 토큰. 둘 다 있으면 ITS 키 없이 중계를 거쳐 호출하고, 비우면 ITS 로 직접 호출한다. 주소는 `https://`(개발용 `http://127.0.0.1` 예외) |
 | `CORS_ALLOW_ORIGINS` (선택) | 허용할 웹 출처(쉼표 구분). 비우면 `localhost:8081` 등 로컬 개발 주소만 |
 
 - `.env`는 Git에 올리지 않는다. `.env.example`에는 **변수명만** 쓴다(`tests/test_environment.py`가 값이 비어 있는지 검사한다).

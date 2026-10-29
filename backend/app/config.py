@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     kakao_rest_api_key: Optional[SecretStr] = None
 
     its_base_url: str = "https://openapi.its.go.kr:9443"
+    # ITS 가 이 서버의 IP 대역에서 연결되지 않을 때 쓰는 한국 PC 중계(relay/). 비워 두면 its_base_url 로 직접 호출한다.
+    # 설정하면 ITS 인증키는 중계에만 있고(이 서버는 보내지 않는다), 중계에는 토큰으로 인증한다.
+    its_relay_url: str = ""
+    its_relay_token: Optional[SecretStr] = None
     protection_zone_url: str = "https://apis.data.go.kr/1320000/safetyzonedtlinfo/getdtllist"
     kakao_region_url: str = "https://dapi.kakao.com/v2/local/geo/coord2regioncode.json"
     http_timeout_s: float = 15.0
