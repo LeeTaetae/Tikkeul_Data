@@ -1,7 +1,12 @@
+import { fetchWithTimeout } from '../lib/api/fetchTimeout';
 import { API_BASE_URL } from '../lib/config';
 import type { RoutePoint } from './types';
 
 // 앞의 5개는 자동차(Tmap searchOption) 스타일, 뒤의 3개는 이동수단 자체(도보/자전거/대중교통).
+// 경로 탐색은 외부 API 여러 개를 부르고 무료 서버는 처음 깨어나는 데 오래 걸려서 넉넉히 둔다. 주소 변환은 부가 정보라 짧게 둔다.
+const ROUTE_TIMEOUT_MS = 40_000;
+const ADDRESS_TIMEOUT_MS = 8_000;
+
 export type RouteStyle =
   | 'recommended'
   | 'toll_free'
@@ -39,11 +44,15 @@ function parseRoutes(data: unknown): StyledRoute[] | null {
 export async function fetchRouteStyles(origin: RoutePoint, destination: RoutePoint): Promise<StyledRoute[] | null> {
   if (!API_BASE_URL) return null;
   try {
-    const res = await fetch(`${API_BASE_URL}/navigation/route-styles`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin, destination }),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/navigation/route-styles`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination }),
+      },
+      ROUTE_TIMEOUT_MS,
+    );
     if (!res.ok) return null;
     return parseRoutes(await res.json());
   } catch {
@@ -59,11 +68,15 @@ export async function fetchModeRoute(
 ): Promise<StyledRoute[] | null> {
   if (!API_BASE_URL) return null;
   try {
-    const res = await fetch(`${API_BASE_URL}/navigation/route-by-mode`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin, destination, mode }),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/navigation/route-by-mode`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination, mode }),
+      },
+      ROUTE_TIMEOUT_MS,
+    );
     if (!res.ok) return null;
     return parseRoutes(await res.json());
   } catch {
@@ -142,11 +155,15 @@ function parseTransitRoutes(data: unknown): TransitRoutesResult | null {
 export async function fetchTransitRoutes(origin: RoutePoint, destination: RoutePoint): Promise<TransitRoutesResult | null> {
   if (!API_BASE_URL) return null;
   try {
-    const res = await fetch(`${API_BASE_URL}/navigation/transit-routes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin, destination }),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/navigation/transit-routes`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination }),
+      },
+      ROUTE_TIMEOUT_MS,
+    );
     if (!res.ok) return null;
     return parseTransitRoutes(await res.json());
   } catch {
@@ -159,7 +176,7 @@ export async function fetchTransitRoutes(origin: RoutePoint, destination: RouteP
 export async function fetchAddress(point: RoutePoint): Promise<string | null> {
   if (!API_BASE_URL) return null;
   try {
-    const res = await fetch(`${API_BASE_URL}/geocode/reverse?lat=${point.lat}&lng=${point.lng}`);
+    const res = await fetchWithTimeout(`${API_BASE_URL}/geocode/reverse?lat=${point.lat}&lng=${point.lng}`, {}, ADDRESS_TIMEOUT_MS);
     if (!res.ok) return null;
     const data = await res.json();
     return typeof data.address === 'string' ? data.address : null;
