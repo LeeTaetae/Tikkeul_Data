@@ -22,6 +22,12 @@ export type RouteStyle =
 
 export type TravelMode = 'driving' | 'walking' | 'cycling' | 'transit';
 
+// point 가 있으면 그 지점 근처에서 TTS 로 읽을 수 있다(없으면 텍스트만 표시).
+export interface RouteInstruction {
+  text: string;
+  point: RoutePoint | null;
+}
+
 // route-styles 의 styles 로 고를 수 있는 자동차 스타일(백엔드 DrivingStyle)
 export type DrivingStyle = Extract<RouteStyle, 'recommended' | 'toll_free' | 'major_road' | 'shortest' | 'avoid_school_zone'>;
 
@@ -30,7 +36,7 @@ export interface StyledRoute {
   distanceKm: number;
   durationMin: number;
   path: RoutePoint[];
-  instructions: string[];
+  instructions: RouteInstruction[];
   /** include_guides 로 요청했고 응답에 있을 때만 채워진다. 자전거·대중교통은 지원하지 않아 항상 없다 */
   guides?: RouteGuide[];
 }

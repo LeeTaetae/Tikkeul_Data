@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { incidentToAlert } from '../src/lib/api/convert.ts';
-import { buildRouteBody, parseGuides, parseRoutes } from '../src/map/parseRoutes.ts';
+import { buildRouteBody, parseGuides, parseInstructions, parseRoutes } from '../src/map/parseRoutes.ts';
 
 const O = { lat: 37.5, lng: 127.0 };
 const D = { lat: 37.51, lng: 127.01 };
@@ -13,13 +13,13 @@ const apiRoute = (extra = {}) => ({
   distance_km: 2.1,
   duration_min: 7,
   path: [O, D],
-  instructions: ['직진'],
+  instructions: [{ text: '직진', point: { lat: 37.5, lng: 127.0 } }],
   ...extra,
 });
 
 test('guides 키가 없는 기존 응답은 예전과 똑같이 읽는다(guides 키도 만들지 않는다)', () => {
   const [route] = parseRoutes({ routes: [apiRoute()] });
-  assert.deepEqual(route, { style: 'recommended', distanceKm: 2.1, durationMin: 7, path: [O, D], instructions: ['직진'] });
+  assert.deepEqual(route, { style: 'recommended', distanceKm: 2.1, durationMin: 7, path: [O, D], instructions: [{ text: '직진', point: { lat: 37.5, lng: 127.0 } }] });
   assert.equal('guides' in route, false);
 });
 
@@ -122,4 +122,30 @@ test('빈 문자열 event_key 는 옮기지 않는다', () => {
   const alert = incidentToAlert(incident({ event_key: '', revision: '' }), '위치');
   assert.equal('eventKey' in alert, false);
   assert.equal('revision' in alert, false);
+});
+
+// ───────────── 턴바이턴 안내 문구 {text, point}(팀 TTS 와 공유하는 구조) ─────────────
+
+test('instructions: {text, point} 를 그대로 읽고, point 가 없으면 null (TTS 는 point 가 있는 것만 읽는다)', () => {
+  assert.deepEqual(parseInstructions([{ text: '우회전', point: { lat: 37.5, lng: 127.1 } }, { text: '직진' }, { text: '도착', point: null }]), [
+    { text: '우회전', point: { lat: 37.5, lng: 127.1 } },
+    { text: '직진', point: null },
+    { text: '도착', point: null },
+  ]);
+});
+
+test('instructions: 옛 백엔드의 문자열 배열도 받아 들이고, 글자·좌표가 깨진 항목은 안전하게 처리한다', () => {
+  assert.deepEqual(parseInstructions(['직진', '', null, 3, {}]), [{ text: '직진', point: null }]);
+  assert.deepEqual(parseInstructions([{ text: 'x', point: { lat: '1', lng: 2 } }]), [{ text: 'x', point: null }]); // 문자열 좌표는 point 로 쓰지 않는다
+  assert.deepEqual(parseInstructions(undefined), []);
+  assert.deepEqual(parseInstructions('x'), []);
+});
+
+test('guides 와 instructions 가 함께 와도 둘 다 읽는다(include_guides 응답)', () => {
+  const [route] = parseRoutes({
+    routes: [apiRoute({ instructions: [{ text: '우회전', point: { lat: 37.5, lng: 127.0 } }], guides: [{ index: 0, lat: 37.5, lng: 127.0, path_index: 0 }] })],
+  });
+  assert.equal(route.instructions[0].text, '우회전');
+  assert.deepEqual(route.instructions[0].point, { lat: 37.5, lng: 127.0 });
+  assert.equal(route.guides.length, 1);
 });

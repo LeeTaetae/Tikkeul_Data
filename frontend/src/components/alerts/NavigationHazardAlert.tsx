@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { X } from 'lucide-react-native';
+import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 
 import { localizeAlert } from '../../lib/localizeAlert';
+import { resolveVoiceId } from '../../lib/speechVoice';
 import { formatTimeKst } from '../../lib/time';
 import type { HazardStage, HazardWarning } from '../../lib/useHazardWarning';
 import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../../theme';
@@ -18,6 +20,9 @@ const STAGE_PILL: Record<Exclude<HazardStage, 'advance'>, { bg: string; fg: stri
   approach: { bg: colors.surface, fg: colors.ink, border: colors.ink },
   final: { bg: colors.ink, fg: colors.surface, border: colors.ink },
 };
+
+// TTS 음성 언어. i18n 언어 코드(ko/en/zh) → Speech locale.
+const SPEECH_LOCALE: Record<string, string> = { ko: 'ko-KR', en: 'en-US', zh: 'zh-CN' };
 
 // 좁은 화면에서 마지막 두 단어를 붙여, 글자 하나만 다음 줄로 떨어지지 않게 한다.
 const keepTail = (s: string) => s.replace(/ (\S+) (\S+)$/, ' $1 $2');
@@ -71,6 +76,20 @@ export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHe
   const reportHeight = (e: { nativeEvent: { layout: { height: number } } }) =>
     onHeightChange?.(Math.round(e.nativeEvent.layout.height));
   const messageText = keepTail(t(message.key, message.params));
+
+  // 부모가 위험구간·단계마다 key 를 줘서 이 컴포넌트는 새 경고마다 새로 마운트된다.
+  // 그래서 마운트 시 한 번만 읽으면 경고 단계가 바뀔 때마다(500m → 300m → 100m) 다시 읽힌다.
+  useEffect(() => {
+    let cancelled = false;
+    const locale = SPEECH_LOCALE[i18n.language] ?? SPEECH_LOCALE.ko;
+    resolveVoiceId(locale).then((voice) => {
+      if (!cancelled) Speech.speak(messageText, { language: locale, voice });
+    });
+    return () => {
+      cancelled = true;
+      Speech.stop();
+    };
+  }, []);
 
   const details = (
     <ScrollView style={{ maxHeight: height * 0.35 }} contentContainerStyle={styles.details}>

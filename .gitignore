@@ -41,6 +41,9 @@ htmlcov/
 *.onnx
 *.tflite
 
+# 공공데이터 원본·가공 결과 (scripts/import_speed_bumps.py 등). 대용량이라 Git에 안 올린다.
+backend/data/
+
 # IDE
 .idea/
 *.swp

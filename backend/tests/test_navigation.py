@@ -11,7 +11,7 @@ import pytest
 
 from app.navigation import routers as nav_routers
 from app.navigation.config import Settings as NavSettings
-from app.navigation.schemas import LatLng, RouteGuide, RouteOption, TransitRouteOption
+from app.navigation.schemas import LatLng, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption
 from app.navigation.service import (
     LONG_DISTANCE_KM_THRESHOLD,
     ROUTE_STYLE_SEARCH_OPTIONS,
@@ -89,7 +89,7 @@ class FakeStyledTmapProvider:
         if search_option in self.fail_options:
             raise RuntimeError("tmap 호출 실패")
         route = RouteOption(provider="tmap", distance_km=float(search_option), duration_min=1, path=[])
-        return route, ["option %s 안내" % search_option]
+        return route, [RouteInstruction(text="option %s 안내" % search_option)]
 
 
 def test_get_route_styles_calls_all_five_search_options():
@@ -108,7 +108,7 @@ def test_get_route_styles_drops_failed_styles():
 
 class FakePedestrianTmapProvider:
     async def get_pedestrian_route(self, origin, destination):
-        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[]), ["보행자도로를 따라 이동"]
+        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[]), [RouteInstruction(text="보행자도로를 따라 이동")]
 
 
 class FakeKakaoRoutingProvider:
@@ -117,11 +117,11 @@ class FakeKakaoRoutingProvider:
 
     async def get_bicycle_route(self, origin, destination):
         self.called_with.append("cycling")
-        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[]), ["자전거도로를 따라 이동"]
+        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[]), [RouteInstruction(text="자전거도로를 따라 이동")]
 
     async def get_transit_route(self, origin, destination):
         self.called_with.append("transit")
-        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[]), ["2호선 탑승"]
+        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[]), [RouteInstruction(text="2호선 탑승")]
 
 
 def test_get_mode_route_walking_uses_tmap_pedestrian():
@@ -148,10 +148,10 @@ class StubTmap:
 
     async def get_route_styled(self, origin, destination, search_option="0"):
         route = RouteOption(provider="tmap", distance_km=float(search_option), duration_min=2.0, path=[origin, destination])
-        return route, ["직진"]
+        return route, [RouteInstruction(text="직진")]
 
     async def get_pedestrian_route(self, origin, destination):
-        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[origin, destination]), ["도보 안내"]
+        return RouteOption(provider="tmap", distance_km=1.2, duration_min=15, path=[origin, destination]), [RouteInstruction(text="도보 안내")]
 
 
 class StubNaver:
@@ -169,10 +169,10 @@ class StubKakao:
         pass
 
     async def get_bicycle_route(self, origin, destination):
-        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[origin, destination]), ["자전거 안내"]
+        return RouteOption(provider="kakao", distance_km=3.4, duration_min=20, path=[origin, destination]), [RouteInstruction(text="자전거 안내")]
 
     async def get_transit_route(self, origin, destination):
-        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[origin, destination]), ["2호선 탑승"]
+        return RouteOption(provider="kakao", distance_km=5.6, duration_min=30, path=[origin, destination]), [RouteInstruction(text="2호선 탑승")]
 
     async def get_transit_routes(self, origin, destination):
         option = TransitRouteOption(
@@ -333,7 +333,7 @@ def test_parse_tmap_route_keeps_legacy_path_instructions_and_totals():
 
     route, instructions = parse_tmap_route(TMAP_PAYLOAD)
     path, legacy_instructions, km, minutes = _legacy_parse(TMAP_PAYLOAD)
-    assert route.path == path and instructions == legacy_instructions
+    assert route.path == path and [i.text for i in instructions] == legacy_instructions
     assert (route.distance_km, route.duration_min) == (km, minutes)
     assert route.provider == "tmap"
 
@@ -417,7 +417,9 @@ def test_tmap_provider_returns_guides_without_changing_the_request(monkeypatch, 
     else:
         route, instructions = asyncio.run(provider.get_pedestrian_route(SEOUL, NEARBY))
         assert "/tmap/routes/pedestrian" in sent[0][0]
-    assert len(route.guides) == 3 and instructions[0].startswith("세종대로")
+    assert len(route.guides) == 3 and instructions[0].text.startswith("세종대로")
+    # 안내 문구는 같은 Point 피처의 좌표(point)와 함께 온다(프런트 TTS 가 그 지점에서 읽는다)
+    assert instructions[0].point is not None
     assert len(sent) == 1  # 안내 지점을 얻으려고 Tmap 을 더 부르지 않는다
 
 
@@ -473,12 +475,12 @@ def test_http_include_guides_adds_guides_to_driving_and_walking_only(nav_client,
         route = RouteOption(provider="tmap", distance_km=1, duration_min=2, path=[origin, destination],
                             guides=[RouteGuide(index=0, lat=37.5665, lng=126.978, path_index=0, turn_type=12,
                                                description="좌회전", next_road_name="을지로", leg_distance_m=300)])
-        return route, ["직진"]
+        return route, [RouteInstruction(text="직진")]
 
     async def pedestrian(self, origin, destination):
         route = RouteOption(provider="tmap", distance_km=1, duration_min=2, path=[origin, destination],
                             guides=[RouteGuide(index=0, lat=37.5665, lng=126.978, path_index=0, turn_type=211)])
-        return route, ["도보"]
+        return route, [RouteInstruction(text="도보")]
 
     monkeypatch.setattr(StubTmap, "get_route_styled", styled)
     monkeypatch.setattr(StubTmap, "get_pedestrian_route", pedestrian)
@@ -502,7 +504,7 @@ def test_http_styles_limits_tmap_calls_for_reroute(nav_client, monkeypatch):
 
     async def recording(self, origin, destination, search_option="0"):
         calls.append(search_option)
-        return RouteOption(provider="tmap", distance_km=1, duration_min=2, path=[origin, destination]), ["직진"]
+        return RouteOption(provider="tmap", distance_km=1, duration_min=2, path=[origin, destination]), [RouteInstruction(text="직진")]
 
     monkeypatch.setattr(StubTmap, "get_route_styled", recording)
     response = nav_client.post("/navigation/route-styles", json={**BODY, "styles": ["recommended"]})

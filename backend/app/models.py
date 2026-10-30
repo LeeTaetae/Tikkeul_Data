@@ -150,6 +150,17 @@ class ProtectionZonesResponse(BaseModel):
     items: List[ProtectionZone]
 
 
+# --- 과속방지턱 (행정안전부 등록 현황, 로컬 데이터) ---------------------------------
+class SpeedBump(BaseModel):
+    id: str
+    location: GeoPoint
+
+
+class SpeedBumpsResponse(BaseModel):
+    meta: Meta
+    items: List[SpeedBump]
+
+
 # --- 지역(좌표 -> 시군구) ---------------------------------------------------
 class Region(BaseModel):
     sgg_cd: str = Field(description="현행 법정동코드 앞 5자리. 경찰청 보호구역 API 의 sggCd 로 쓴다")

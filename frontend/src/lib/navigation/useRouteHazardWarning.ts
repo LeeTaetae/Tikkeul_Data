@@ -31,6 +31,8 @@ interface Options {
   includeIncidents?: boolean;
   /** 개발용 가상 경로에서만 넘기는 예시 위험. 실제 경로(source 'api')에서는 쓰지 않는다 */
   sampleAlerts?: RoadAlert[];
+  /** 개발용 가상 경로에서만 넘기는 예시 보호구역(음성 확인용). 실제 경로에서는 쓰지 않는다 */
+  sampleZoneAlerts?: RoadAlert[];
 }
 
 export type HazardDataNotice = 'failed' | 'partial' | null;
@@ -45,13 +47,16 @@ export type HazardDataNotice = 'failed' | 'partial' | null;
  *
  * 한계: 보호구역 조회는 표본 조회라 전체 조회를 보장하지 않는다(coverage 'sampled'). 돌발정보는 현재 위치 주변(약 5km)만 받는다.
  */
-export function useRouteHazardWarning({ route, progressM, active, position = null, speedMps = null, includeIncidents = true, sampleAlerts }: Options) {
+export function useRouteHazardWarning({ route, progressM, active, position = null, speedMps = null, includeIncidents = true, sampleAlerts, sampleZoneAlerts }: Options) {
   const isApiRoute = route?.source === 'api';
   const mode = route?.mode ?? 'driving';
 
   // ── 어린이보호구역
   const zones = useRouteZones(route, isApiRoute);
-  const zoneAlerts = useMemo(() => (zones.status === 'done' ? childProtectionZonesToAlerts(zones.items) : []), [zones]);
+  const zoneAlerts = useMemo(() => {
+    if (route?.source === 'mock') return sampleZoneAlerts ?? [];
+    return zones.status === 'done' ? childProtectionZonesToAlerts(zones.items) : [];
+  }, [route?.source, sampleZoneAlerts, zones]);
 
   // 경로가 바뀔 때(안내 시작·재탐색)만 새로 만든다. 그래야 위험 데이터와 경로가 그대로인 렌더에서 매칭을 다시 돌리지 않는다.
   const hazardRoute = useMemo<Route | null>(
@@ -127,6 +132,10 @@ export function useRouteHazardWarning({ route, progressM, active, position = nul
   return {
     warning,
     dismiss,
+    /** 경로(좌표) — 팀 TTS 훅(useTurnInstructionSpeech 등)이 쓰는 Route 형태. route 가 바뀔 때만 새로 만들어진다 */
+    hazardRoute,
+    /** 경로 위로 판정된 보호구역(구역 전체 적용). 보호구역 과속 음성 경고(useSpeedingWarning)가 쓴다 */
+    zoneOnRoute,
     notice,
     zoneCoverage,
     rail,

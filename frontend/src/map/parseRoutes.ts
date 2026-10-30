@@ -1,5 +1,5 @@
 // 경로 응답 파서와 요청 본문 조립. 다른 모듈을 런타임 import 하지 않는 순수 함수라 Node 로도 테스트한다.
-import type { DrivingStyle, StyledRoute } from './navigationApi';
+import type { DrivingStyle, RouteInstruction, StyledRoute } from './navigationApi';
 import type { RoutePoint } from './types';
 
 // 회전·안내 지점 하나(백엔드 RouteGuide). 모르는 숫자 값은 응답에서 키가 빠지므로 optional 로 둔다. 없는 값을 추측해 채우지 않는다.
@@ -48,6 +48,22 @@ export function parseGuides(raw: unknown): RouteGuide[] | undefined {
   return guides;
 }
 
+// 턴바이턴 안내 문구. 백엔드는 {text, point}(point 는 안내 지점 좌표, 없을 수 있음)를 준다.
+// 옛 백엔드가 문자열 배열을 주면 {text, point: null} 로 받아 들인다(배포 순서가 엇갈려도 화면이 깨지지 않게). 글자가 없는 항목은 버린다.
+export function parseInstructions(raw: unknown): RouteInstruction[] {
+  if (!Array.isArray(raw)) return [];
+  const result: RouteInstruction[] = [];
+  for (const item of raw as any[]) {
+    if (typeof item === 'string') {
+      if (item) result.push({ text: item, point: null });
+    } else if (item && typeof item.text === 'string' && item.text) {
+      const p = item.point;
+      result.push({ text: item.text, point: p && isNum(p.lat) && isNum(p.lng) ? { lat: p.lat, lng: p.lng } : null });
+    }
+  }
+  return result;
+}
+
 export function parseRoutes(data: unknown): StyledRoute[] | null {
   const routes = (data as { routes?: unknown[] })?.routes;
   if (!Array.isArray(routes) || routes.length === 0) return null;
@@ -57,7 +73,7 @@ export function parseRoutes(data: unknown): StyledRoute[] | null {
       distanceKm: r.distance_km,
       durationMin: r.duration_min,
       path: r.path,
-      instructions: Array.isArray(r.instructions) ? r.instructions : [],
+      instructions: parseInstructions(r.instructions),
     };
     // 안내용 요청(include_guides)이 아니면 응답에 guides 키가 없다. 그때는 키 자체를 만들지 않는다.
     const guides = parseGuides(r.guides);

@@ -233,6 +233,8 @@ const en: Resources = {
       school_zone: 'A school zone is {{distance}} ahead. Slow down',
     },
     stage: { caution: 'Caution', approach: 'Warning', final: 'Final warning' },
+    speedBump: 'There is a speed bump ahead',
+    speedingSchoolZone: 'You are over the school zone speed limit of 30 km/h. Slow down',
     close: 'Close',
     detail: 'Details',
     collapse: 'Collapse',

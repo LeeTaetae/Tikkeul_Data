@@ -143,9 +143,16 @@ export interface PredictionsResponse extends ListResponse<PredictionItem> {
   forecast_for: string;
 }
 
+// --- 과속방지턱 ---
+export interface SpeedBump {
+  id: string;
+  location: GeoPoint;
+}
+
 export type IncidentsResponse = ListResponse<Incident>;
 export type CautionZonesResponse = ListResponse<CautionZone>;
 export type ProtectionZonesResponse = ListResponse<ProtectionZone>;
+export type SpeedBumpsResponse = ListResponse<SpeedBump>;
 
 /** 백엔드 오류 응답 본문 */
 export interface ApiErrorBody {

@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class LatLng(BaseModel):
-    lat: float
-    lng: float
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
 
 
 class RouteRequest(BaseModel):
@@ -41,6 +41,12 @@ class RouteOption(BaseModel):
     guides: list[RouteGuide] = Field(default_factory=list, exclude=True)
 
 
+# 턴바이턴 안내 한 토막. point 가 있으면 그 지점 근처에서 TTS 로 읽을 수 있다(없으면 텍스트만 표시).
+class RouteInstruction(BaseModel):
+    text: str
+    point: Optional[LatLng] = None
+
+
 class NavigationResponse(BaseModel):
     routes: list[RouteOption]
 
@@ -65,7 +71,7 @@ class StyledRoute(BaseModel):
     distance_km: float
     duration_min: float
     path: list[LatLng]
-    instructions: list[str] = []
+    instructions: list[RouteInstruction] = []
     # include_guides 요청일 때만 채워진다(응답에서 키 자체가 빠진다). 자전거·대중교통은 지원하지 않아 항상 빠진다.
     guides: Optional[list[RouteGuide]] = None
 

@@ -34,3 +34,31 @@ export const RAIL_TEST_ALERTS: RoadAlert[] = [
 
 /** 기존 가상 위험 3건 + 레일 확인용 4건 */
 export const RAIL_TEST_SAMPLES: RoadAlert[] = [...MOCK_ALERTS, ...RAIL_TEST_ALERTS];
+
+// ───────────── 음성(TTS) 확인용 가상 데이터 ─────────────
+// /navigation?test=replay 에서만 쓴다. 실제 안내 문구·실제 방지턱·실제 보호구역이 아니다. 문구에 "(테스트)"를 붙여 구분한다.
+
+/** 가상 경로 A 의 꼭짓점(안내 지점)마다 하나씩. point 가 있어야 팀 TTS 가 그 지점 근처에서 읽는다 */
+export const TEST_INSTRUCTIONS = MOCK_ROUTE_A.points.map((p, i) => ({
+  text: `(테스트) ${i + 1}번째 안내 지점입니다`,
+  point: { lat: p.latitude, lng: p.longitude },
+}));
+
+/** 가상 경로 A 위의 과속방지턱(두 번째 구간의 중간) */
+export const TEST_SPEED_BUMPS = [{ lat: mid(1).latitude, lng: mid(1).longitude }];
+
+/** 가상 어린이보호구역(세 번째 구간의 중간). 가상 재생은 시속 약 144km 로 달려 과속 음성 경고가 나온다 */
+export const TEST_SCHOOL_ZONES: RoadAlert[] = [
+  {
+    id: 's-school-zone',
+    eventKey: 's-school-zone',
+    type: 'school_zone',
+    severity: 'caution',
+    location: '예시: 가상 어린이보호구역',
+    description: '개발용 예시 보호구역입니다. 실제 보호구역이 아닙니다.',
+    updatedAt: '',
+    isSample: true,
+    omnidirectional: true,
+    ...mid(2),
+  },
+];

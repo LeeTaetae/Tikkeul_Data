@@ -7,7 +7,7 @@
 //  - ETA 는 "기존 경로 소요시간 × 남은 거리 비율"의 근사값이다. 실시간 교통을 반영하지 않는다.
 //  - 경로 매칭은 좌표 기하만 쓴다. 평행한 인접 도로·고가/지하 분리 도로를 구분하지 못한다.
 import type { RouteGuide } from '../../map/parseRoutes';
-import type { StyledRoute } from '../../map/navigationApi';
+import type { RouteInstruction, StyledRoute } from '../../map/navigationApi';
 import type { LocationFailure } from '../location/failure';
 
 // ───────────────────────── 1. 타입·정책 ─────────────────────────
@@ -32,6 +32,8 @@ export interface NavRoute {
   durationSec?: number;
   /** include_guides 로 받았을 때만 있다. 없으면 다음 회전 안내는 만들지 않는다 */
   guides?: RouteGuide[];
+  /** 턴바이턴 안내 문구와 안내 지점(point). 팀 TTS(useTurnInstructionSpeech)가 그 지점 근처에서 읽는다 */
+  instructions?: RouteInstruction[];
 }
 
 export interface Fix {
@@ -187,7 +189,7 @@ export function initialState(routeId: string): GuidanceState {
 export function toNavRoute(route: StyledRoute, mode: GuidanceMode, id: string, source: NavRoute['source'] = 'api'): NavRoute {
   const durationSec = route.durationMin > 0 ? route.durationMin * 60 : undefined;
   const distanceM = route.distanceKm > 0 ? route.distanceKm * 1000 : undefined;
-  return { id, source, mode, path: route.path, distanceM, durationSec, guides: route.guides };
+  return { id, source, mode, path: route.path, distanceM, durationSec, guides: route.guides, instructions: route.instructions };
 }
 
 // ───────────────────────── 2. 기하 ─────────────────────────

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions, type LayoutChan
 import { Crosshair } from 'lucide-react-native';
 import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
@@ -14,7 +15,7 @@ import { Card } from '../src/components/ui/Card';
 import { RoundButton } from '../src/components/ui/RoundButton';
 import { createReplayPort, replayFixes, replayRerouteFrom } from '../src/dev/guidanceReplay';
 import { MOCK_ROUTE_A } from '../src/dev/mockRoute';
-import { RAIL_TEST_SAMPLES } from '../src/dev/railSamples';
+import { RAIL_TEST_SAMPLES, TEST_INSTRUCTIONS, TEST_SCHOOL_ZONES, TEST_SPEED_BUMPS } from '../src/dev/railSamples';
 import { fitVisible, splitRail } from '../src/lib/hazardRail';
 import { displayEta } from '../src/lib/navigation/guidanceDisplay';
 import type { LatLng, NavRoute, TrackingView } from '../src/lib/navigation/guidanceEngine';
@@ -22,6 +23,10 @@ import { toNavRoute } from '../src/lib/navigation/guidanceEngine';
 import { clearGuidanceRequest, getGuidanceRequest, type GuidanceRequest } from '../src/lib/navigation/guidanceSession';
 import { useGuidanceTracking } from '../src/lib/navigation/useGuidanceTracking';
 import { useRouteHazardWarning } from '../src/lib/navigation/useRouteHazardWarning';
+import { useRouteSpeedBumps } from '../src/lib/navigation/useRouteSpeedBumps';
+import { useSpeedBumpSpeech } from '../src/lib/useSpeedBumpSpeech';
+import { useSpeedingWarning } from '../src/lib/useSpeedingWarning';
+import { useTurnInstructionSpeech } from '../src/lib/useTurnInstructionSpeech';
 import { KakaoMap } from '../src/map/KakaoMap';
 import { fetchGuidanceRoute } from '../src/map/navigationApi';
 import type { KakaoMapHandle } from '../src/map/types';
@@ -67,7 +72,7 @@ const newRouteId = () => `nav-${Date.now()}-${++routeSeq}`;
 // 별도 길안내 화면. 홈에서 고른 조건(guidanceSession)으로 안내용 경로(guides 포함)를 받고, GPS 추적 결과를 지도·회전 안내·위험 경고에 반영한다.
 // 탭 화면은 다른 곳으로 가도 마운트가 유지되므로, 화면이 포커스일 때만 위치를 추적한다(useIsFocused).
 export default function NavigationScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
@@ -84,6 +89,7 @@ export default function NavigationScreen() {
             path: MOCK_ROUTE_A.points.map((p) => ({ lat: p.latitude, lng: p.longitude })),
             durationSec: 900,
             guides: TEST_GUIDES,
+            instructions: TEST_INSTRUCTIONS,
           }
         : null,
     [scenario],
@@ -213,7 +219,25 @@ export default function NavigationScreen() {
     position: position ? { lat: position.lat, lng: position.lng, accuracyM: position.accuracyM } : null,
     speedMps: snapshot?.speedMps ?? null,
     sampleAlerts: route?.source === 'mock' ? RAIL_TEST_SAMPLES : undefined,
+    sampleZoneAlerts: route?.source === 'mock' ? TEST_SCHOOL_ZONES : undefined,
   });
+
+  // 음성 안내(팀 main 의 TTS 훅을 그대로 재사용). 길안내 중(첫 위치를 받은 뒤, 도착 전)이고 화면이 포커스일 때만 켠다.
+  // routeKey 는 경로 id 라서, 재탐색으로 새 경로가 오면 훅 안의 "이미 읽은 지점" 기록이 비워진다.
+  const speechActive = focused && status === 'ready' && position !== null && !arrived;
+  const speechProgressM = snapshot?.progressM ?? 0;
+  const speechRouteKey = route?.id ?? '';
+  const apiSpeedBumps = useRouteSpeedBumps(route?.source === 'api' ? route.path : null);
+  useTurnInstructionSpeech({ active: speechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, instructions: route?.instructions ?? [], progressM: speechProgressM, language: i18n.language });
+  useSpeedBumpSpeech({ active: speechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, bumps: route?.source === 'mock' ? TEST_SPEED_BUMPS : apiSpeedBumps, progressM: speechProgressM });
+  // 속도는 엔진이 최근 위치로 추정한 값(m/s → km/h). 모르면 null 이라 과속 경고를 내지 않는다(팀 정책과 같다).
+  useSpeedingWarning({ active: speechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, zones: hazard.zoneOnRoute, progressM: speechProgressM, speedKmh: snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null });
+
+  // 화면을 떠나거나 닫히면 읽던 음성을 멈춘다(탭 화면은 마운트가 유지되므로 포커스를 잃을 때도).
+  useEffect(() => {
+    if (!focused) void Speech.stop();
+  }, [focused]);
+  useEffect(() => () => void Speech.stop(), []);
 
   // 경로: 지도가 준비되면(또는 경로가 바뀌면) 그린다. 현재 위치를 이미 알면 지도를 옮기지 않는다(재탐색 중 자동 추적을 방해하지 않게).
   useEffect(() => {
@@ -234,6 +258,7 @@ export default function NavigationScreen() {
   }, [mapReady, position, following]);
 
   const onEnd = () => {
+    void Speech.stop(); // 안내를 끝내면 읽던 음성도 멈춘다
     clearGuidanceRequest();
     loadedRef.current = null;
     requestRef.current = null;
@@ -297,7 +322,8 @@ export default function NavigationScreen() {
       {/* 위험 경고는 하단 패널 바로 위에 올려놓는다(NavigationHazardAlert 의 bottomOffset). */}
       {showAlert && hazard.warning && (
         <NavigationHazardAlert
-          key={`${hazard.warning.alert.id}:${hazard.warning.stage}`}
+          // 같은 사건·같은 단계는 문구(id 는 문구 해시)가 바뀌어도 다시 마운트되지 않게 eventKey 로 구분한다(마운트될 때 음성으로 읽기 때문)
+          key={`${hazard.warning.alert.eventKey || hazard.warning.alert.id}:${hazard.warning.stage}`}
           warning={hazard.warning}
           bottomOffset={Math.max(0, panelTop - space.md)}
           onHeightChange={setAlertHeight}
