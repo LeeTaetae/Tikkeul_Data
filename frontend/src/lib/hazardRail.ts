@@ -81,7 +81,15 @@ export function splitRail(items: RailItem[], visibleCount: number): { visible: R
 export function fitVisible(total: number, availablePx: number, itemPx: number, overflowPx: number, max: number = RAIL_MAX_VISIBLE): number {
   let n = Math.min(max, total);
   while (n > 0 && n * itemPx + (total > n ? overflowPx : 0) > availablePx) n--;
+  // 아이콘이 하나도 못 들어가서 "+N" 만 남는 일은 없게 한다: 아이콘 하나 들어갈 공간이 있으면 그 하나는 보이고,
+  // +N 알약이 못 들어가면 화면이 그 개수를 아이콘 위 배지로 대신 보여준다(overflowFits).
+  if (n === 0 && total > 0 && availablePx >= itemPx) return 1;
   return n;
+}
+
+/** +N 알약이 아이콘들과 함께 들어가는지. 안 들어가면 마지막 아이콘 위 배지로 보여준다 */
+export function overflowFits(total: number, visibleCount: number, availablePx: number, itemPx: number, overflowPx: number): boolean {
+  return total <= visibleCount || visibleCount * itemPx + overflowPx <= availablePx;
 }
 
 /**

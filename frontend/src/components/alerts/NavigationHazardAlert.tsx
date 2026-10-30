@@ -59,13 +59,16 @@ interface Props {
   bottomOffset?: number;
   // 경고 카드가 실제로 차지하는 높이. 상세 보기를 펴면 커지므로, 부모가 그 위쪽 여유를 계산할 때 쓴다.
   onHeightChange?: (height: number) => void;
+  // 가로 화면처럼 폭이 넓고 낮은 화면에서 오른쪽 열에 붙이기 위한 정렬·최대 폭. 기본은 가운데 정렬, 폭 MAX_CONTENT_WIDTH.
+  align?: 'center' | 'end';
+  maxWidth?: number;
 }
 
 // 지도 위 하단에 뜨는 위험 경고. 단계에 따라 모양이 다르다.
 // - advance(500m 보다 먼 경로 사전 알림): 작은 흰 카드. 정보 전달용이라 색 띠를 쓰지 않는다.
 // - caution·approach·final(500·300·100m): 유형 색 띠 팝업.
 // 둘 다 "상세 보기"로 같은 자리에서 펼친다. 부모가 위험구간·단계마다 key 를 주면 새 경고는 접힌 채로 시작한다.
-export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHeightChange }: Props) {
+export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHeightChange, align = 'center', maxWidth }: Props) {
   const { t, i18n } = useTranslation();
   const { height } = useWindowDimensions();
   const [expanded, setExpanded] = useState(false);
@@ -79,15 +82,25 @@ export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHe
 
   // 부모가 위험구간·단계마다 key 를 줘서 이 컴포넌트는 새 경고마다 새로 마운트된다.
   // 그래서 마운트 시 한 번만 읽으면 경고 단계가 바뀔 때마다(500m → 300m → 100m) 다시 읽힌다.
+  // 정리할 때 Speech.stop() 은 웹에서 speechSynthesis.cancel() 이라 "모든" 음성을 취소한다(턴 안내·과속방지턱·과속 경고 포함).
+  // 그래서 이 경고의 음성이 아직 읽히는 중일 때만 멈춘다. 이미 끝났다면(onDone) 멈출 것이 없고, 부르면 다른 안내만 끊긴다.
+  // 취소된 음성은 onDone 이 아니라 onError 로 끝나므로, 세 경우(끝남·중단·오류) 모두 "끝난 것"으로 본다.
   useEffect(() => {
     let cancelled = false;
+    let spoke = false;
+    let settled = false;
     const locale = SPEECH_LOCALE[i18n.language] ?? SPEECH_LOCALE.ko;
     resolveVoiceId(locale).then((voice) => {
-      if (!cancelled) Speech.speak(messageText, { language: locale, voice });
+      if (cancelled) return;
+      spoke = true;
+      const settle = () => {
+        settled = true;
+      };
+      Speech.speak(messageText, { language: locale, voice, onDone: settle, onStopped: settle, onError: settle });
     });
     return () => {
       cancelled = true;
-      Speech.stop();
+      if (spoke && !settled) Speech.stop();
     };
   }, []);
 
@@ -115,8 +128,8 @@ export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHe
   if (stage === 'advance') {
     const s = TYPE_STYLE[alert.type];
     return (
-      <View style={[styles.layer, { paddingBottom: space.lg + bottomOffset }]}>
-        <View style={styles.advance} accessibilityLiveRegion="polite" onLayout={reportHeight}>
+      <View style={[styles.layer, { paddingBottom: space.lg + bottomOffset }, align === 'end' && styles.layerEnd]}>
+        <View style={[styles.advance, maxWidth ? { maxWidth } : null]} accessibilityLiveRegion="polite" onLayout={reportHeight}>
           <View style={styles.advanceRow}>
             <View style={[styles.advanceTile, { backgroundColor: s.tint }]}>
               <TypeIcon type={alert.type} color={s.accent} />
@@ -145,8 +158,8 @@ export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHe
 
   const pill = STAGE_PILL[stage];
   return (
-    <View style={[styles.layer, { paddingBottom: space.lg + bottomOffset }]}>
-      <View style={styles.card} accessibilityRole="alert" accessibilityLiveRegion="assertive" onLayout={reportHeight}>
+    <View style={[styles.layer, { paddingBottom: space.lg + bottomOffset }, align === 'end' && styles.layerEnd]}>
+      <View style={[styles.card, maxWidth ? { maxWidth } : null]} accessibilityRole="alert" accessibilityLiveRegion="assertive" onLayout={reportHeight}>
         <View style={[styles.band, { backgroundColor: band.bg }]}>
           <TypeIcon type={alert.type} color={band.fg} />
           <Text style={[styles.message, { color: band.fg }]}>{messageText}</Text>
@@ -197,6 +210,7 @@ const styles = StyleSheet.create({
     paddingBottom: space.lg,
     pointerEvents: 'box-none',
   },
+  layerEnd: { alignItems: 'flex-end' },
   close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 
   // 사전 알림(작은 흰 카드)

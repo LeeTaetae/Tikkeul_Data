@@ -27,10 +27,14 @@ function Row({ label, children }: { label: string; children: string }) {
 interface Props {
   item: RailItem;
   onClose: () => void;
+  /** 최대 폭. 기본 360 — 가로 화면에서는 다른 요소와 겹치지 않게 줄여서 넘긴다 */
+  maxWidth?: number;
+  /** 본문(스크롤 영역)의 최대 높이. 기본 260 — 낮은 화면에서는 남은 높이에 맞춰 줄여서 넘긴다(아래가 잘리지 않게) */
+  maxBodyHeight?: number;
 }
 
 // 위험 아이콘을 눌렀을 때 레일 옆에 뜨는 간단한 상세. 있는 정보만 보여주고, 없는 값은 지어내지 않는다.
-export function HazardDetail({ item, onClose }: Props) {
+export function HazardDetail({ item, onClose, maxWidth, maxBodyHeight = 260 }: Props) {
   const { t, i18n } = useTranslation();
   const detail = describeHazard(item);
   const style = TYPE_STYLE[item.type];
@@ -40,7 +44,7 @@ export function HazardDetail({ item, onClose }: Props) {
   const reasonKnown = detail.unverifiedReason !== null && REASONS_WITH_TEXT.includes(detail.unverifiedReason);
 
   return (
-    <View style={styles.panel} accessibilityRole="summary">
+    <View style={[styles.panel, maxWidth ? { maxWidth } : null]} accessibilityRole="summary">
       <View style={styles.header}>
         <View style={[styles.tile, { backgroundColor: style.tint }]}>
           <TypeIcon type={item.type} color={style.accent} />
@@ -56,7 +60,7 @@ export function HazardDetail({ item, onClose }: Props) {
         <RoundButton icon={X} label={t('nav.rail.close')} variant="soft" size={44} onPress={onClose} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
+      <ScrollView style={{ maxHeight: maxBodyHeight }} contentContainerStyle={styles.body}>
         <Row label={t('nav.rail.distanceLabel')}>{t('nav.rail.ahead', { distance: formatDistance(item.distanceM) })}</Row>
         <Row label={t('nav.rail.locationLabel')}>{text.location || t('alerts.unknownPlace')}</Row>
         <Row label={t('nav.rail.priorityLabel')}>{t(`nav.rail.priority.${item.priority}`)}</Row>
@@ -87,7 +91,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, lineHeight: 16, fontWeight: '800' },
   chipTextConfirmed: { color: colors.guide },
   chipTextProbable: { color: colors.ink },
-  scroll: { maxHeight: 260 },
   body: { gap: space.sm, paddingHorizontal: space.md, paddingBottom: space.md },
   row: { gap: 1 },
   label: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: colors.muted },

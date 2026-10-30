@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { prioritizeHazards } from '../src/lib/hazardPriority.ts';
-import { buildHazardRail, describeHazard, fitVisible, RAIL_MAX_VISIBLE, registryZoneInput, splitRail } from '../src/lib/hazardRail.ts';
+import { buildHazardRail, describeHazard, fitVisible, overflowFits, RAIL_MAX_VISIBLE, registryZoneInput, splitRail } from '../src/lib/hazardRail.ts';
 import { classifyIncidentOnRoute } from '../src/lib/routeHazards.ts';
 
 const M = 111320;
@@ -166,7 +166,8 @@ test('레일 개수는 쓸 수 있는 세로 공간에 맞춰 줄어들고(+N �
   assert.equal(fitVisible(5, 400, 84, 36), 3);
   assert.equal(fitVisible(5, 250, 84, 36), 2); // 2*84+36 = 204 ≤ 250, 3개는 288 > 250
   assert.equal(fitVisible(5, 130, 84, 36), 1);
-  assert.equal(fitVisible(5, 100, 84, 36), 0);
+  assert.equal(fitVisible(5, 100, 84, 36), 1); // 아이콘 하나 들어갈 공간이면 "+N" 만 남기지 않고 아이콘 하나는 보인다
+  assert.equal(fitVisible(5, 60, 84, 36), 0); // 하나도 못 들어가면 0(화면은 레일을 숨긴다)
   assert.equal(fitVisible(2, 170, 84, 36), 2); // +N 이 필요 없으면 그 높이를 빼지 않는다
   assert.equal(fitVisible(0, 500, 84, 36), 0);
   assert.equal(RAIL_MAX_VISIBLE, 3);
@@ -177,4 +178,17 @@ test('이미 확정된 긴급 경고 대상은 레일 표시와 무관하다: pr
   const urgent = ranked.filter((h) => h.urgentEligible).map((h) => h.alert.id);
   assert.deepEqual(urgent, ['sure']);
   assert.equal(buildHazardRail(ranked).length, 2); // 레일에는 둘 다 보인다
+});
+
+test('+N 알약이 안 들어가면 배지로 대신한다: overflowFits', () => {
+  assert.equal(overflowFits(5, 3, 400, 84, 36), true); // 3*84+36 = 288 ≤ 400
+  assert.equal(overflowFits(5, 1, 100, 84, 36), false); // 84+36 = 120 > 100 → 아이콘 위 배지로
+  assert.equal(overflowFits(2, 2, 100, 84, 36), true); // 넘치는 것이 없으면 알약이 필요 없다
+  assert.equal(overflowFits(0, 0, 0, 84, 36), true);
+});
+
+test('작은 화면(낮은 높이): 320×640 에서 경고 카드가 떴을 때도 아이콘이 하나 이상 남는다', () => {
+  // 대략의 값: 레일 시작 210, 하단 예약 = 패널 134 + 경고 190 + 여백 → 사용 가능 높이 74, 작은 아이콘 한 칸 74
+  assert.equal(fitVisible(6, 74, 74, 36), 1);
+  assert.equal(overflowFits(6, 1, 74, 74, 36), false); // 알약은 못 들어가 배지로
 });

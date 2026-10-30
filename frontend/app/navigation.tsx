@@ -7,7 +7,7 @@ import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
-import { HazardRail, RAIL_ITEM_HEIGHT, RAIL_OVERFLOW_HEIGHT } from '../src/components/navigation/HazardRail';
+import { HazardRail, RAIL_ITEM_HEIGHT, RAIL_ITEM_HEIGHT_COMPACT, RAIL_OVERFLOW_HEIGHT } from '../src/components/navigation/HazardRail';
 import { NavBottomPanel } from '../src/components/navigation/NavBottomPanel';
 import { NavStatus } from '../src/components/navigation/NavStatus';
 import { TurnCard } from '../src/components/navigation/TurnCard';
@@ -16,13 +16,15 @@ import { RoundButton } from '../src/components/ui/RoundButton';
 import { createReplayPort, replayFixes, replayRerouteFrom } from '../src/dev/guidanceReplay';
 import { MOCK_ROUTE_A } from '../src/dev/mockRoute';
 import { RAIL_TEST_SAMPLES, TEST_INSTRUCTIONS, TEST_SCHOOL_ZONES, TEST_SPEED_BUMPS } from '../src/dev/railSamples';
-import { fitVisible, splitRail } from '../src/lib/hazardRail';
+import { TTS_TEST_ALERTS, TTS_TEST_INSTRUCTIONS, TTS_TEST_PATH, TTS_TEST_SPEED_BUMPS, TTS_TEST_ZONES } from '../src/dev/ttsScenario';
+import { fitVisible, overflowFits, splitRail } from '../src/lib/hazardRail';
 import { displayEta } from '../src/lib/navigation/guidanceDisplay';
 import type { LatLng, NavRoute, TrackingView } from '../src/lib/navigation/guidanceEngine';
 import { toNavRoute } from '../src/lib/navigation/guidanceEngine';
 import { clearGuidanceRequest, getGuidanceRequest, type GuidanceRequest } from '../src/lib/navigation/guidanceSession';
 import { useGuidanceTracking } from '../src/lib/navigation/useGuidanceTracking';
 import { useRouteHazardWarning } from '../src/lib/navigation/useRouteHazardWarning';
+import { dedupeSpokenInstructions } from '../src/lib/navigation/speechInstructions';
 import { useRouteSpeedBumps } from '../src/lib/navigation/useRouteSpeedBumps';
 import { useSpeedBumpSpeech } from '../src/lib/useSpeedBumpSpeech';
 import { useSpeedingWarning } from '../src/lib/useSpeedingWarning';
@@ -36,6 +38,9 @@ import { MAX_CONTENT_WIDTH, colors, radius, space } from '../src/theme';
 const MAX_AUTO_REROUTE_FAILURES = 3;
 // 길안내 시작 시 지도 확대 수준(카카오 level: 작을수록 확대)
 const FOLLOW_LEVEL = 3;
+// 새 위험 경고가 음성으로 읽히는 동안(대략 이 시간) 일반 안내(턴·방지턱·과속)는 읽지 않고 기다린다. 경고가 우선이다.
+// 기다린 안내는 아직 지나치지 않았다면 이 시간이 지난 뒤 읽힌다(훅이 읽은 지점으로 기록하지 않았기 때문).
+const ALERT_SPEECH_QUIET_MS = 3500;
 
 type Status = 'noRequest' | 'loading' | 'error' | 'ready';
 type RerouteState = 'idle' | 'loading' | 'failed';
@@ -78,7 +83,7 @@ export default function NavigationScreen() {
   const focused = useIsFocused();
   const params = useLocalSearchParams<{ test?: string }>();
   // 개발용 가상 GPS 재생. 실제 위치·실제 경로가 아니며, 켜면 화면에 테스트 모드 표시가 뜬다.
-  const scenario = __DEV__ && (params.test === 'replay' || params.test === 'offroute' || params.test === 'rerouteFail') ? params.test : null;
+  const scenario = __DEV__ && (params.test === 'replay' || params.test === 'offroute' || params.test === 'rerouteFail' || params.test === 'tts') ? params.test : null;
   const testRoute = useMemo<NavRoute | null>(
     () =>
       scenario
@@ -86,15 +91,24 @@ export default function NavigationScreen() {
             id: `test-${scenario}`,
             source: 'mock',
             mode: 'driving',
-            path: MOCK_ROUTE_A.points.map((p) => ({ lat: p.latitude, lng: p.longitude })),
-            durationSec: 900,
-            guides: TEST_GUIDES,
-            instructions: TEST_INSTRUCTIONS,
+            path: scenario === 'tts' ? TTS_TEST_PATH : MOCK_ROUTE_A.points.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+            durationSec: scenario === 'tts' ? 65 : 900,
+            guides: scenario === 'tts' ? undefined : TEST_GUIDES,
+            instructions: scenario === 'tts' ? TTS_TEST_INSTRUCTIONS : TEST_INSTRUCTIONS,
           }
         : null,
     [scenario],
   );
-  const replayPort = useMemo(() => (testRoute && scenario ? createReplayPort(replayFixes(testRoute.path, scenario)) : undefined), [testRoute, scenario]);
+  // tts 시나리오는 실제 속도(시속 약 50km = 0.5초마다 7m)로 실시간 재생한다. 나머지는 빠르게 재생한다.
+  const replayPort = useMemo(
+    () =>
+      testRoute && scenario
+        ? scenario === 'tts'
+          ? createReplayPort(replayFixes(testRoute.path, scenario, 7, 0, 500), 500)
+          : createReplayPort(replayFixes(testRoute.path, scenario))
+        : undefined,
+    [testRoute, scenario],
+  );
 
   const mapRef = useRef<KakaoMapHandle>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -109,7 +123,7 @@ export default function NavigationScreen() {
   // 위험 레일: 위쪽 카드들의 높이(레일은 그 아래에서 시작), 선택한 위험(상세 패널)
   const [topHeight, setTopHeight] = useState(0);
   const [selectedHazard, setSelectedHazard] = useState<string | null>(null);
-  const { height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const requestRef = useRef<GuidanceRequest | null>(null);
   // 마지막으로 불러온 (요청, 시도 횟수). 같은 값이면 탭을 갔다 와도 다시 불러오지 않는다.
@@ -218,8 +232,8 @@ export default function NavigationScreen() {
     active: status === 'ready' && position !== null && !arrived,
     position: position ? { lat: position.lat, lng: position.lng, accuracyM: position.accuracyM } : null,
     speedMps: snapshot?.speedMps ?? null,
-    sampleAlerts: route?.source === 'mock' ? RAIL_TEST_SAMPLES : undefined,
-    sampleZoneAlerts: route?.source === 'mock' ? TEST_SCHOOL_ZONES : undefined,
+    sampleAlerts: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_ALERTS : RAIL_TEST_SAMPLES) : undefined,
+    sampleZoneAlerts: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_ZONES : TEST_SCHOOL_ZONES) : undefined,
   });
 
   // 음성 안내(팀 main 의 TTS 훅을 그대로 재사용). 길안내 중(첫 위치를 받은 뒤, 도착 전)이고 화면이 포커스일 때만 켠다.
@@ -228,10 +242,35 @@ export default function NavigationScreen() {
   const speechProgressM = snapshot?.progressM ?? 0;
   const speechRouteKey = route?.id ?? '';
   const apiSpeedBumps = useRouteSpeedBumps(route?.source === 'api' ? route.path : null);
-  useTurnInstructionSpeech({ active: speechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, instructions: route?.instructions ?? [], progressM: speechProgressM, language: i18n.language });
-  useSpeedBumpSpeech({ active: speechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, bumps: route?.source === 'mock' ? TEST_SPEED_BUMPS : apiSpeedBumps, progressM: speechProgressM });
+  // 읽을 턴 안내: 같은 위치·같은 거리의 "도로명, 거리" 요약 줄(직전 턴 문구와 같은 뜻)만 뺀다. 문구는 원문 그대로다.
+  const speechInstructions = useMemo(() => dedupeSpokenInstructions(route?.instructions ?? []), [route]);
+
+  // 위험 경고 음성이 우선이다. 새 경고(위험·단계가 바뀔 때)가 뜨면 잠시 일반 안내를 보류해, 경고와 일반 안내가 같은 순간에 겹쳐 읽히거나
+  // 서로 끊기지 않게 한다. 일반 안내 훅은 active 가 꺼진 동안 "읽은 지점"으로 기록하지 않으므로 보류된 안내는 나중에 읽힌다.
+  const alertSpeechKey = hazard.warning ? `${hazard.warning.alert.eventKey || hazard.warning.alert.id}:${hazard.warning.stage}` : '';
+  const alertQuietUntil = useRef(0);
+  const lastAlertSpeechKey = useRef('');
+  if (alertSpeechKey !== lastAlertSpeechKey.current) {
+    lastAlertSpeechKey.current = alertSpeechKey;
+    if (alertSpeechKey) alertQuietUntil.current = Date.now() + ALERT_SPEECH_QUIET_MS;
+  }
+  const generalSpeechActive = speechActive && Date.now() >= alertQuietUntil.current;
+
+  useTurnInstructionSpeech({ active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, instructions: speechInstructions, progressM: speechProgressM, language: i18n.language });
+  useSpeedBumpSpeech({ active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, bumps: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_SPEED_BUMPS : TEST_SPEED_BUMPS) : apiSpeedBumps, progressM: speechProgressM });
   // 속도는 엔진이 최근 위치로 추정한 값(m/s → km/h). 모르면 null 이라 과속 경고를 내지 않는다(팀 정책과 같다).
-  useSpeedingWarning({ active: speechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, zones: hazard.zoneOnRoute, progressM: speechProgressM, speedKmh: snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null });
+  useSpeedingWarning({ active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, zones: hazard.zoneOnRoute, progressM: speechProgressM, speedKmh: snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null });
+
+  // 재탐색으로 새 경로가 오면 이전 경로의 읽는 중·대기 중 음성을 모두 취소한다(새 경로의 안내만 읽도록). 처음 경로를 받을 때는 취소하지 않는다.
+  const lastSpeechRouteId = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = lastSpeechRouteId.current;
+    lastSpeechRouteId.current = route?.id ?? null;
+    if (previous && route?.id && previous !== route.id) {
+      alertQuietUntil.current = 0;
+      void Speech.stop();
+    }
+  }, [route?.id]);
 
   // 화면을 떠나거나 닫히면 읽던 음성을 멈춘다(탭 화면은 마운트가 유지되므로 포커스를 잃을 때도).
   useEffect(() => {
@@ -299,6 +338,12 @@ export default function NavigationScreen() {
   const eta = etaSec === undefined ? null : displayEta(etaSec, Date.now());
 
   const ready = status === 'ready';
+  // 가로 화면(넓고 낮음)에서는 왼쪽 열(회전 카드·상태·레일)과 오른쪽 열(경고·하단 패널)로 나눠 서로 겹치지 않게 한다.
+  // 낮은 화면(세로 700px 미만 또는 가로)에서는 하단 패널과 레일 아이콘을 작게 한다. 390×844 같은 기본 화면은 그대로다.
+  const sideBySide = windowWidth >= 640 && windowHeight < 560;
+  const compactLayout = sideBySide || windowHeight < 700;
+  const colWidth = sideBySide ? Math.min(380, Math.floor(windowWidth * 0.44)) : MAX_CONTENT_WIDTH;
+  const itemHeight = compactLayout ? RAIL_ITEM_HEIGHT_COMPACT : RAIL_ITEM_HEIGHT;
   const panelH = ready ? panelHeight : 0;
   const panelTop = insets.bottom + space.md + panelH;
   const showAlert = ready && hazard.warning !== null;
@@ -306,10 +351,14 @@ export default function NavigationScreen() {
   // 위험 레일: 엔진이 정한 순서 그대로, 쓸 수 있는 세로 공간에 맞춰 최대 3개 + 나머지는 +N.
   // 첫 위치를 받기 전에는 진행 거리를 몰라 위험까지 거리가 의미 없으므로 보이지 않는다.
   const railTop = topHeight + space.sm;
-  const railBottomReserve = panelTop + space.sm + (showAlert ? alertHeight + space.sm : 0) + space.sm;
-  const railCount = fitVisible(hazard.rail.length, windowHeight - railTop - railBottomReserve, RAIL_ITEM_HEIGHT, RAIL_OVERFLOW_HEIGHT);
+  // 가로 화면에서는 경고·패널이 오른쪽 열이라 레일 아래쪽을 차지하지 않는다.
+  const railBottomReserve = sideBySide ? insets.bottom + space.md : panelTop + space.sm + (showAlert ? alertHeight + space.sm : 0) + space.sm;
+  const railAvailable = windowHeight - railTop - railBottomReserve;
+  const railCount = fitVisible(hazard.rail.length, railAvailable, itemHeight, RAIL_OVERFLOW_HEIGHT);
+  const railPillFits = overflowFits(hazard.rail.length, railCount, railAvailable, itemHeight, RAIL_OVERFLOW_HEIGHT);
   const { visible: railVisible, overflow: railOverflow } = splitRail(hazard.rail, railCount);
-  const showRail = ready && !arrived && position !== null && (railVisible.length > 0 || railOverflow > 0);
+  // 아이콘이 하나도 못 들어가면 레일을 숨긴다("+N" 만 덩그러니 남지 않게).
+  const showRail = ready && !arrived && position !== null && railVisible.length > 0;
   // 선택한 위험이 지나갔거나 목록에서 빠지면 상세 패널은 저절로 닫힌다.
   const activeHazard = railVisible.some((i) => i.key === selectedHazard) ? selectedHazard : null;
 
@@ -323,7 +372,9 @@ export default function NavigationScreen() {
       {showAlert && hazard.warning && (
         <NavigationHazardAlert
           // 같은 사건·같은 단계는 문구(id 는 문구 해시)가 바뀌어도 다시 마운트되지 않게 eventKey 로 구분한다(마운트될 때 음성으로 읽기 때문)
-          key={`${hazard.warning.alert.eventKey || hazard.warning.alert.id}:${hazard.warning.stage}`}
+          key={alertSpeechKey}
+          align={sideBySide ? 'end' : 'center'}
+          maxWidth={sideBySide ? colWidth : undefined}
           warning={hazard.warning}
           bottomOffset={Math.max(0, panelTop - space.md)}
           onHeightChange={setAlertHeight}
@@ -331,8 +382,8 @@ export default function NavigationScreen() {
         />
       )}
 
-      <View style={[styles.top, { paddingTop: insets.top + space.sm }]} onLayout={(e: LayoutChangeEvent) => setTopHeight(Math.round(e.nativeEvent.layout.height))}>
-        <View style={styles.column}>
+      <View style={[styles.top, { paddingTop: insets.top + space.sm }, sideBySide && styles.sideStart]} onLayout={(e: LayoutChangeEvent) => setTopHeight(Math.round(e.nativeEvent.layout.height))}>
+        <View style={[styles.column, sideBySide && { maxWidth: colWidth }]}>
           {route?.source === 'mock' && (
             <View style={styles.testBanner} accessibilityRole="alert">
               <Text style={styles.testBannerText}>{t('nav.testMode')}</Text>
@@ -373,26 +424,44 @@ export default function NavigationScreen() {
 
       {/* 위험 아이콘 레일(지도 왼쪽). 위쪽 카드 바로 아래에서 시작한다. 레일은 음성·팝업 경고를 만들지 않는다(단계 경고는 위 NavigationHazardAlert 가 따로 맡는다). */}
       {showRail && (
-        <View style={[styles.railLayer, { top: railTop }]}>
-          <View style={styles.column}>
-            <HazardRail items={railVisible} overflow={railOverflow} selectedKey={activeHazard} onSelect={setSelectedHazard} />
+        <View style={[styles.railLayer, { top: railTop }, sideBySide && styles.sideStart]}>
+          <View style={[styles.column, sideBySide && { maxWidth: colWidth }]}>
+            <HazardRail
+              items={railVisible}
+              overflow={railOverflow}
+              selectedKey={activeHazard}
+              onSelect={setSelectedHazard}
+              compact={compactLayout}
+              overflowAsBadge={!railPillFits}
+              detailMaxWidth={sideBySide ? 300 : undefined}
+              // 상세 패널의 머리(약 64px)를 뺀 남은 높이까지만 본문을 늘린다(기본 260)
+              detailMaxBodyHeight={Math.max(96, Math.min(260, railAvailable - 64))}
+            />
           </View>
         </View>
       )}
 
       {/* 지도 조작 버튼: 하단 패널과 위험 경고 카드 위에 올려, 둘 중 어느 것도 가리지 않는다. */}
-      <View style={[styles.fabLayer, { bottom: panelTop + space.sm + (showAlert ? alertHeight + space.sm : 0) }]}>
-        <View style={styles.column}>
-          <View style={styles.fabWrap}>
-            <RoundButton icon={Crosshair} label={t('map.myLocation')} variant={following ? 'brand' : 'surface'} onPress={() => setFollowing(true)} />
+      {sideBySide ? (
+        // 가로 화면: 오른쪽 열(경고·패널)의 왼쪽 옆, 패널 높이에 둔다. 경고 카드가 커져도 가려지지 않는다.
+        <View style={[styles.fabSide, { right: colWidth + space.lg + space.sm, bottom: insets.bottom + space.md }]}>
+          <RoundButton icon={Crosshair} label={t('map.myLocation')} variant={following ? 'brand' : 'surface'} onPress={() => setFollowing(true)} />
+        </View>
+      ) : (
+        <View style={[styles.fabLayer, { bottom: panelTop + space.sm + (showAlert ? alertHeight + space.sm : 0) }]}>
+          <View style={styles.column}>
+            <View style={styles.fabWrap}>
+              <RoundButton icon={Crosshair} label={t('map.myLocation')} variant={following ? 'brand' : 'surface'} onPress={() => setFollowing(true)} />
+            </View>
           </View>
         </View>
-      </View>
+      )}
 
       {ready && (
-        <View style={[styles.bottom, { bottom: insets.bottom + space.md }]}>
-          <View style={styles.column}>
+        <View style={[styles.bottom, { bottom: insets.bottom + space.md }, sideBySide && styles.sideEnd]}>
+          <View style={[styles.column, sideBySide && { maxWidth: colWidth }]}>
             <NavBottomPanel
+              compact={compactLayout}
               remainingM={remainingM}
               etaMinutes={eta?.minutes ?? null}
               arrivalAtMs={eta?.arrivalAtMs ?? null}
@@ -428,6 +497,9 @@ const styles = StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, alignItems: 'center', paddingHorizontal: space.lg, pointerEvents: 'box-none' },
   bottom: { position: 'absolute', left: 0, right: 0, zIndex: 2, alignItems: 'center', paddingHorizontal: space.lg, pointerEvents: 'box-none' },
   railLayer: { position: 'absolute', left: 0, right: 0, zIndex: 2, alignItems: 'center', paddingHorizontal: space.lg, pointerEvents: 'box-none' },
+  sideStart: { alignItems: 'flex-start' },
+  sideEnd: { alignItems: 'flex-end' },
+  fabSide: { position: 'absolute', zIndex: 4 },
   fabLayer: { position: 'absolute', left: 0, right: 0, zIndex: 4, alignItems: 'center', paddingHorizontal: space.lg, pointerEvents: 'box-none' },
   column: { width: '100%', maxWidth: MAX_CONTENT_WIDTH, gap: space.sm, pointerEvents: 'box-none' },
   row: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },

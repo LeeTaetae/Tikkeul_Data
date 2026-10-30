@@ -4,7 +4,8 @@
 import type { Fix, LatLng, LocationPort } from '../lib/navigation/guidanceEngine';
 
 // offroute: 이탈 뒤 재탐색 성공 · rerouteFail: 이탈 뒤 재탐색이 계속 실패(화면의 실패 표시·수동 재시도 확인용)
-export type ReplayScenario = 'replay' | 'offroute' | 'rerouteFail';
+// tts: 이탈 없이 실제 속도(시속 약 50km)로 실시간 재생 — 음성 충돌 확인용(ttsScenario.ts)
+export type ReplayScenario = 'replay' | 'offroute' | 'rerouteFail' | 'tts';
 
 const M_PER_DEG = 111_320;
 const DWELL_FIXES = 3;
@@ -40,7 +41,7 @@ function sample(path: LatLng[], stepM: number): LatLng[] {
  * 경로를 따라 1초에 stepM(m)씩 가는 위치 열. offroute·rerouteFail 시나리오는 30% 지점에서 동쪽으로 벗어났다가 천천히 돌아온다.
  * 시각은 1초씩 늘려 만든다(실제 재생 속도는 createReplayPort 의 intervalMs).
  */
-export function replayFixes(path: LatLng[], scenario: ReplayScenario, stepM = 40, startMs = 0): Fix[] {
+export function replayFixes(path: LatLng[], scenario: ReplayScenario, stepM = 40, startMs = 0, stepMs = 1000): Fix[] {
   // 목적지에서 멈춘다(같은 위치를 몇 번 더). 마지막 간격이 도착 반경보다 넓어도 반경 안에 연속으로 들어와 도착이 판정된다.
   const sampled = sample(path, stepM);
   const points = [...sampled, ...Array.from({ length: DWELL_FIXES }, () => sampled[sampled.length - 1])];
@@ -50,7 +51,7 @@ export function replayFixes(path: LatLng[], scenario: ReplayScenario, stepM = 40
   const OFFSET_M = 150;
   return points.map((p, i) => {
     let eastM = 0;
-    if (scenario !== 'replay' && i >= DEVIATE_AT && i < DEVIATE_AT + DEVIATE_FIXES + RETURN_FIXES) {
+    if ((scenario === 'offroute' || scenario === 'rerouteFail') && i >= DEVIATE_AT && i < DEVIATE_AT + DEVIATE_FIXES + RETURN_FIXES) {
       const into = i - DEVIATE_AT;
       eastM = into < DEVIATE_FIXES ? OFFSET_M : OFFSET_M * (1 - (into - DEVIATE_FIXES + 1) / (RETURN_FIXES + 1));
     }
@@ -58,7 +59,7 @@ export function replayFixes(path: LatLng[], scenario: ReplayScenario, stepM = 40
       lat: p.lat,
       lng: p.lng + eastM / (M_PER_DEG * Math.cos(toRad(p.lat))),
       accuracyM: 8,
-      timestampMs: startMs + i * 1000,
+      timestampMs: startMs + i * stepMs,
     };
   });
 }

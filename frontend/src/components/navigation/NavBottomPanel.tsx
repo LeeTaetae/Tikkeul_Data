@@ -18,19 +18,21 @@ interface Props {
   arrived: boolean;
   /** 위험 정보 조회가 실패(failed)했거나 일부만 됐을(partial) 때. 경고가 빠졌을 수 있다는 안내다 */
   hazardNotice: 'failed' | 'partial' | null;
+  /** 낮은 화면(세로 700px 미만·가로 화면)용: 여백과 글자를 줄여 지도를 더 보여준다. 터치 영역(44px 이상)은 그대로 둔다 */
+  compact?: boolean;
   onEnd: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
 }
 
 // 하단 길안내 정보: 남은 거리·예상 소요·도착 예정과 안내 종료. ETA 는 경로 소요시간을 남은 거리 비율로 나눈 근사값이라
 // 실시간 교통을 반영하지 않는다("교통 상황 미반영"을 항상 함께 보여준다).
-export function NavBottomPanel({ remainingM, etaMinutes, arrivalAtMs, fraction, arrived, hazardNotice, onEnd, onLayout }: Props) {
+export function NavBottomPanel({ remainingM, etaMinutes, arrivalAtMs, fraction, arrived, hazardNotice, compact = false, onEnd, onLayout }: Props) {
   const { t } = useTranslation();
   const duration = etaMinutes === null ? null : durationLabel(etaMinutes);
   const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
 
   return (
-    <View style={styles.panel} onLayout={onLayout}>
+    <View style={[styles.panel, compact && styles.panelCompact]} onLayout={onLayout}>
       <View
         style={styles.track}
         accessibilityRole="progressbar"
@@ -49,18 +51,18 @@ export function NavBottomPanel({ remainingM, etaMinutes, arrivalAtMs, fraction, 
       ) : (
         <View>
           <View style={styles.stats}>
-            <Stat label={t('nav.statRemaining')} value={remainingM === null ? '—' : formatDistance(remainingM)} />
-            <Stat label={t('nav.statDuration')} value={duration ? t(duration.key, duration.params) : '—'} />
-            <Stat label={t('nav.statArrival')} value={arrivalAtMs === null ? '—' : formatTimeKst(new Date(arrivalAtMs).toISOString())} />
+            <Stat compact={compact} label={t('nav.statRemaining')} value={remainingM === null ? '—' : formatDistance(remainingM)} />
+            <Stat compact={compact} label={t('nav.statDuration')} value={duration ? t(duration.key, duration.params) : '—'} />
+            <Stat compact={compact} label={t('nav.statArrival')} value={arrivalAtMs === null ? '—' : formatTimeKst(new Date(arrivalAtMs).toISOString())} />
           </View>
-          <Text style={styles.caption}>{t('nav.noTraffic')}</Text>
+          <Text style={[styles.caption, compact && styles.captionCompact]}>{t('nav.noTraffic')}</Text>
         </View>
       )}
 
       <Pressable
         onPress={onEnd}
         accessibilityRole="button"
-        style={({ pressed }) => [styles.button, arrived ? styles.buttonDone : styles.buttonEnd, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.button, compact && styles.buttonCompact, arrived ? styles.buttonDone : styles.buttonEnd, pressed && styles.pressed]}
       >
         <Text style={styles.buttonText}>{t(arrived ? 'nav.done' : 'nav.end')}</Text>
       </Pressable>
@@ -68,10 +70,10 @@ export function NavBottomPanel({ remainingM, etaMinutes, arrivalAtMs, fraction, 
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, compact }: { label: string; value: string; compact: boolean }) {
   return (
     <View style={styles.stat}>
-      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+      <Text style={[styles.statValue, compact && styles.statValueCompact]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       <Text style={styles.statLabel}>{label}</Text>
@@ -81,6 +83,10 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   panel: { gap: space.sm, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.surface, boxShadow: shadow.sheet },
+  panelCompact: { gap: space.xs, padding: space.md },
+  statValueCompact: { fontSize: 18, lineHeight: 22 },
+  captionCompact: { marginTop: 0, fontSize: 11, lineHeight: 14 },
+  buttonCompact: { minHeight: 44 },
   track: { height: 4, borderRadius: 2, backgroundColor: colors.line, overflow: 'hidden' },
   fill: { height: 4, backgroundColor: colors.brand },
   stats: { flexDirection: 'row', gap: space.sm },
