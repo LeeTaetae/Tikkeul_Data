@@ -437,6 +437,12 @@ export function rerouteFinished(state: GuidanceState): GuidanceState {
   return { ...state, rerouteInFlight: false };
 }
 
+/**
+ * 이 속도(m/s) 이상으로 움직이던 중에만 "신호 끊김"으로 본다. 브라우저는 위치가 바뀔 때만 위치를 주므로, 멈춰 있거나 GPS 없이
+ * Wi-Fi 위치만 쓰는 PC 에서는 콜백이 오래 안 오는 게 정상이다. 속도를 모르면(위치를 한 번만 받음) 움직이던 중이 아니라고 본다.
+ */
+export const SIGNAL_LOST_MIN_SPEED_MPS = 1.5;
+
 /** 마지막 위치를 받은 뒤 signalLostMs 이상 지났으면 true */
 export function isSignalLost(lastFixAtMs: number | null, nowMs: number, policy: GuidancePolicy): boolean {
   return lastFixAtMs !== null && nowMs - lastFixAtMs >= policy.signalLostMs;
@@ -598,7 +604,8 @@ export function createGuidanceTracker({ port, onChange, onReroute, now = Date.no
       if (route && !subscription && view.phase !== 'arrived') void subscribe();
     },
     checkSignal() {
-      if (route && view.phase === 'tracking' && isSignalLost(lastFixAt, now(), GUIDANCE_POLICY[route.mode])) {
+      const wasMoving = (state?.speedMps ?? 0) >= SIGNAL_LOST_MIN_SPEED_MPS;
+      if (route && view.phase === 'tracking' && wasMoving && isSignalLost(lastFixAt, now(), GUIDANCE_POLICY[route.mode])) {
         emit({ phase: 'signalLost', snapshot: view.snapshot, position: view.position, failure: null });
       }
     },

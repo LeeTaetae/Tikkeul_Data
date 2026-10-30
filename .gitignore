@@ -25,6 +25,12 @@ yarn-error.log*
 android/
 ios/
 
+# Keep the hand-written Expo native navigation module in source/build archives.
+!frontend/modules/kakao-navigation/android/
+!frontend/modules/kakao-navigation/android/**
+!frontend/modules/kakao-navigation/ios/
+!frontend/modules/kakao-navigation/ios/**
+
 # Python / FastAPI
 *.pyc
 *.pyo

@@ -39,6 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+/artifacts/native-sdk/
 
 ## local env files
 .env
@@ -47,3 +48,4 @@ yarn-error.*
 
 # Vercel local configuration
 .vercel/
+artifacts/

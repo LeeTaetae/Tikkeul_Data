@@ -409,7 +409,8 @@ test('신호가 끊기면 signalLost, 새 위치가 오면 다시 tracking', asy
   const t = setup();
   t.tracker.sync(DRIVE);
   await flush();
-  t.port.onFix(fix(onPath(100), 1000));
+  t.port.onFix(fix(onPath(86), 0));
+  t.port.onFix(fix(onPath(100), 1000)); // 초속 14m 로 움직이던 중
   t.setNow(9_000);
   t.tracker.checkSignal();
   assert.equal(t.last().phase, 'tracking');
@@ -419,6 +420,25 @@ test('신호가 끊기면 signalLost, 새 위치가 오면 다시 tracking', asy
   assert.ok(t.last().snapshot); // 마지막 진행 상태는 남아 있다
   t.port.onFix(fix(onPath(130), 12_000));
   assert.equal(t.last().phase, 'tracking');
+});
+
+test('멈춰 있거나 속도를 모르면(PC 브라우저처럼 위치가 드물게 오는 경우) 오래 위치가 안 와도 신호 끊김으로 보지 않는다', async () => {
+  const still = setup();
+  still.tracker.sync(DRIVE);
+  await flush();
+  still.port.onFix(fix(onPath(100), 0));
+  still.port.onFix(fix(onPath(100), 1000)); // 같은 자리 → 속도 0
+  still.setNow(120_000);
+  still.tracker.checkSignal();
+  assert.equal(still.last().phase, 'tracking');
+
+  const once = setup();
+  once.tracker.sync(DRIVE);
+  await flush();
+  once.port.onFix(fix(onPath(100), 0)); // 위치를 한 번만 받음 → 속도 모름
+  once.setNow(120_000);
+  once.tracker.checkSignal();
+  assert.equal(once.last().phase, 'tracking');
 });
 
 test('10. 도착하면 위치 추적을 끝내고, 돌아와도 다시 구독하지 않는다', async () => {

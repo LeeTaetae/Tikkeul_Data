@@ -3,14 +3,19 @@ import type { Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { KAKAO_JS_KEY } from '../lib/config';
+import { carOffsetPx, headingUpOffsetPx, unwrapAngle } from '../lib/navigation/drivingCamera';
 import { colors, radius, space } from '../theme';
-import type { KakaoMapHandle, RoutePoint } from './types';
+import type { KakaoMapHandle, MapInsets, RoutePoint } from './types';
 
 interface KakaoMapInstance {
+  relayout: () => void;
   setCenter: (position: object) => void;
   setBounds: (bounds: object) => void;
   panTo: (position: object) => void;
   setLevel: (level: number) => void;
+  getLevel: () => number;
+  getCenter: () => KakaoLatLngInstance;
+  getProjection: () => { coordsFromContainerPoint: (point: object) => KakaoLatLngInstance };
 }
 
 interface KakaoOverlay {
@@ -20,6 +25,7 @@ interface KakaoOverlay {
 
 interface KakaoPolyline {
   setMap: (map: object | null) => void;
+  setPath: (path: object[]) => void;
 }
 
 interface KakaoLatLngBounds {
@@ -42,6 +48,7 @@ declare global {
         load: (callback: () => void) => void;
         LatLng: new (lat: number, lng: number) => KakaoLatLngInstance;
         LatLngBounds: new () => KakaoLatLngBounds;
+        Point: new (x: number, y: number) => object;
         Map: new (container: HTMLElement, options: { center: object; level: number }) => KakaoMapInstance;
         CustomOverlay: new (options: {
           map: object;
@@ -73,6 +80,63 @@ const NOTICE_MS = 4000;
 
 type LocationNotice = 'map.locationDenied' | 'map.locationFailed';
 
+// 차량 주행 중 현재 위치: 진행 방향을 가리키는 화살표. 흰 원은 가만히 두고 화살표(rotor)만 돌린다.
+function createArrowMarker(label: string): { root: HTMLElement; rotor: HTMLElement } {
+  const root = document.createElement('div');
+  root.setAttribute('role', 'img');
+  root.setAttribute('aria-label', label);
+  Object.assign(root.style, {
+    width: '44px',
+    height: '44px',
+    borderRadius: '50%',
+    backgroundColor: colors.surface,
+    boxShadow: '0 2px 10px rgba(15, 23, 42, 0.35)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  });
+  const rotor = document.createElement('div');
+  const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  Object.assign(rotor.style, { width: '28px', height: '28px', transition: reduceMotion ? 'none' : 'transform 0.4s ease-out' });
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNs, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '28');
+  svg.setAttribute('height', '28');
+  const arrow = document.createElementNS(svgNs, 'path');
+  arrow.setAttribute('d', 'M12 2.5 L20 21 L12 16.5 L4 21 Z');
+  arrow.setAttribute('fill', colors.info);
+  arrow.setAttribute('stroke', colors.info);
+  arrow.setAttribute('stroke-width', '1.5');
+  arrow.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(arrow);
+  rotor.appendChild(svg);
+  root.appendChild(rotor);
+  return { root, rotor };
+}
+
+// 도착 지점 표시: 어두운 원 안에 흰 점(과녁). 경로선(보라)·현재 위치(파랑)와 헷갈리지 않는 색이다.
+function createDestinationMarker(label: string): HTMLElement {
+  const root = document.createElement('div');
+  root.setAttribute('role', 'img');
+  root.setAttribute('aria-label', label);
+  Object.assign(root.style, {
+    width: '22px',
+    height: '22px',
+    borderRadius: '50%',
+    backgroundColor: colors.ink,
+    border: `3px solid ${colors.surface}`,
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  });
+  const dot = document.createElement('div');
+  Object.assign(dot.style, { width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.surface });
+  root.appendChild(dot);
+  return root;
+}
+
 // 현재 위치 표시: 파란 점. 텍스트가 없어 innerHTML 없이 DOM 으로 만든다.
 function createLocationDot(label: string): HTMLElement {
   const dot = document.createElement('div');
@@ -90,6 +154,7 @@ function createLocationDot(label: string): HTMLElement {
 }
 
 interface KakaoMapProps {
+  headingUp?: boolean;
   ref?: Ref<KakaoMapHandle>;
   onMapClick?: (point: RoutePoint) => void;
   /** false 면 지도가 뜰 때 브라우저 위치를 한 번 읽어 중심을 옮기지 않는다(길안내 화면은 GPS 추적이 위치를 맡는다). 기본 true */
@@ -100,11 +165,22 @@ interface KakaoMapProps {
   onReady?: () => void;
 }
 
-export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onReady }: KakaoMapProps) {
+export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onReady, headingUp = false }: KakaoMapProps) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const rotationRef = useRef<number | null>(null);
+  const drivingScaleRef = useRef(2);
+  const followRef = useRef<{ point: RoutePoint; options: { level: number; headingDeg: number | null; insets: MapInsets } } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const markerRef = useRef<KakaoOverlay | null>(null);
+  const markerElementRef = useRef<HTMLElement | null>(null);
   const polylineRef = useRef<KakaoPolyline | null>(null);
+  // 주행 스타일 경로의 흰 테두리 선(코어 선 polylineRef 아래에 깔린다). 둘은 항상 같은 좌표를 가진다.
+  const casingRef = useRef<KakaoPolyline | null>(null);
+  const destinationRef = useRef<KakaoOverlay | null>(null);
+  const markerKindRef = useRef<'dot' | 'arrow'>('dot');
+  const arrowRotorRef = useRef<HTMLElement | null>(null);
+  const arrowAngleRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   // 클릭 리스너는 지도 초기화 시 한 번만 등록하므로, 최신 콜백을 ref로 들고 있다가 그걸 읽는다.
@@ -157,37 +233,80 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
   // 백엔드가 Tmap/Naver 중 고른 경로를 그대로 Polyline 으로 그린다. 지도 레이어(Kakao)와
   // 경로 계산(Tmap/Naver)은 서로 다른 레이어라, 좌표 배열만 넘기면 출처와 무관하게 그려진다.
   const clearRoute = () => {
+    casingRef.current?.setMap(null);
+    casingRef.current = null;
     polylineRef.current?.setMap(null);
     polylineRef.current = null;
   };
 
   // 현재 위치 점을 만들거나 옮긴다.
-  const placeMarker = (position: object) => {
+  // headingDeg 가 숫자면 그 방향의 화살표, null 이면 점. 모양이 바뀌면 마커를 새로 만든다.
+  const placeMarker = (position: object, headingDeg: number | null = null) => {
     const kakao = window.kakao;
     const map = mapRef.current;
     if (!kakao || !map) return;
+    const kind = headingDeg === null ? 'dot' : 'arrow';
+    if (markerRef.current && markerKindRef.current !== kind) removeMarker();
     if (markerRef.current) {
       markerRef.current.setPosition(position);
     } else {
-      markerRef.current = new kakao.maps.CustomOverlay({
-        map,
-        position,
-        content: createLocationDot(t('map.myLocation')),
-        xAnchor: 0.5,
-        yAnchor: 0.5,
-      });
+      let content: HTMLElement;
+      if (kind === 'arrow') {
+        const arrow = createArrowMarker(t('map.myLocation'));
+        arrowRotorRef.current = arrow.rotor;
+        content = arrow.root;
+      } else {
+        content = createLocationDot(t('map.myLocation'));
+      }
+      markerKindRef.current = kind;
+      markerElementRef.current = content;
+      markerRef.current = new kakao.maps.CustomOverlay({ map, position, content, xAnchor: 0.5, yAnchor: 0.5 });
+    }
+    if (headingDeg !== null && arrowRotorRef.current) {
+      // 359° → 1° 처럼 넘어갈 때 한 바퀴 거꾸로 돌지 않게 이어지는 각도로 돌린다.
+      const angle = unwrapAngle(arrowAngleRef.current, headingDeg);
+      arrowAngleRef.current = angle;
+      arrowRotorRef.current.style.transform = `rotate(${angle}deg)`;
     }
   };
 
-  const setLocationMarker = (point: RoutePoint | null) => {
+  const removeMarker = () => {
+    markerRef.current?.setMap(null);
+    markerRef.current = null;
+    markerElementRef.current = null;
+    arrowRotorRef.current = null;
+    arrowAngleRef.current = null;
+  };
+
+  const setLocationMarker = (point: RoutePoint | null, options?: { headingDeg?: number | null; preview?: boolean }) => {
     const kakao = window.kakao;
     if (!kakao || !mapRef.current) return;
-    if (!point) {
-      markerRef.current?.setMap(null);
-      markerRef.current = null;
-      return;
+    if (!point) return removeMarker();
+    placeMarker(new kakao.maps.LatLng(point.lat, point.lng), options?.headingDeg ?? null);
+    const element = markerElementRef.current;
+    if (element) {
+      element.style.transform = headingUp ? `scale(${1 / drivingScaleRef.current})` : '';
+      element.style.opacity = options?.preview ? '0.55' : '1';
+      element.style.border = '3px solid #0866FF';
+      element.setAttribute('aria-label', options?.preview ? t('nav.gpsStarting') : t('map.myLocation'));
+      element.title = options?.preview ? t('nav.gpsStarting') : t('map.myLocation');
     }
-    placeMarker(new kakao.maps.LatLng(point.lat, point.lng));
+  };
+
+  const setDestination = (point: RoutePoint | null) => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    if (!kakao || !map) return;
+    destinationRef.current?.setMap(null);
+    destinationRef.current = null;
+    if (!point) return;
+    destinationRef.current = new kakao.maps.CustomOverlay({
+      map,
+      position: new kakao.maps.LatLng(point.lat, point.lng),
+      content: createDestinationMarker(t('nav.statArrival')),
+      xAnchor: 0.5,
+      yAnchor: 0.5,
+    });
   };
 
   // level 을 주면(처음 맞출 때) 확대 수준을 바꾸고 바로 옮기고, 아니면 부드럽게 옮긴다.
@@ -204,20 +323,22 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
     }
   };
 
-  const showRoute = (path: RoutePoint[], options?: { fit?: boolean }) => {
+  const toLatLngs = (path: RoutePoint[]) => path.map((p) => new window.kakao!.maps.LatLng(p.lat, p.lng));
+
+  const showRoute = (path: RoutePoint[], options?: { fit?: boolean; style?: 'overview' | 'driving' }) => {
     const kakao = window.kakao;
     const map = mapRef.current;
     if (!kakao || !map || path.length === 0) return;
 
     clearRoute();
-    const points = path.map((p) => new kakao.maps.LatLng(p.lat, p.lng));
-    polylineRef.current = new kakao.maps.Polyline({
-      map,
-      path: points,
-      strokeWeight: 5,
-      strokeColor: colors.brand,
-      strokeOpacity: 0.85,
-    });
+    const points = toLatLngs(path);
+    if (options?.style === 'driving') {
+      // 주행용: 흰 테두리 위에 굵고 진한 선 하나. 두 선은 같은 좌표라 하나의 선으로 보인다.
+      casingRef.current = new kakao.maps.Polyline({ map, path: points, strokeWeight: 14, strokeColor: colors.surface, strokeOpacity: 1 });
+      polylineRef.current = new kakao.maps.Polyline({ map, path: points, strokeWeight: 9, strokeColor: colors.brand, strokeOpacity: 1 });
+    } else {
+      polylineRef.current = new kakao.maps.Polyline({ map, path: points, strokeWeight: 5, strokeColor: colors.brand, strokeOpacity: 0.85 });
+    }
 
     if (options?.fit === false) return;
     const bounds = new kakao.maps.LatLngBounds();
@@ -225,7 +346,66 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
     map.setBounds(bounds);
   };
 
-  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, clearRoute, setLocationMarker, panTo }));
+  const setRoutePath = (path: RoutePoint[]) => {
+    if (!window.kakao || !polylineRef.current || path.length === 0) return;
+    const points = toLatLngs(path);
+    casingRef.current?.setPath(points);
+    polylineRef.current.setPath(points);
+  };
+
+  // SDK의 북쪽 고정 지도를 큰 정사각형에 그리고 DOM을 회전해 진행 방향을 위로 둔다.
+  // 확대 단계를 바꾸면 투영(픽셀↔좌표)이 달라지므로 단계를 먼저 바꾼 뒤 중심을 계산한다.
+  const followTo = (point: RoutePoint, options: { level: number; headingDeg: number | null; insets: MapInsets }) => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (!kakao || !map || !container) return;
+    followRef.current = { point, options };
+    const levelChanged = map.getLevel() !== options.level;
+    if (levelChanged) map.setLevel(options.level);
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    const viewport = viewportRef.current;
+    const heading = options.headingDeg ?? 0;
+    if (headingUp) {
+      rotationRef.current = unwrapAngle(rotationRef.current, -heading);
+      container.style.transform = `translate(-50%, -50%) rotate(${rotationRef.current}deg) scale(${drivingScaleRef.current})`;
+    }
+    const { dx, dy } = headingUp && viewport
+      ? headingUpOffsetPx(heading, { width: viewport.clientWidth, height: viewport.clientHeight }, options.insets, drivingScaleRef.current)
+      : carOffsetPx(options.headingDeg, { width, height }, options.insets);
+    // 지금 화면에서 (차가 놓일 자리)에 있는 좌표와 지도 중심의 차이만큼, 차 좌표에서 뺀 곳을 새 중심으로 한다.
+    const probe = map.getProjection().coordsFromContainerPoint(new kakao.maps.Point(width / 2 + dx, height / 2 + dy));
+    const center = map.getCenter();
+    const next = new kakao.maps.LatLng(point.lat - (probe.getLat() - center.getLat()), point.lng - (probe.getLng() - center.getLng()));
+    if (levelChanged || headingUp) map.setCenter(next);
+    else map.panTo(next);
+  };
+
+  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, setRoutePath, clearRoute, setDestination, setLocationMarker, panTo, followTo }));
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const container = containerRef.current;
+    if (!viewport || !container || !headingUp) return;
+    const resize = () => {
+      // 대각선보다 크게 그려 회전 중에도 화면 모서리에 빈 공간이 생기지 않게 한다.
+      // 넓은 데스크톱에서도 모바일 주행 화면처럼 좁은 주변 범위를 보여준다.
+      const scale = Math.max(2, Math.min(4, viewport.clientWidth / 390));
+      drivingScaleRef.current = scale;
+      const side = Math.ceil(Math.hypot(viewport.clientWidth, viewport.clientHeight) / scale) + 4;
+      Object.assign(container.style, { position: 'absolute', left: '50%', top: '50%', width: `${side}px`, height: `${side}px` });
+      container.style.transform = `translate(-50%, -50%) rotate(${rotationRef.current ?? 0}deg) scale(${scale})`;
+      if (markerElementRef.current) markerElementRef.current.style.transform = `scale(${1 / scale})`;
+      mapRef.current?.relayout();
+      const last = followRef.current;
+      if (last) followTo(last.point, last.options);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [headingUp]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -308,8 +488,10 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
 
   return (
     <div
+      ref={viewportRef}
       style={{
         position: 'relative',
+        overflow: 'hidden',
         width: '100%',
         height: '100%',
       }}

@@ -1,5 +1,5 @@
 import { ArrowUp, CornerUpLeft, CornerUpRight, Flag, Navigation, Undo2, type LucideIcon } from 'lucide-react-native';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { formatDistance } from '../../lib/distance';
@@ -15,6 +15,16 @@ const ICON: Record<TurnKind, LucideIcon> = {
   uturn: Undo2,
   arrive: Flag,
   generic: Navigation,
+};
+
+// An image keeps the turn sign in its own compositing layer above the WebGL map.
+const WEB_ARROW: Record<TurnKind, string> = {
+  straight: 'M12 22V3M5 10l7-7 7 7',
+  right: 'M4 22V12a4 4 0 0 1 4-4h13M14 2l7 6-7 6',
+  left: 'M20 22V12a4 4 0 0 0-4-4H3M10 2L3 8l7 6',
+  uturn: 'M19 22V9a7 7 0 0 0-14 0v7M1 12l4 5 5-5',
+  arrive: 'M5 22V3h14v11H5',
+  generic: 'M12 2L3 22l9-5 9 5z',
 };
 
 interface Props {
@@ -38,13 +48,15 @@ export function TurnCard({ turn }: Props) {
     detail = turn.guide.description || t('nav.turn.generic');
   } else {
     title = formatDistance(turn.distanceM);
-    detail = [t(`nav.turn.${kind}`), turn.guide.nextRoadName].filter(Boolean).join(' · ');
+    detail = turn.guide.nextRoadName || t(`nav.turn.${kind}`);
   }
 
   return (
     <View style={styles.card} accessibilityRole="header" accessibilityLabel={detail ? `${title}, ${detail}` : title}>
       <View style={styles.tile}>
-        <Icon icon={ICON[kind ?? 'generic']} size={32} color={colors.surface} strokeWidth={2.6} />
+        {Platform.OS === 'web' ? (
+          <Image accessibilityIgnoresInvertColors source={{ uri: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="${WEB_ARROW[kind ?? 'generic']}" fill="none" stroke="white" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`)}` }} style={{ width: 58, height: 58 }} />
+        ) : <Icon icon={ICON[kind ?? 'generic']} size={58} color={colors.surface} strokeWidth={2.6} />}
       </View>
       <View style={styles.texts}>
         <Text style={turn ? styles.distance : styles.plain} numberOfLines={turn ? 1 : 2}>
@@ -65,14 +77,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    padding: space.md,
+    padding: space.lg,
+    minHeight: 126,
+    width: '82%',
+    maxWidth: 360,
     borderRadius: radius.lg,
-    backgroundColor: colors.ink,
+    backgroundColor: '#0866FF',
     boxShadow: shadow.float,
   },
-  tile: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
+  tile: { width: 64, height: 72, alignItems: 'center', justifyContent: 'center' },
   texts: { flex: 1, minWidth: 0, gap: 2 },
-  distance: { fontSize: 28, lineHeight: 34, fontWeight: '800', color: colors.surface },
+  distance: { fontSize: 42, lineHeight: 50, fontWeight: '800', color: colors.surface },
   plain: { fontSize: 18, lineHeight: 24, fontWeight: '700', color: colors.surface },
-  detail: { fontSize: 16, lineHeight: 22, fontWeight: '600', color: colors.line },
+  detail: { fontSize: 21, lineHeight: 28, fontWeight: '600', color: colors.surface },
 });

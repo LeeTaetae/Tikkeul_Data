@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { Crosshair } from 'lucide-react-native';
 import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,29 +10,35 @@ import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazard
 import { HazardRail, RAIL_ITEM_HEIGHT, RAIL_ITEM_HEIGHT_COMPACT, RAIL_OVERFLOW_HEIGHT } from '../src/components/navigation/HazardRail';
 import { NavBottomPanel } from '../src/components/navigation/NavBottomPanel';
 import { NavStatus } from '../src/components/navigation/NavStatus';
+import { SpeedBadge } from '../src/components/navigation/SpeedBadge';
 import { TurnCard } from '../src/components/navigation/TurnCard';
 import { Card } from '../src/components/ui/Card';
 import { RoundButton } from '../src/components/ui/RoundButton';
 import { createReplayPort, replayFixes, replayRerouteFrom } from '../src/dev/guidanceReplay';
 import { MOCK_ROUTE_A } from '../src/dev/mockRoute';
+import { CITY_PREVIEW_ROUTE } from '../src/dev/cityPreviewRoute';
 import { RAIL_TEST_SAMPLES, TEST_INSTRUCTIONS, TEST_SCHOOL_ZONES, TEST_SPEED_BUMPS } from '../src/dev/railSamples';
 import { TTS_TEST_ALERTS, TTS_TEST_INSTRUCTIONS, TTS_TEST_PATH, TTS_TEST_SPEED_BUMPS, TTS_TEST_ZONES } from '../src/dev/ttsScenario';
 import { fitVisible, overflowFits, splitRail } from '../src/lib/hazardRail';
+import { nearSchoolZone, speedKmhOf } from '../src/lib/navigation/drivingDisplay';
 import { displayEta } from '../src/lib/navigation/guidanceDisplay';
 import type { LatLng, NavRoute, TrackingView } from '../src/lib/navigation/guidanceEngine';
 import { toNavRoute } from '../src/lib/navigation/guidanceEngine';
 import { clearGuidanceRequest, getGuidanceRequest, type GuidanceRequest } from '../src/lib/navigation/guidanceSession';
+import { useDrivingCamera } from '../src/lib/navigation/useDrivingCamera';
 import { useGuidanceTracking } from '../src/lib/navigation/useGuidanceTracking';
 import { useRouteHazardWarning } from '../src/lib/navigation/useRouteHazardWarning';
 import { dedupeSpokenInstructions } from '../src/lib/navigation/speechInstructions';
 import { useRouteSpeedBumps } from '../src/lib/navigation/useRouteSpeedBumps';
 import { useSpeedBumpSpeech } from '../src/lib/useSpeedBumpSpeech';
-import { useSpeedingWarning } from '../src/lib/useSpeedingWarning';
+import { SCHOOL_ZONE_SPEED_LIMIT_KMH, useSpeedingWarning } from '../src/lib/useSpeedingWarning';
 import { useTurnInstructionSpeech } from '../src/lib/useTurnInstructionSpeech';
 import { KakaoMap } from '../src/map/KakaoMap';
+import { NavigationMap } from '../src/map/NavigationMap';
 import { fetchGuidanceRoute } from '../src/map/navigationApi';
 import type { KakaoMapHandle } from '../src/map/types';
 import { MAX_CONTENT_WIDTH, colors, radius, space } from '../src/theme';
+import { NativeNavigationScreen } from '../src/screens/NativeNavigationScreen';
 
 // 자동 재탐색이 연달아 이만큼 실패하면 더 부르지 않고 사용자가 직접 "다시 탐색"을 누르게 한다(무한 재시도 방지).
 const MAX_AUTO_REROUTE_FAILURES = 3;
@@ -41,6 +47,8 @@ const FOLLOW_LEVEL = 3;
 // 새 위험 경고가 음성으로 읽히는 동안(대략 이 시간) 일반 안내(턴·방지턱·과속)는 읽지 않고 기다린다. 경고가 우선이다.
 // 기다린 안내는 아직 지나치지 않았다면 이 시간이 지난 뒤 읽힌다(훅이 읽은 지점으로 기록하지 않았기 때문).
 const ALERT_SPEECH_QUIET_MS = 3500;
+// 가로 화면에서 왼쪽 위험 레일이 차지하는 폭(px). 차량 카메라가 이 안쪽에 차를 놓는다.
+const RAIL_SIDE_INSET = 72;
 
 type Status = 'noRequest' | 'loading' | 'error' | 'ready';
 type RerouteState = 'idle' | 'loading' | 'failed';
@@ -76,18 +84,18 @@ const newRouteId = () => `nav-${Date.now()}-${++routeSeq}`;
 
 // 별도 길안내 화면. 홈에서 고른 조건(guidanceSession)으로 안내용 경로(guides 포함)를 받고, GPS 추적 결과를 지도·회전 안내·위험 경고에 반영한다.
 // 탭 화면은 다른 곳으로 가도 마운트가 유지되므로, 화면이 포커스일 때만 위치를 추적한다(useIsFocused).
-export default function NavigationScreen() {
+function WebGuidanceScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
   const params = useLocalSearchParams<{ test?: string }>();
   // 개발용 가상 GPS 재생. 실제 위치·실제 경로가 아니며, 켜면 화면에 테스트 모드 표시가 뜬다.
-  const scenario = __DEV__ && (params.test === 'replay' || params.test === 'offroute' || params.test === 'rerouteFail' || params.test === 'tts') ? params.test : null;
+  const scenario = __DEV__ && (params.test === 'replay' || params.test === 'offroute' || params.test === 'rerouteFail' || params.test === 'tts' || params.test === 'lowAccuracy' || params.test === 'city') ? params.test : null;
   const testRoute = useMemo<NavRoute | null>(
     () =>
       scenario
-        ? {
+        ? scenario === 'city' ? CITY_PREVIEW_ROUTE : {
             id: `test-${scenario}`,
             source: 'mock',
             mode: 'driving',
@@ -103,7 +111,9 @@ export default function NavigationScreen() {
   const replayPort = useMemo(
     () =>
       testRoute && scenario
-        ? scenario === 'tts'
+        ? scenario === 'city'
+          ? createReplayPort(replayFixes(testRoute.path, scenario, 4, 0, 500), 500)
+          : scenario === 'tts'
           ? createReplayPort(replayFixes(testRoute.path, scenario, 7, 0, 500), 500)
           : createReplayPort(replayFixes(testRoute.path, scenario))
         : undefined,
@@ -111,10 +121,11 @@ export default function NavigationScreen() {
   );
 
   const mapRef = useRef<KakaoMapHandle>(null);
-  const [mapReady, setMapReady] = useState(false);
+  const [readyMapKind, setReadyMapKind] = useState<'driving' | 'other' | null>(null);
   const [following, setFollowing] = useState(true);
-  const [status, setStatus] = useState<Status>('loading');
-  const [route, setRoute] = useState<NavRoute | null>(null);
+  const [status, setStatus] = useState<Status>(testRoute ? 'ready' : 'loading');
+  const [route, setRoute] = useState<NavRoute | null>(testRoute);
+  const mapReady = readyMapKind === (route?.mode === 'driving' ? 'driving' : 'other');
   const [rerouteState, setRerouteState] = useState<RerouteState>('idle');
   const [attempt, setAttempt] = useState(0);
   // 하단 패널·위험 경고 카드의 실제 높이. 위험 경고는 패널 위에, 현재 위치 버튼은 경고 위에 올려 서로 가리지 않게 한다.
@@ -232,8 +243,8 @@ export default function NavigationScreen() {
     active: status === 'ready' && position !== null && !arrived,
     position: position ? { lat: position.lat, lng: position.lng, accuracyM: position.accuracyM } : null,
     speedMps: snapshot?.speedMps ?? null,
-    sampleAlerts: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_ALERTS : RAIL_TEST_SAMPLES) : undefined,
-    sampleZoneAlerts: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_ZONES : TEST_SCHOOL_ZONES) : undefined,
+    sampleAlerts: route?.source === 'mock' ? (scenario === 'city' ? [] : scenario === 'tts' ? TTS_TEST_ALERTS : RAIL_TEST_SAMPLES) : undefined,
+    sampleZoneAlerts: route?.source === 'mock' ? (scenario === 'city' ? [] : scenario === 'tts' ? TTS_TEST_ZONES : TEST_SCHOOL_ZONES) : undefined,
   });
 
   // 음성 안내(팀 main 의 TTS 훅을 그대로 재사용). 길안내 중(첫 위치를 받은 뒤, 도착 전)이고 화면이 포커스일 때만 켠다.
@@ -282,19 +293,20 @@ export default function NavigationScreen() {
   useEffect(() => {
     if (!mapReady) return;
     if (!route) return mapRef.current?.clearRoute();
-    mapRef.current?.showRoute(route.path, { fit: !viewRef.current?.position });
+    mapRef.current?.showRoute(route.path, { fit: route.mode !== 'driving' && !viewRef.current?.position, style: route.mode === 'driving' ? 'driving' : 'overview' });
   }, [mapReady, route]);
 
-  // 현재 위치 마커와 자동 추적. 마커·추적은 엔진이 걸러낸 위치(view.position)만 따른다.
+  // 현재 위치 마커와 자동 추적(도보). 마커·추적은 엔진이 걸러낸 위치(view.position)만 따른다. 차량 모드는 아래 useDrivingCamera 가 맡는다.
+  const driving = route?.mode === 'driving';
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapReady || driving) return;
     const point = position ? { lat: position.lat, lng: position.lng } : null;
     mapRef.current?.setLocationMarker(point);
     if (point && following) {
       mapRef.current?.panTo(point, firstFocusDone.current ? undefined : { level: FOLLOW_LEVEL });
       firstFocusDone.current = true;
     }
-  }, [mapReady, position, following]);
+  }, [mapReady, driving, position, following]);
 
   const onEnd = () => {
     void Speech.stop(); // 안내를 끝내면 읽던 음성도 멈춘다
@@ -362,10 +374,23 @@ export default function NavigationScreen() {
   // 선택한 위험이 지나갔거나 목록에서 빠지면 상세 패널은 저절로 닫힌다.
   const activeHazard = railVisible.some((i) => i.key === selectedHazard) ? selectedHazard : null;
 
+  // 차량 주행 지도: 지도를 가리는 영역(위 카드·아래 패널, 가로 화면에서는 왼쪽 레일·오른쪽 열)을 빼고 차를 놓는다.
+  // 가로 화면의 회전 카드는 왼쪽 열 위쪽을 넓게 덮으므로 위쪽 여백도 뺀다.
+  const cameraInsets = sideBySide
+    ? { top: topHeight, bottom: insets.bottom + space.md, left: RAIL_SIDE_INSET, right: colWidth + space.lg }
+    : { top: topHeight, bottom: panelTop + (showAlert ? alertHeight + space.sm : 0) + space.md, left: 0, right: 0 };
+  useDrivingCamera({ enabled: mapReady && driving, mapRef, route, position, snapshot, following, insets: cameraInsets });
+
+  // 현재 속도는 위치 변화로 추정한 값이다. 제한속도는 경로 응답에 없어서, 어린이보호구역 지점 근처에서만 법정 30km/h 를 보여준다.
+  const showSpeed = ready && driving && !arrived && position !== null;
+  const speedKmh = speedKmhOf(snapshot?.speedMps ?? null);
+  const cautionKmh = nearSchoolZone(hazard.zoneOnRoute.map((z) => z.offsetM), snapshot?.progressM ?? 0) ? SCHOOL_ZONE_SPEED_LIMIT_KMH : null;
+  const speedBadge = showSpeed ? <SpeedBadge speedKmh={speedKmh} cautionKmh={cautionKmh} compact={compactLayout} /> : null;
+
   return (
     <View style={styles.root}>
       <View style={styles.mapLayer}>
-        <KakaoMap ref={mapRef} autoLocate={false} onUserPan={() => setFollowing(false)} onReady={() => setMapReady(true)} />
+        {driving ? <NavigationMap ref={mapRef} onUserPan={() => setFollowing(false)} onReady={() => setReadyMapKind('driving')} /> : <KakaoMap ref={mapRef} autoLocate={false} onUserPan={() => setFollowing(false)} onReady={() => setReadyMapKind('other')} />}
       </View>
 
       {/* 위험 경고는 하단 패널 바로 위에 올려놓는다(NavigationHazardAlert 의 bottomOffset). */}
@@ -413,7 +438,7 @@ export default function NavigationScreen() {
           {ready && !arrived && <TurnCard turn={snapshot?.nextTurn ?? null} />}
           {gpsStatus && (
             <NavStatus
-              message={t(gpsStatus.key)}
+              message={[t(gpsStatus.key), driving && !position ? t('nav.startPreview') : null].filter(Boolean).join('\n')}
               tone={gpsStatus.tone}
               actionLabel={gpsStatus.actionKey ? t(gpsStatus.actionKey) : undefined}
               onAction={gpsStatus.onAction}
@@ -445,12 +470,14 @@ export default function NavigationScreen() {
       {sideBySide ? (
         // 가로 화면: 오른쪽 열(경고·패널)의 왼쪽 옆, 패널 높이에 둔다. 경고 카드가 커져도 가려지지 않는다.
         <View style={[styles.fabSide, { right: colWidth + space.lg + space.sm, bottom: insets.bottom + space.md }]}>
+          {speedBadge}
           <RoundButton icon={Crosshair} label={t('map.myLocation')} variant={following ? 'brand' : 'surface'} onPress={() => setFollowing(true)} />
         </View>
       ) : (
         <View style={[styles.fabLayer, { bottom: panelTop + space.sm + (showAlert ? alertHeight + space.sm : 0) }]}>
           <View style={styles.column}>
             <View style={styles.fabWrap}>
+              {speedBadge}
               <RoundButton icon={Crosshair} label={t('map.myLocation')} variant={following ? 'brand' : 'surface'} onPress={() => setFollowing(true)} />
             </View>
           </View>
@@ -461,6 +488,7 @@ export default function NavigationScreen() {
         <View style={[styles.bottom, { bottom: insets.bottom + space.md }, sideBySide && styles.sideEnd]}>
           <View style={[styles.column, sideBySide && { maxWidth: colWidth }]}>
             <NavBottomPanel
+              destinationLabel={requestRef.current?.destinationLabel}
               compact={compactLayout}
               remainingM={remainingM}
               etaMinutes={eta?.minutes ?? null}
@@ -476,6 +504,13 @@ export default function NavigationScreen() {
       )}
     </View>
   );
+}
+
+export default function NavigationScreen() {
+  const params = useLocalSearchParams<{ test?: string }>();
+  const preview = __DEV__ && ['city', 'replay', 'offroute', 'rerouteFail', 'tts', 'lowAccuracy'].includes(params.test ?? '');
+  const officialNavigation = Platform.OS !== 'web' || (!preview && getGuidanceRequest()?.mode === 'driving');
+  return officialNavigation ? <NativeNavigationScreen /> : <WebGuidanceScreen />;
 }
 
 function ActionButton({ label, onPress, variant = 'primary' }: { label: string; onPress: () => void; variant?: 'primary' | 'plain' }) {
@@ -499,14 +534,14 @@ const styles = StyleSheet.create({
   railLayer: { position: 'absolute', left: 0, right: 0, zIndex: 2, alignItems: 'center', paddingHorizontal: space.lg, pointerEvents: 'box-none' },
   sideStart: { alignItems: 'flex-start' },
   sideEnd: { alignItems: 'flex-end' },
-  fabSide: { position: 'absolute', zIndex: 4 },
+  fabSide: { position: 'absolute', zIndex: 4, alignItems: 'flex-end', gap: space.sm },
   fabLayer: { position: 'absolute', left: 0, right: 0, zIndex: 4, alignItems: 'center', paddingHorizontal: space.lg, pointerEvents: 'box-none' },
   column: { width: '100%', maxWidth: MAX_CONTENT_WIDTH, gap: space.sm, pointerEvents: 'box-none' },
   row: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
   text: { fontSize: 15, lineHeight: 22, color: colors.ink, fontWeight: '600' },
   testBanner: { padding: space.sm, borderRadius: radius.md, backgroundColor: colors.zone },
   testBannerText: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: colors.zoneInk },
-  fabWrap: { alignSelf: 'flex-end' },
+  fabWrap: { alignSelf: 'flex-end', alignItems: 'flex-end', gap: space.sm },
   button: { minHeight: 48, paddingHorizontal: space.lg, borderRadius: radius.md, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
   buttonPlain: { backgroundColor: colors.paper, borderColor: colors.line, borderWidth: 1 },
   buttonText: { fontSize: 15, fontWeight: '700', color: colors.surface },

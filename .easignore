@@ -1,0 +1,31 @@
+# EAS is launched from frontend/ but archives this Git repository's root.
+# Only include the application and its handwritten native module sources.
+/*
+!/.gitignore
+!/.easignore
+!/frontend
+!/frontend/**
+
+/frontend/node_modules/
+/frontend/.expo/
+/frontend/.vercel/
+/frontend/dist/
+/frontend/web-build/
+/frontend/android/
+/frontend/ios/
+/frontend/artifacts/
+/frontend/.env
+/frontend/.env.*
+!/frontend/.env.example
+/frontend/credentials.json
+/frontend/modules/**/.gradle/
+/frontend/modules/**/build/
+**/*.key
+**/*.pem
+**/*.jks
+**/*.keystore
+**/*.p8
+**/*.p12
+**/*.mobileprovision
+**/*.tsbuildinfo
+**/npm-debug.log*

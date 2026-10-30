@@ -5,7 +5,7 @@ import type { Fix, LatLng, LocationPort } from '../lib/navigation/guidanceEngine
 
 // offroute: 이탈 뒤 재탐색 성공 · rerouteFail: 이탈 뒤 재탐색이 계속 실패(화면의 실패 표시·수동 재시도 확인용)
 // tts: 이탈 없이 실제 속도(시속 약 50km)로 실시간 재생 — 음성 충돌 확인용(ttsScenario.ts)
-export type ReplayScenario = 'replay' | 'offroute' | 'rerouteFail' | 'tts';
+export type ReplayScenario = 'replay' | 'offroute' | 'rerouteFail' | 'tts' | 'lowAccuracy' | 'city';
 
 const M_PER_DEG = 111_320;
 const DWELL_FIXES = 3;
@@ -58,7 +58,7 @@ export function replayFixes(path: LatLng[], scenario: ReplayScenario, stepM = 40
     return {
       lat: p.lat,
       lng: p.lng + eastM / (M_PER_DEG * Math.cos(toRad(p.lat))),
-      accuracyM: 8,
+      accuracyM: scenario === 'lowAccuracy' ? 10000 : 8,
       timestampMs: startMs + i * stepMs,
     };
   });
