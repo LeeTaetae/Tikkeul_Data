@@ -5,15 +5,11 @@ import { useTranslation } from 'react-i18next';
 import type { ApiState } from '../../lib/api/useApi';
 import { formatDateTimeKst } from '../../lib/time';
 import { useOnline } from '../../lib/useOnline';
-import { colors, radius, space } from '../../theme';
+import { colors, dataKindTone, radius, space } from '../../theme';
 import type { DataKind, ListResponse, Meta } from '../../types/traffic';
 
 // 데이터 종류 배지. 색뿐 아니라 글자로도 실시간·예측·등록 현황을 구분한다.
-const KIND_STYLE: Record<DataKind, { bg: string; fg: string }> = {
-  realtime: { bg: '#E3F4EE', fg: '#0B6B4F' },
-  forecast: { bg: '#FFF1DF', fg: '#8A4B00' },
-  registry: { bg: '#EEF0F2', fg: colors.muted },
-};
+const KIND_STYLE: Record<DataKind, { bg: string; fg: string }> = dataKindTone;
 
 export function KindBadge({ kind }: { kind: DataKind }) {
   const { t } = useTranslation();
@@ -125,18 +121,18 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, fontWeight: '800' },
   metaBox: { gap: 2 },
   metaText: { fontSize: 13, color: colors.muted },
-  stale: { fontSize: 13, fontWeight: '700', color: '#B42318' },
+  stale: { fontSize: 13, fontWeight: '700', color: colors.dangerInk },
   loading: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md },
   empty: { fontSize: 15, color: colors.muted },
   error: {
     gap: space.sm,
     padding: space.md,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.danger,
-    backgroundColor: '#FDECEA',
+    backgroundColor: colors.dangerSoft,
   },
-  errorText: { fontSize: 14, lineHeight: 20, color: '#8C2A1F' },
+  errorText: { fontSize: 14, lineHeight: 20, color: colors.dangerInk },
   retry: {
     alignSelf: 'flex-start',
     minHeight: 44,
@@ -159,10 +155,10 @@ const styles = StyleSheet.create({
   moreText: { fontSize: 14, fontWeight: '700', color: colors.brand },
   offline: {
     padding: space.md,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.danger,
-    backgroundColor: '#FDECEA',
+    backgroundColor: colors.dangerSoft,
   },
-  offlineMain: { fontSize: 13, fontWeight: '700', color: '#B42318' },
+  offlineMain: { fontSize: 13, fontWeight: '700', color: colors.dangerInk },
 });

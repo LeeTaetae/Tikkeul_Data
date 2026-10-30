@@ -1,7 +1,6 @@
 import type * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,20 +9,27 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Bus, Crosshair, Footprints, MapPin, Search, TrainFront, X, type LucideIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
-import { CategoryMenu } from '../src/components/CategoryMenu';
-import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
 import { Logo } from '../src/components/Logo';
+import { Card } from '../src/components/ui/Card';
+import { BottomSheet } from '../src/components/ui/BottomSheet';
+import { Chip } from '../src/components/ui/Chip';
+import { RoundButton } from '../src/components/ui/RoundButton';
+import { ScreenHeader } from '../src/components/ui/ScreenHeader';
+import { SearchBar } from '../src/components/ui/SearchBar';
 import { HazardSimulator, useHazardSimulation } from '../src/dev/HazardSimulator';
-import { geoApi, trafficApi } from '../src/lib/api/api';
-import { childProtectionZonesToAlerts } from '../src/lib/api/convert';
-import { useApi } from '../src/lib/api/useApi';
-import { regionQueryFor } from '../src/lib/location/geo';
-import { matchHazardsToRoute, projectOntoRoute, remainingHazards, type Route } from '../src/lib/routeHazards';
+import { guidanceTargetOf, setGuidanceRequest } from '../src/lib/navigation/guidanceSession';
+import type { NavRoute } from '../src/lib/navigation/guidanceEngine';
+import { useRouteHazardWarning } from '../src/lib/navigation/useRouteHazardWarning';
+import { projectOntoRoute, type Route } from '../src/lib/routeHazards';
 import { useHazardWarning } from '../src/lib/useHazardWarning';
+import { useKeyboardHeight } from '../src/lib/useKeyboardHeight';
+import { pickUrgentWarning } from '../src/lib/urgentWarning';
 import { KakaoMap } from '../src/map/KakaoMap';
 import { DEMO_ORIGIN, findDemoDestination } from '../src/map/demoDestinations';
 import {
@@ -39,7 +45,8 @@ import {
   type TravelMode,
 } from '../src/map/navigationApi';
 import type { KakaoMapHandle, RoutePoint } from '../src/map/types';
-import { MAX_CONTENT_WIDTH, colors, radius, space } from '../src/theme';
+import { Icon } from '../src/components/ui/Icon';
+import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../src/theme';
 
 const STYLE_LABEL: Record<RouteStyle, string> = {
   recommended: 'map.styleRecommended',
@@ -74,6 +81,13 @@ interface RecentDestination {
 }
 
 const RECENTS_KEY = 'tikkeul:recentDestinations';
+const COMPACT_WIDTH = 360;
+const RECENTS_MAX_HEIGHT = 280;
+const RECENTS_MIN_HEIGHT = 120;
+// 하단 탭 바 높이(60) + 여유. 최근 검색 패널이 탭 바 밑으로 파고들지 않게 뺀다.
+const TAB_BAR_ALLOWANCE = 76;
+// 위험 경고 카드 높이의 기본값. 카드가 처음 그려져 실제 높이를 알려 주기(onHeightChange) 전까지만 쓴다.
+const HAZARD_ALERT_FALLBACK_HEIGHT = 190;
 const MAX_RECENTS = 8;
 
 // shortcut: 브라우저 localStorage에만 저장(기기 로컬, 이 브라우저 안에서만 보임). 계정 동기화 없음.
@@ -149,13 +163,13 @@ function legColor(step: TransitStep): string {
   if (step.type === 'WALKING') return colors.line;
   if (step.type === 'SUBWAY') return colors.info;
   const vehicleType = step.vehicles[0]?.type ?? '';
-  return vehicleType.includes('직행') || vehicleType.includes('급행') ? colors.danger : colors.guide;
+  return vehicleType.includes('직행') || vehicleType.includes('급행') ? colors.dangerStrong : colors.guide;
 }
 
-function legIcon(step: TransitStep): string {
-  if (step.type === 'WALKING') return '🚶';
-  if (step.type === 'SUBWAY') return '🚇';
-  return '🚌';
+function legIcon(step: TransitStep): LucideIcon {
+  if (step.type === 'WALKING') return Footprints;
+  if (step.type === 'SUBWAY') return TrainFront;
+  return Bus;
 }
 
 // 같은 구간에 여러 번호(예: 지하철 호선 안내가 열차마다 반복)로 올 수 있어 중복 제거해서 보여준다.
@@ -199,11 +213,34 @@ function getCurrentLocation(): Promise<RoutePoint> {
   });
 }
 
+// 검색 실행 버튼. 좁은 화면에서는 아이콘만 보이고, 이름은 접근성 라벨로 남는다.
+function SearchAction({ label, compact, onPress }: { label: string; compact: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      style={[styles.searchAction, compact && styles.searchActionCompact]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {compact ? (
+        <Icon icon={Search} size={20} color={colors.surface} />
+      ) : (
+        <Text style={styles.searchActionText} numberOfLines={1}>
+          {label}
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
 // 전체 화면 지도 위에 검색창·결과를 겹쳐 놓는다. 길찾기는 전부 이 화면에서 끝난다.
 export default function HomeScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // 좁은 화면(320px 등)에서는 검색 버튼을 글자 대신 아이콘으로 줄여 입력창 폭을 지킨다.
+  const compactSearch = windowWidth < COMPACT_WIDTH;
   const mapRef = useRef<KakaoMapHandle>(null);
   const destinationInputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   // 내비게이션 안내·GPS 가 생기기 전까지는 개발용 시뮬레이터가 안내 상태와 남은 거리를 대신한다.
@@ -234,33 +271,29 @@ export default function HomeScreen() {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState(false);
   const [searched, setSearched] = useState(false);
+  // 마지막 경로 검색에 쓴 출발지·도착지. 길안내 시작 때 같은 조건으로 안내용 경로(guides 포함)를 다시 받는 데 쓴다.
+  const lastSearchRef = useRef<{ origin: RoutePoint; destination: RoutePoint; label: string } | null>(null);
   // 처음엔 "검색" 한 칸만 보이다가, 경로검색 버튼을 누르거나 그 칸을 건드리면 출발/도착 두 칸으로 바뀐다.
   const [plannerOpen, setPlannerOpen] = useState(false);
+  // 최근 검색 패널이 키보드·하단 탭 아래로 내려가지 않게 남는 높이를 계산한다.
+  const keyboardHeight = useKeyboardHeight();
+  const [recentsTop, setRecentsTop] = useState(0);
+  // 현재 떠 있는 하단 시트의 높이. 위험 경고가 시트 위로 올라앉게 하는 데 쓴다.
+  const [sheetHeight, setSheetHeight] = useState(0);
+  // 위험 경고 카드의 실제 높이. 상세 보기를 펴면 커지므로 그때마다 새로 받는다.
+  const [alertHeight, setAlertHeight] = useState(HAZARD_ALERT_FALLBACK_HEIGHT);
 
-  // 어린이보호구역: 실제 안내 경로에 실제 보호구역 데이터를 매칭해 접근 경고를 띄운다.
-  // 보호구역 조회는 시군구 단위라 경로 시작점의 시군구만 쓴다. 경로가 다른 시군구로 넘어가면 그 구간의
-  // 보호구역은 빠질 수 있다 — 데모/도심 경로 범위에서는 괜찮은 근사다.
-  const routeOrigin = activeRoute?.path[0] ?? null;
-  const zoneRegionQuery = routeOrigin ? regionQueryFor({ latitude: routeOrigin.lat, longitude: routeOrigin.lng }) : null;
-  const zoneRegion = useApi((signal) => geoApi.region(zoneRegionQuery!.lat, zoneRegionQuery!.lon, { signal }), {
-    key: zoneRegionQuery?.key ?? '',
-    enabled: !!zoneRegionQuery,
-  });
-  const zoneSggCd = zoneRegion.state.status === 'success' ? zoneRegion.state.data.sgg_cd : '';
-  const zoneData = useApi((signal) => trafficApi.protectionZones(zoneSggCd, { signal }), {
-    key: zoneSggCd,
-    enabled: !!zoneSggCd,
-  });
-  // activeRoute 가 바뀔 때만(안내 시작·종료·재탐색) 새로 만든다. 그래야 아래 useMemo 의존성이 매 렌더
-  // 바뀌지 않아, 경로·위험 데이터가 그대로인 렌더에서는 matchHazardsToRoute 를 다시 돌리지 않는다.
+  // 어린이보호구역: 실제 안내 경로에 실제 보호구역 데이터를 매칭해 접근 경고를 띄운다. 조회·매칭·단계 경고는
+  // 길안내 화면과 같은 훅(useRouteHazardWarning)을 쓴다. 경로가 지나는 시군구를 표본 조회한다(경로 시작점 하나만 보지 않는다).
+  // activeRoute 가 바뀔 때만(안내 시작·종료·재탐색) 새로 만든다. 위치 폴링용 투영(projectOntoRoute)에도 쓴다.
   const schoolZoneRoute: Route | null = useMemo(
     () => (activeRoute ? { id: String(routeSeq), points: activeRoute.path.map((p) => ({ latitude: p.lat, longitude: p.lng })) } : null),
     [activeRoute, routeSeq],
   );
-  const schoolZoneOnRoute = useMemo(() => {
-    if (!schoolZoneRoute || zoneData.state.status !== 'success') return [];
-    return matchHazardsToRoute(schoolZoneRoute, childProtectionZonesToAlerts(zoneData.state.data.items)).onRoute;
-  }, [schoolZoneRoute, zoneData.state.data]);
+  const homeNavRoute: NavRoute | null = useMemo(
+    () => (activeRoute ? { id: String(routeSeq), source: 'api', mode: 'driving', path: activeRoute.path } : null),
+    [activeRoute, routeSeq],
+  );
 
   // shortcut: 연속 위치추적(watchPosition) 대신 5초 간격으로 현재 위치를 다시 읽는다. 실제 내비게이션
   // GPS 추적이 생기면(sim 주석 참고) 그 값을 함께 쓰도록 바꾼다.
@@ -288,11 +321,8 @@ export default function HomeScreen() {
     };
   }, [schoolZoneRoute]);
 
-  const schoolZoneWarning = useHazardWarning({
-    active: !!schoolZoneRoute,
-    routeKey: schoolZoneRoute?.id ?? '',
-    hazards: remainingHazards(schoolZoneOnRoute, liveProgressM),
-  });
+  // 홈의 안내 상태(자전거·대중교통)는 보호구역만 쓴다. 사고·공사·정체(자동차용 돌발정보)는 조회하지 않는다(includeIncidents: false).
+  const schoolZoneWarning = useRouteHazardWarning({ route: homeNavRoute, progressM: liveProgressM, active: !!homeNavRoute, includeIncidents: false });
 
   const onChangeDestination = (text: string) => {
     setPlannerOpen(true);
@@ -325,6 +355,7 @@ export default function HomeScreen() {
     setTransitResult(null);
     setTransitCategory('all');
     const origin = manualOrigin ?? findDemoDestination(originText) ?? (await getCurrentLocation());
+    lastSearchRef.current = { origin, destination: destinationPoint, label };
     if (travelMode === 'transit') {
       const [transit, originAddressValue, destinationAddressValue] = await Promise.all([
         fetchTransitRoutes(origin, destinationPoint),
@@ -433,6 +464,16 @@ export default function HomeScreen() {
   };
 
   const onStartGuidance = (route: StyledRoute) => {
+    // 자동차·도보는 별도 길안내 화면이 GPS 를 맡는다. 홈의 안내 상태(위치 폴링·위험 경고)는 꺼서 위치 추적기가 둘이 되지 않게 한다.
+    // 자전거·대중교통은 실시간 길안내를 지원하지 않아 기존처럼 홈에서 안내 상태만 보여준다.
+    const target = guidanceTargetOf(route.style);
+    const search = lastSearchRef.current;
+    if (target && search) {
+      setActiveRoute(null);
+      setGuidanceRequest({ origin: search.origin, destination: search.destination, mode: target.mode, style: target.style, destinationLabel: search.label });
+      router.push('/navigation');
+      return;
+    }
     setActiveRoute(route);
     setRouteSeq((n) => n + 1);
     mapRef.current?.showRoute(route.path);
@@ -471,11 +512,26 @@ export default function HomeScreen() {
     if (recommended) onStartGuidance(recommended);
   };
 
-  const bottomPadding = { paddingBottom: insets.bottom + space.md };
+  // 위험 경고: 시트가 있으면 그 높이만큼 위로 올린다. 시트를 크게 펼쳐도 경고 카드(닫기 버튼 포함)가 화면 위로 잘리지 않게
+  // 카드 높이만큼의 여유는 남긴다. 그 경우 경고는 시트의 맨 윗부분(손잡이)만 덮고 안쪽 내용은 가리지 않는다.
+  const urgent = pickUrgentWarning(warning, schoolZoneWarning.warning);
+  // 경고가 떠 있을 때 그 카드(+위아래 여백)가 차지하는 높이. 시트·최근 검색 패널은 이만큼을 비워 둔다.
+  const alertReserve = urgent ? alertHeight + space.lg + space.sm : 0;
+  const maxSheetHeightWithAlert = Math.max(0, windowHeight - TAB_BAR_ALLOWANCE - alertReserve - insets.top);
+  const hasSheet = !!(pickedPoint || activeRoute || liveLoading || routeStyles || transitResult || searched);
+  const hazardOffset = hasSheet
+    ? Math.min(sheetHeight, maxSheetHeightWithAlert)
+    : 0;
+  const sheetProps = {
+    maxExpandedHeight: urgent ? maxSheetHeightWithAlert : undefined, windowHeight, bottomInset: insets.bottom, onHeightChange: setSheetHeight };
   const inRouteView = searched || routeStyles !== null || transitResult !== null || activeRoute !== null;
   const showPlanner = plannerOpen || inRouteView;
   const originLabel = originAddress ?? (manualOrigin ? t('map.pickedLocation') : originText || t('map.myLocation'));
   const destinationLabel = destinationAddress ?? (destination || t('map.pickedLocation'));
+  const recentsMaxHeight = Math.min(
+    RECENTS_MAX_HEIGHT,
+    Math.max(RECENTS_MIN_HEIGHT, windowHeight - recentsTop - keyboardHeight - TAB_BAR_ALLOWANCE - alertReserve),
+  );
   const showRecents = destinationFocused && !inRouteView && (recents.length > 0 || recentRoutes.length > 0);
 
   return (
@@ -485,35 +541,36 @@ export default function HomeScreen() {
       </View>
 
       {/* 위험 경고는 상단 오버레이(메뉴·시뮬레이터)보다 먼저 그려 그 아래에 깔린다. */}
-      {warning && <NavigationHazardAlert key={`${warning.alert.id}:${warning.stage}`} warning={warning} onClose={dismiss} />}
-      {schoolZoneWarning.warning && (
+      {/* 두 경고가 동시에 오면 더 급한 하나만 보여준다(예전엔 둘이 같은 자리에 겹쳐 뒤쪽이 가려졌다). 시트가 있으면 그 위에 올려놓는다. */}
+      {urgent && (
         <NavigationHazardAlert
-          key={`${schoolZoneWarning.warning.alert.id}:${schoolZoneWarning.warning.stage}`}
-          warning={schoolZoneWarning.warning}
-          onClose={schoolZoneWarning.dismiss}
+          key={`${urgent.alert.id}:${urgent.stage}`}
+          warning={urgent}
+          bottomOffset={hazardOffset}
+          onHeightChange={setAlertHeight}
+          onClose={urgent === warning ? dismiss : schoolZoneWarning.dismiss}
         />
       )}
 
       {/* 빈 곳은 터치를 지도로 통과시킨다(box-none). 안 하면 지도 드래그가 막힌다. */}
       <View style={[styles.overlay, { paddingTop: insets.top + space.md }]}>
         <View style={styles.column}>
-          <View style={styles.header}>
-            <Logo />
-            <LanguageSwitcher />
-            <CategoryMenu />
-          </View>
+          <ScreenHeader title={<Logo />} />
           {showPlanner ? (
-            // 출발/도착 두 줄 — 출발은 기본값 "내 위치"(지도에서 고르면 그 라벨), 도착은 검색 중엔 입력창, 경로가 잡히면 텍스트+✕로 바뀐다.
-            <View style={styles.routeSummary}>
-              <View style={styles.routeSummaryRow}>
-                <View style={styles.routeSummaryDot} />
+            // 출발/도착 두 줄 — 출발은 기본값 "내 위치"(지도에서 고르면 그 라벨), 도착은 검색 중엔 입력창, 경로가 잡히면 텍스트+닫기로 바뀐다.
+            // 출발은 동그라미, 도착은 핀 모양으로 구분한다(색만으로 구분하지 않는다).
+            <Card style={styles.planner}>
+              <View style={styles.plannerRow}>
+                <View style={styles.plannerMarker}>
+                  <View style={styles.originDot} />
+                </View>
                 {inRouteView ? (
-                  <Text style={styles.routeSummaryText} numberOfLines={1}>
+                  <Text style={[styles.plannerText, styles.plannerFlex]} numberOfLines={1}>
                     {originLabel}
                   </Text>
                 ) : (
                   <TextInput
-                    style={[styles.routeSummaryInput, styles.routeSummaryText]}
+                    style={[styles.plannerText, styles.plannerInput]}
                     value={originText}
                     onChangeText={onChangeOrigin}
                     accessibilityLabel={t('map.myLocation')}
@@ -524,22 +581,23 @@ export default function HomeScreen() {
                   />
                 )}
               </View>
-              <View style={styles.routeSummaryRow}>
-                <View style={[styles.routeSummaryDot, styles.routeSummaryDotEnd]} />
+              <View style={styles.plannerDivider} />
+              <View style={styles.plannerRow}>
+                <View style={styles.plannerMarker}>
+                  <Icon icon={MapPin} size={20} color={colors.dangerStrong} />
+                </View>
                 {inRouteView ? (
                   <>
-                    <Text style={[styles.routeSummaryText, styles.routeSummaryTextFlex]} numberOfLines={1}>
+                    <Text style={[styles.plannerText, styles.plannerFlex]} numberOfLines={1}>
                       {destinationLabel}
                     </Text>
-                    <Pressable onPress={onResetSearch} accessibilityRole="button" accessibilityLabel={t('map.cancel')}>
-                      <Text style={styles.routeSummaryClose}>✕</Text>
-                    </Pressable>
+                    <RoundButton icon={X} label={t('map.cancel')} variant="soft" size={44} onPress={onResetSearch} />
                   </>
                 ) : (
                   <>
                     <TextInput
                       ref={destinationInputRef}
-                      style={styles.routeSummaryInput}
+                      style={[styles.plannerText, styles.plannerInput]}
                       value={destination}
                       onChangeText={onChangeDestination}
                       onFocus={() => setDestinationFocused(true)}
@@ -551,44 +609,46 @@ export default function HomeScreen() {
                       onSubmitEditing={onSearch}
                       autoFocus
                     />
-                    <Pressable
-                      style={styles.routeSummarySearchButton}
-                      onPress={onSearch}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('map.search')}
-                    >
-                      <Text style={styles.routeSummarySearchButtonText}>{t('map.search')}</Text>
-                    </Pressable>
+                    <SearchAction label={t('map.search')} compact={compactSearch} onPress={onSearch} />
                   </>
                 )}
               </View>
-            </View>
+              {inRouteView && (
+                <>
+                  <View style={styles.plannerDivider} />
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.modeRow}
+                    accessibilityRole="tablist"
+                  >
+                    {MODES.map((m) => (
+                      <Chip key={m} label={t(MODE_LABEL[m])} selected={mode === m} onPress={() => onChangeMode(m)} />
+                    ))}
+                  </ScrollView>
+                </>
+              )}
+            </Card>
           ) : (
             // 처음엔 "검색" 한 칸 + 경로검색 버튼만 보여준다. 누르면 출발/도착 두 칸으로 바뀐다.
-            <View style={styles.searchRow}>
-              <TextInput
-                style={[styles.search, styles.searchInput]}
-                value={destination}
-                onChangeText={onChangeDestination}
-                accessibilityLabel={t('map.searchPlaceholder')}
-                placeholder={t('map.searchPlaceholder')}
-                placeholderTextColor={colors.muted}
-                returnKeyType="search"
-                onFocus={() => setPlannerOpen(true)}
-                onSubmitEditing={() => setPlannerOpen(true)}
-              />
-              <Pressable
-                style={styles.routeButton}
-                onPress={() => setPlannerOpen(true)}
-                accessibilityRole="button"
-                accessibilityLabel={t('map.search')}
-              >
-                <Text style={styles.routeButtonText}>{t('map.search')}</Text>
-              </Pressable>
-            </View>
+            <SearchBar
+              accessibilityLabel={t('map.searchPlaceholder')}
+              placeholder={t('map.searchPlaceholder')}
+              value={destination}
+              onChangeText={onChangeDestination}
+              returnKeyType="search"
+              onFocus={() => setPlannerOpen(true)}
+              onSubmitEditing={() => setPlannerOpen(true)}
+              trailing={<SearchAction label={t('map.search')} compact={compactSearch} onPress={() => setPlannerOpen(true)} />}
+            />
           )}
           {showRecents && (
-            <ScrollView style={styles.recentsPanel} contentContainerStyle={styles.recentsPanelContent}>
+            <ScrollView
+              style={[styles.recentsPanel, { maxHeight: recentsMaxHeight }]}
+              contentContainerStyle={styles.recentsPanelContent}
+              onLayout={(e) => setRecentsTop(insets.top + space.md + e.nativeEvent.layout.y)}
+              keyboardShouldPersistTaps="handled"
+            >
               {recents.length > 0 && (
                 <>
                   <Text style={styles.recentsTitle}>{t('map.recentDestinations')}</Text>
@@ -625,37 +685,17 @@ export default function HomeScreen() {
               )}
             </ScrollView>
           )}
-          {inRouteView && (
-            <View style={styles.modeRow}>
-              {MODES.map((m) => (
-                <Pressable
-                  key={m}
-                  style={[styles.modeButton, mode === m && styles.modeButtonActive]}
-                  onPress={() => onChangeMode(m)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: mode === m }}
-                >
-                  <Text style={[styles.modeButtonText, mode === m && styles.modeButtonTextActive]}>
-                    {t(MODE_LABEL[m])}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-          <Pressable
-            style={styles.fab}
-            onPress={() => mapRef.current?.moveToMyLocation()}
-            accessibilityRole="button"
-            accessibilityLabel={t('map.myLocation')}
-          >
-            <Text style={styles.fabIcon}>◎</Text>
-          </Pressable>
+          <View style={styles.fabWrap}>
+            <RoundButton icon={Crosshair} label={t('map.myLocation')} onPress={() => mapRef.current?.moveToMyLocation()} />
+          </View>
           {__DEV__ && <HazardSimulator sim={sim} />}
         </View>
       </View>
 
+      {/* 하단 패널 6곳. 고정 4곳(지점 선택·탐색 중·경로 카드·안내 문구)은 draggable={false}, 드래그 2곳(안내 중·대중교통)은 기본값.
+          key 는 패널 종류가 바뀔 때 접힘 상태를 새로 시작하게 한다(예전엔 컴포넌트 종류가 달라 자연히 새로 시작했다). */}
       {pickedPoint ? (
-        <View style={[styles.bottomPanel, bottomPadding]}>
+        <BottomSheet key="pick" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t('map.pickPrompt')}</Text>
           <View style={styles.pickActions}>
             <Pressable style={styles.pickButton} onPress={onPickOrigin} accessibilityRole="button">
@@ -668,9 +708,9 @@ export default function HomeScreen() {
               <Text style={styles.pickCancelText}>{t('map.cancel')}</Text>
             </Pressable>
           </View>
-        </View>
+        </BottomSheet>
       ) : activeRoute ? (
-        <DraggableSheet windowHeight={windowHeight} bottomPadding={bottomPadding.paddingBottom}>
+        <BottomSheet key="guide" {...sheetProps}>
           <View style={styles.activeBar}>
             <View style={styles.routeMain}>
               <Text style={styles.routeName}>
@@ -695,13 +735,13 @@ export default function HomeScreen() {
               ))}
             </View>
           )}
-        </DraggableSheet>
+        </BottomSheet>
       ) : liveLoading ? (
-        <View style={[styles.bottomPanel, bottomPadding]}>
+        <BottomSheet key="loading" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t('map.liveLoading')}</Text>
-        </View>
+        </BottomSheet>
       ) : routeStyles ? (
-        <View style={[styles.bottomPanel, bottomPadding]}>
+        <BottomSheet key="styles" draggable={false} {...sheetProps}>
           <RouteStylePager
             routes={routeStyles}
             styleLabel={STYLE_LABEL}
@@ -709,9 +749,9 @@ export default function HomeScreen() {
             onPreview={(route) => mapRef.current?.showRoute(route.path)}
             t={t}
           />
-        </View>
+        </BottomSheet>
       ) : transitResult ? (
-        <DraggableSheet windowHeight={windowHeight} bottomPadding={bottomPadding.paddingBottom}>
+        <BottomSheet key="transit" {...sheetProps}>
           <TransitRouteList
             result={transitResult}
             category={transitCategory}
@@ -720,60 +760,12 @@ export default function HomeScreen() {
             onStart={(option) => onStartGuidance(toStyledRoute(option))}
             t={t}
           />
-        </DraggableSheet>
+        </BottomSheet>
       ) : searched ? (
-        <View style={[styles.bottomPanel, bottomPadding]}>
+        <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t(liveError ? 'map.liveError' : 'map.demoHint')}</Text>
-        </View>
+        </BottomSheet>
       ) : null}
-    </View>
-  );
-}
-
-const SHEET_COLLAPSED_HEIGHT = 180;
-
-// 상세 경로 패널을 손잡이로 위/아래 드래그해서 접었다 펼쳤다 한다. 손잡이 영역에만 PanResponder를
-// 붙여서 아래 ScrollView의 세로 스크롤과 충돌하지 않게 한다.
-function DraggableSheet({
-  windowHeight,
-  bottomPadding,
-  children,
-}: {
-  windowHeight: number;
-  bottomPadding: number;
-  children: React.ReactNode;
-}) {
-  const expandedHeight = Math.round(windowHeight * 0.75);
-  const heightRef = useRef(SHEET_COLLAPSED_HEIGHT);
-  const [height, setHeight] = useState(SHEET_COLLAPSED_HEIGHT);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderGrant: () => {
-        heightRef.current = height;
-      },
-      onPanResponderMove: (_, gesture) => {
-        setHeight(Math.min(Math.max(heightRef.current - gesture.dy, SHEET_COLLAPSED_HEIGHT), expandedHeight));
-      },
-      onPanResponderRelease: (_, gesture) => {
-        const mid = (SHEET_COLLAPSED_HEIGHT + expandedHeight) / 2;
-        const next = heightRef.current - gesture.dy > mid ? expandedHeight : SHEET_COLLAPSED_HEIGHT;
-        heightRef.current = next;
-        setHeight(next);
-      },
-    }),
-  ).current;
-
-  return (
-    <View style={[styles.bottomPanel, { height, maxHeight: height }]}>
-      <View {...panResponder.panHandlers} style={styles.dragHandleArea}>
-        <View style={styles.dragHandle} />
-      </View>
-      <ScrollView contentContainerStyle={[styles.bottomPanelContent, { paddingBottom: bottomPadding }]}>
-        {children}
-      </ScrollView>
     </View>
   );
 }
@@ -882,21 +874,16 @@ function TransitRouteList({
 
   return (
     <View style={styles.transitList}>
-      <View style={styles.transitTabs}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.transitTabs}>
         {(Object.keys(TRANSIT_CATEGORY_LABEL) as TransitCategory[]).map((c) => (
-          <Pressable
+          <Chip
             key={c}
-            style={[styles.transitTab, category === c && styles.transitTabActive]}
+            label={`${t(TRANSIT_CATEGORY_LABEL[c])} ${counts[c]}`}
+            selected={category === c}
             onPress={() => onChangeCategory(c)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: category === c }}
-          >
-            <Text style={[styles.transitTabText, category === c && styles.transitTabTextActive]}>
-              {t(TRANSIT_CATEGORY_LABEL[c])} {counts[c]}
-            </Text>
-          </Pressable>
+          />
         ))}
-      </View>
+      </ScrollView>
       {filtered.length === 0 ? (
         <Text style={styles.notice}>{t('map.transitEmpty')}</Text>
       ) : (
@@ -926,7 +913,10 @@ function TransitRouteList({
                       style={[styles.segmentChip, { flex: Math.max(step.timeSec, 1), backgroundColor: legColor(step) }]}
                     >
                       {step.timeSec >= 60 && (
-                        <Text style={styles.segmentChipText} numberOfLines={1}>
+                        <Text
+                          style={[styles.segmentChipText, step.type === 'WALKING' && styles.segmentChipTextDark]}
+                          numberOfLines={1}
+                        >
                           {t('map.minutes', { n: Math.round(step.timeSec / 60) })}
                         </Text>
                       )}
@@ -943,7 +933,7 @@ function TransitRouteList({
                     return (
                       <View key={si} style={styles.legRow}>
                         <View style={[styles.legIconBadge, { backgroundColor: legColor(step) }]}>
-                          <Text style={styles.legIconText}>{legIcon(step)}</Text>
+                          <Icon icon={legIcon(step)} size={16} color={colors.surface} />
                         </View>
                         <View style={styles.legMain}>
                           <Text style={styles.legVehicle} numberOfLines={1}>
@@ -984,69 +974,36 @@ const styles = StyleSheet.create({
     pointerEvents: 'box-none',
   },
   column: { width: '100%', maxWidth: MAX_CONTENT_WIDTH, gap: space.md, pointerEvents: 'box-none' },
-  header: {
-    // zIndex: 펼친 카테고리 메뉴가 검색창·버튼에 가려지지 않게 헤더를 위로 올린다.
-    zIndex: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    paddingVertical: space.sm,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-  },
-  searchRow: { flexDirection: 'row', gap: space.sm },
-  search: {
-    minHeight: 48,
-    borderRadius: radius.md,
-    borderColor: colors.line,
-    borderWidth: 1,
-    paddingHorizontal: space.lg,
-    fontSize: 16,
-    color: colors.ink,
+  // 출발/도착 두 줄 카드
+  planner: { paddingVertical: space.xs, paddingHorizontal: space.md },
+  plannerRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  plannerMarker: { width: 24, alignItems: 'center', justifyContent: 'center' },
+  originDot: {
+    width: 12,
+    height: 12,
+    borderRadius: radius.pill,
+    borderWidth: 3,
+    borderColor: colors.guide,
     backgroundColor: colors.surface,
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
   },
-  searchInput: { flex: 1 },
-  routeButton: {
-    minHeight: 48,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
+  plannerDivider: { height: 1, marginLeft: 32, backgroundColor: colors.line },
+  plannerText: { fontSize: 16, color: colors.ink },
+  plannerFlex: { flex: 1, minWidth: 0 },
+  plannerInput: { flex: 1, minWidth: 0, minHeight: 44, outlineColor: colors.brand },
+  searchAction: {
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: space.md,
+    borderRadius: radius.sm,
     backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
   },
-  routeButtonText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
-  fab: {
-    alignSelf: 'flex-end',
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-  },
-  fabIcon: { fontSize: 22, color: colors.ink },
-  bottomPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '60%',
-    zIndex: 2,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
-    boxShadow: '0 -2px 12px rgba(0, 0, 0, 0.16)',
-  },
-  bottomPanelContent: { padding: space.lg, gap: space.sm },
-  notice: { fontSize: 13, color: colors.muted, padding: space.lg },
-  pickActions: { flexDirection: 'row', gap: space.sm, paddingHorizontal: space.lg },
+  searchActionCompact: { width: 44, paddingHorizontal: 0 },
+  searchActionText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
+  fabWrap: { alignSelf: 'flex-end' },
+  notice: { fontSize: 14, lineHeight: 20, color: colors.muted },
+  pickActions: { flexDirection: 'row', gap: space.sm },
   pickButton: { flex: 1, minHeight: 44, borderRadius: radius.sm, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
   pickButtonText: { color: colors.surface, fontSize: 13, fontWeight: '700' },
   pickCancel: { minHeight: 44, paddingHorizontal: space.md, borderRadius: radius.sm, backgroundColor: colors.paper, borderColor: colors.line, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
@@ -1065,7 +1022,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   styleCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  startButton: { minHeight: 40, borderRadius: radius.sm, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
+  startButton: { minHeight: 48, borderRadius: radius.sm, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
   startButtonText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
   activeBar: {
     flexDirection: 'row',
@@ -1078,41 +1035,15 @@ const styles = StyleSheet.create({
     padding: space.lg,
     gap: space.md,
   },
-  stopButton: { minHeight: 40, paddingHorizontal: space.md, borderRadius: radius.sm, backgroundColor: colors.surface, borderColor: colors.line, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  stopButton: { minHeight: 44, paddingHorizontal: space.md, borderRadius: radius.sm, backgroundColor: colors.surface, borderColor: colors.line, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   stopButtonText: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   instructions: { gap: space.xs },
   instructionsTitle: { fontSize: 15, fontWeight: '800', color: colors.ink, marginTop: space.xs },
   instructionStep: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   instructionCount: { fontSize: 12, color: colors.muted, textAlign: 'center' },
-  modeRow: { flexDirection: 'row', gap: space.sm },
-  modeButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modeButtonActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  modeButtonText: { fontSize: 13, fontWeight: '700', color: colors.ink },
-  modeButtonTextActive: { color: colors.surface },
+  modeRow: { gap: space.sm, paddingVertical: space.sm },
   transitList: { gap: space.sm },
-  transitTabs: { flexDirection: 'row', gap: space.xs },
-  transitTab: {
-    flex: 1,
-    minHeight: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  transitTabActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  transitTabText: { fontSize: 12, fontWeight: '700', color: colors.ink },
-  transitTabTextActive: { color: colors.surface },
+  transitTabs: { gap: space.sm, paddingVertical: space.xs },
   transitCard: {
     backgroundColor: colors.paper,
     borderColor: colors.line,
@@ -1124,51 +1055,17 @@ const styles = StyleSheet.create({
   segmentBar: { flexDirection: 'row', height: 22, borderRadius: radius.sm, overflow: 'hidden', gap: 1 },
   segmentChip: { alignItems: 'center', justifyContent: 'center' },
   segmentChipText: { fontSize: 10, fontWeight: '700', color: colors.surface },
+  segmentChipTextDark: { color: colors.ink },
   legList: { gap: space.sm },
   legRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   legIconBadge: { width: 28, height: 28, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  legIconText: { fontSize: 14 },
   legMain: { flex: 1, gap: 1 },
   legVehicle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   legStop: { fontSize: 12, color: colors.muted },
   legDuration: { fontSize: 12, color: colors.muted },
-  routeSummary: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderColor: colors.line,
-    borderWidth: 1,
-    padding: space.md,
-    gap: space.xs,
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-  },
-  routeSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  routeSummaryDot: { width: 8, height: 8, borderRadius: radius.pill, backgroundColor: colors.guide },
-  routeSummaryDotEnd: { backgroundColor: colors.danger },
-  routeSummaryText: { fontSize: 14, color: colors.ink },
-  routeSummaryTextFlex: { flex: 1 },
-  routeSummaryClose: { fontSize: 15, color: colors.muted, paddingHorizontal: space.xs },
-  routeSummaryInput: { flex: 1, fontSize: 14, color: colors.ink, paddingVertical: space.xs },
-  routeSummarySearchButton: {
-    minHeight: 32,
-    paddingHorizontal: space.md,
-    borderRadius: radius.sm,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  routeSummarySearchButtonText: { color: colors.surface, fontSize: 13, fontWeight: '700' },
-  recentsPanel: {
-    maxHeight: 280,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderColor: colors.line,
-    borderWidth: 1,
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-  },
+  recentsPanel: { backgroundColor: colors.surface, borderRadius: radius.lg, boxShadow: shadow.float },
   recentsPanelContent: { padding: space.md, gap: space.xs },
-  recentsTitle: { fontSize: 12, fontWeight: '700', color: colors.muted, marginTop: space.xs },
-  recentItem: { paddingVertical: space.sm },
-  recentItemText: { fontSize: 14, color: colors.ink },
-  dragHandleArea: { paddingVertical: space.sm, alignItems: 'center' },
-  dragHandle: { width: 40, height: 5, borderRadius: radius.pill, backgroundColor: colors.line },
+  recentsTitle: { fontSize: 13, fontWeight: '700', color: colors.muted, marginTop: space.xs },
+  recentItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.xs },
+  recentItemText: { fontSize: 15, color: colors.ink },
 });

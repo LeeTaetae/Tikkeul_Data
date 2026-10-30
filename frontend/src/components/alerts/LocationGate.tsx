@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { LocationState } from '../../lib/location/useUserLocation';
 import { colors, radius, space } from '../../theme';
+import { Card } from '../ui/Card';
 
 type NotReady = Exclude<LocationState, { status: 'ready' }>;
 
@@ -14,11 +15,11 @@ export function LocationGate({ state, onRequest }: { state: NotReady; onRequest:
 
   if (state.status === 'locating') {
     return (
-      <View style={styles.card} accessibilityLiveRegion="polite">
-        <View style={styles.row}>
+      <View accessibilityLiveRegion="polite">
+        <Card style={styles.row}>
           <ActivityIndicator color={colors.brand} />
           <Text style={styles.title}>{t('traffic.location.locating.title')}</Text>
-        </View>
+        </Card>
       </View>
     );
   }
@@ -26,26 +27,28 @@ export function LocationGate({ state, onRequest }: { state: NotReady; onRequest:
   const failed = state.status === 'failed';
   const reason = failed ? state.reason : null;
   return (
-    <View style={[styles.card, failed && styles.cardFailed]} accessibilityRole={failed ? 'alert' : undefined}>
-      <Text style={styles.title}>{t(`traffic.location.${key}.title`)}</Text>
-      <Text style={styles.body}>{t(`traffic.location.${key}.body`)}</Text>
-      {/* 웹은 브라우저가 한 번 차단하면 다시 요청해도 대화상자가 뜨지 않아 사이트 설정 안내가 필요하다. */}
-      {isWeb && reason === 'denied' && <Text style={styles.body}>{t('traffic.location.webSettings')}</Text>}
-      {state.status === 'idle' && <Text style={styles.note}>{t('traffic.location.privacy')}</Text>}
-
-      <View style={styles.actions}>
-        {state.status === 'idle' && <ActionButton label={t('traffic.location.allow')} onPress={onRequest} primary />}
-        {reason === 'denied' && <ActionButton label={t('traffic.location.askAgain')} onPress={onRequest} primary />}
-        {reason === 'permanentlyDenied' && (
-          <>
-            {!isWeb && <ActionButton label={t('traffic.location.openSettings')} onPress={() => Linking.openSettings()} primary />}
-            <ActionButton label={t('traffic.location.retry')} onPress={onRequest} />
-          </>
-        )}
-        {(reason === 'servicesDisabled' || reason === 'timeout' || reason === 'unavailable') && (
-          <ActionButton label={t('traffic.location.retry')} onPress={onRequest} primary />
-        )}
-      </View>
+    <View accessibilityRole={failed ? 'alert' : undefined}>
+      <Card style={[styles.stack, failed && styles.cardFailed]}>
+        <Text style={styles.title}>{t(`traffic.location.${key}.title`)}</Text>
+        <Text style={styles.body}>{t(`traffic.location.${key}.body`)}</Text>
+        {/* 웹은 브라우저가 한 번 차단하면 다시 요청해도 대화상자가 뜨지 않아 사이트 설정 안내가 필요하다. */}
+        {isWeb && reason === 'denied' && <Text style={styles.body}>{t('traffic.location.webSettings')}</Text>}
+        {state.status === 'idle' && <Text style={styles.note}>{t('traffic.location.privacy')}</Text>}
+  
+        <View style={styles.actions}>
+          {state.status === 'idle' && <ActionButton label={t('traffic.location.allow')} onPress={onRequest} primary />}
+          {reason === 'denied' && <ActionButton label={t('traffic.location.askAgain')} onPress={onRequest} primary />}
+          {reason === 'permanentlyDenied' && (
+            <>
+              {!isWeb && <ActionButton label={t('traffic.location.openSettings')} onPress={() => Linking.openSettings()} primary />}
+              <ActionButton label={t('traffic.location.retry')} onPress={onRequest} />
+            </>
+          )}
+          {(reason === 'servicesDisabled' || reason === 'timeout' || reason === 'unavailable') && (
+            <ActionButton label={t('traffic.location.retry')} onPress={onRequest} primary />
+          )}
+        </View>
+      </Card>
     </View>
   );
 }
@@ -54,9 +57,11 @@ export function LocationGate({ state, onRequest }: { state: NotReady; onRequest:
 export function OutsideServiceNotice() {
   const { t } = useTranslation();
   return (
-    <View style={[styles.card, styles.cardFailed]} accessibilityRole="alert">
-      <Text style={styles.title}>{t('traffic.location.outsideKorea.title')}</Text>
-      <Text style={styles.body}>{t('traffic.location.outsideKorea.body')}</Text>
+    <View accessibilityRole="alert">
+      <Card style={[styles.stack, styles.cardFailed]}>
+        <Text style={styles.title}>{t('traffic.location.outsideKorea.title')}</Text>
+        <Text style={styles.body}>{t('traffic.location.outsideKorea.body')}</Text>
+      </Card>
     </View>
   );
 }
@@ -74,13 +79,7 @@ function ActionButton({ label, onPress, primary }: { label: string; onPress: () 
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: space.sm,
-    padding: space.lg,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    boxShadow: '0 2px 12px rgba(23, 32, 42, 0.08)',
-  },
+  stack: { gap: space.sm },
   cardFailed: { borderWidth: 1, borderColor: colors.line },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   title: { fontSize: 17, lineHeight: 24, fontWeight: '800', color: colors.ink },

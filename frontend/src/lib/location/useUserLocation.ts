@@ -27,7 +27,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 // 웹은 HTTPS(또는 localhost)에서만 위치를 쓸 수 있다.
-function webUnsupported(): boolean {
+export function webUnsupported(): boolean {
   if (Platform.OS !== 'web') return false;
   return typeof navigator === 'undefined' || !navigator.geolocation || (typeof window !== 'undefined' && window.isSecureContext === false);
 }

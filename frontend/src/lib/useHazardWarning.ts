@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { formatDistance } from './distance';
-import type { HazardApproach } from './routeHazards';
+import { hazardKey, type HazardApproach } from './routeHazards';
 import type { RoadAlert } from '../types/alert';
 
 // 경고 단계. advance 는 500m 보다 먼 경로 사전 알림, 나머지는 근접 경고다.
@@ -38,8 +38,8 @@ interface Options {
   hazards: HazardApproach[];
 }
 
-// 위험구간 식별자. revision 이 바뀌면 다른 위험으로 보고 단계별 경고를 처음부터 다시 한다.
-const keyOf = (alert: RoadAlert) => (alert.revision != null ? `${alert.id}#${alert.revision}` : alert.id);
+// 위험구간 식별자(routeHazards.hazardKey): 같은 사건은 같은 위험으로 보고, revision 이 바뀌면 단계별 경고를 처음부터 다시 한다.
+const keyOf = (alert: RoadAlert) => hazardKey(alert);
 
 // 경고 표시 여부와 단계별 중복 방지를 맡는다.
 // - 이력은 "위험구간 + 단계" 단위다. 사전 알림을 봤어도 500·300·100m 경고는 각각 처음이므로 표시된다.

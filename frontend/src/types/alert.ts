@@ -35,6 +35,14 @@ export interface RoadAlert {
   direction?: 'up' | 'down';
   /** 정보 개정 번호. 같은 위험의 내용이 중요하게 바뀌면 값을 바꿔 보내면 단계별 경고를 다시 받을 수 있다. */
   revision?: string | number;
+  /** ISO 8601. 돌발정보의 종료 예정 시각(백엔드 ended_at). 지났으면 이미 끝난 위험이다. 없으면 종료 시각 미정. */
+  endedAt?: string;
+  /** 같은 사건을 가리키는 안정 키(백엔드 event_key). id 와 달리 문구가 바뀌어도 그대로라 중복 판정에 쓴다(routeHazards.hazardKey). 없으면 id 로 구분한다. */
+  eventKey?: string;
+  /** 통제 정도(백엔드 closure). 'full'(전면 통제)은 ITS 명세로 확인되지 않은 값이다. */
+  closure?: 'none' | 'partial' | 'full' | 'unknown';
+  /** 방향 범위(백엔드 direction_scope). 'both'(양방향)여도 headingDeg 가 없으면 경로 방향 판정은 하지 않는다. */
+  directionScope?: 'both' | 'single' | 'unknown';
   /** 언어별 표시 문구. 없는 언어는 원문(한국어)으로 대체한다. */
   translations?: Partial<Record<'en' | 'zh', AlertTranslation>>;
 }

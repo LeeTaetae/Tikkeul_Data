@@ -9,6 +9,8 @@ import type { KakaoMapHandle, RoutePoint } from './types';
 interface KakaoMapInstance {
   setCenter: (position: object) => void;
   setBounds: (bounds: object) => void;
+  panTo: (position: object) => void;
+  setLevel: (level: number) => void;
 }
 
 interface KakaoOverlay {
@@ -90,9 +92,15 @@ function createLocationDot(label: string): HTMLElement {
 interface KakaoMapProps {
   ref?: Ref<KakaoMapHandle>;
   onMapClick?: (point: RoutePoint) => void;
+  /** false 면 지도가 뜰 때 브라우저 위치를 한 번 읽어 중심을 옮기지 않는다(길안내 화면은 GPS 추적이 위치를 맡는다). 기본 true */
+  autoLocate?: boolean;
+  /** 사용자가 지도를 직접 끌기 시작했을 때(길안내 자동 추적 해제용). 코드로 옮긴 이동은 부르지 않는다 */
+  onUserPan?: () => void;
+  /** 지도가 준비되면 한 번 부른다. 준비 전에 호출한 showRoute·setLocationMarker 는 무시되므로 이때 다시 적용한다 */
+  onReady?: () => void;
 }
 
-export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
+export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onReady }: KakaoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const markerRef = useRef<KakaoOverlay | null>(null);
@@ -102,6 +110,12 @@ export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
   // 클릭 리스너는 지도 초기화 시 한 번만 등록하므로, 최신 콜백을 ref로 들고 있다가 그걸 읽는다.
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
+  const onUserPanRef = useRef(onUserPan);
+  onUserPanRef.current = onUserPan;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const autoLocateRef = useRef(autoLocate);
+  autoLocateRef.current = autoLocate;
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'keyMissing' | 'loadError'>(
     KAKAO_JS_KEY ? 'loading' : 'keyMissing',
@@ -130,17 +144,7 @@ export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
         if (!mountedRef.current || !kakao || !map) return;
         const position = new kakao.maps.LatLng(coords.latitude, coords.longitude);
         map.setCenter(position);
-        if (markerRef.current) {
-          markerRef.current.setPosition(position);
-        } else {
-          markerRef.current = new kakao.maps.CustomOverlay({
-            map,
-            position,
-            content: createLocationDot(t('map.myLocation')),
-            xAnchor: 0.5,
-            yAnchor: 0.5,
-          });
-        }
+        placeMarker(position);
       },
       (error) => {
         if (!showError || !mountedRef.current) return;
@@ -157,7 +161,50 @@ export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
     polylineRef.current = null;
   };
 
-  const showRoute = (path: RoutePoint[]) => {
+  // 현재 위치 점을 만들거나 옮긴다.
+  const placeMarker = (position: object) => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    if (!kakao || !map) return;
+    if (markerRef.current) {
+      markerRef.current.setPosition(position);
+    } else {
+      markerRef.current = new kakao.maps.CustomOverlay({
+        map,
+        position,
+        content: createLocationDot(t('map.myLocation')),
+        xAnchor: 0.5,
+        yAnchor: 0.5,
+      });
+    }
+  };
+
+  const setLocationMarker = (point: RoutePoint | null) => {
+    const kakao = window.kakao;
+    if (!kakao || !mapRef.current) return;
+    if (!point) {
+      markerRef.current?.setMap(null);
+      markerRef.current = null;
+      return;
+    }
+    placeMarker(new kakao.maps.LatLng(point.lat, point.lng));
+  };
+
+  // level 을 주면(처음 맞출 때) 확대 수준을 바꾸고 바로 옮기고, 아니면 부드럽게 옮긴다.
+  const panTo = (point: RoutePoint, options?: { level?: number }) => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    if (!kakao || !map) return;
+    const position = new kakao.maps.LatLng(point.lat, point.lng);
+    if (options?.level !== undefined) {
+      map.setLevel(options.level);
+      map.setCenter(position);
+    } else {
+      map.panTo(position);
+    }
+  };
+
+  const showRoute = (path: RoutePoint[], options?: { fit?: boolean }) => {
     const kakao = window.kakao;
     const map = mapRef.current;
     if (!kakao || !map || path.length === 0) return;
@@ -172,12 +219,13 @@ export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
       strokeOpacity: 0.85,
     });
 
+    if (options?.fit === false) return;
     const bounds = new kakao.maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
     map.setBounds(bounds);
   };
 
-  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, clearRoute }));
+  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, clearRoute, setLocationMarker, panTo }));
 
   useEffect(() => {
     mountedRef.current = true;
@@ -210,8 +258,11 @@ export function KakaoMap({ ref, onMapClick }: KakaoMapProps) {
         kakao.maps.event.addListener(mapRef.current, 'click', (event: KakaoMouseEvent) => {
           onMapClickRef.current?.({ lat: event.latLng.getLat(), lng: event.latLng.getLng() });
         });
+        // 사용자가 직접 끌기 시작한 때만 알린다(setCenter·panTo 로 옮긴 이동에는 이 이벤트가 오지 않는다).
+        kakao.maps.event.addListener(mapRef.current, 'dragstart', () => onUserPanRef.current?.());
         setStatus('ready');
-        locate(false);
+        if (autoLocateRef.current) locate(false);
+        onReadyRef.current?.();
       });
     };
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { RefreshCw } from 'lucide-react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AlertCard } from '../src/components/alerts/AlertCard';
@@ -7,16 +8,17 @@ import { AlertFilter, type AlertFilterValue } from '../src/components/alerts/Ale
 import { OfflineNotice, ShowMore, TrafficSection } from '../src/components/alerts/DataStatus';
 import { LocationGate, OutsideServiceNotice } from '../src/components/alerts/LocationGate';
 import { CautionZoneCard, ProtectionZoneCard } from '../src/components/alerts/ZoneCards';
-import { CategoryMenu } from '../src/components/CategoryMenu';
-import { LanguageSwitcher } from '../src/components/LanguageSwitcher';
 import { Screen } from '../src/components/Screen';
+import { Chip } from '../src/components/ui/Chip';
+import { HeaderTitle } from '../src/components/ui/HeaderTitle';
+import { ScreenHeader } from '../src/components/ui/ScreenHeader';
 import { geoApi, trafficApi } from '../src/lib/api/api';
 import { incidentsToAlerts, sortCautionZones, sortProtectionZones } from '../src/lib/api/convert';
 import { useApi, type ApiState } from '../src/lib/api/useApi';
 import { areaFor, isInKorea, regionQueryFor } from '../src/lib/location/geo';
 import { useUserLocation } from '../src/lib/location/useUserLocation';
 import { usePaging } from '../src/lib/usePaging';
-import { colors, radius, space } from '../src/theme';
+import { colors, space } from '../src/theme';
 import type { ProtectionZonesResponse } from '../src/types/traffic';
 
 // 돌발·주의운전은 실시간 정보라 1분마다 다시 받는다(백엔드 캐시 TTL 도 60초). 보호구역은 등록 현황이라 다시 받지 않는다.
@@ -85,13 +87,7 @@ export default function AlertsScreen() {
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-          {t('alerts.title')}
-        </Text>
-        <LanguageSwitcher />
-        <CategoryMenu />
-      </View>
+      <ScreenHeader title={<HeaderTitle>{t('alerts.title')}</HeaderTitle>} />
 
       <OfflineNotice />
 
@@ -105,9 +101,7 @@ export default function AlertsScreen() {
               {!!regionName && <Text style={styles.area}>{t('traffic.region', { name: regionName })}</Text>}
               {location.state.coarse && <Text style={styles.area}>{t('traffic.location.coarse')}</Text>}
             </View>
-            <Pressable onPress={location.request} accessibilityRole="button" style={({ pressed }) => [styles.refresh, pressed && styles.pressed]}>
-              <Text style={styles.refreshText}>{t('traffic.location.refresh')}</Text>
-            </Pressable>
+            <Chip label={t('traffic.location.refresh')} icon={RefreshCw} onPress={location.request} />
           </View>
 
           {outsideKorea ? (
@@ -185,23 +179,9 @@ export default function AlertsScreen() {
 }
 
 const styles = StyleSheet.create({
-  // zIndex: 펼친 카테고리 메뉴가 아래 콘텐츠에 가려지지 않게 헤더를 위로 올린다(웹 View 는 기본 zIndex 0).
-  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm, zIndex: 10 },
-  title: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: colors.ink },
   area: { fontSize: 13, lineHeight: 19, color: colors.muted },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   locationText: { flex: 1, minWidth: 0, gap: 2 },
-  refresh: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  refreshText: { fontSize: 13, fontWeight: '700', color: colors.brand },
-  pressed: { opacity: 0.85 },
   list: { gap: space.lg },
   empty: { fontSize: 15, color: colors.muted },
 });

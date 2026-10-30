@@ -1,6 +1,9 @@
 import { fetchWithTimeout } from '../lib/api/fetchTimeout';
 import { API_BASE_URL } from '../lib/config';
+import { buildRouteBody, parseRoutes, type RouteGuide, type RouteRequestOptions } from './parseRoutes';
 import type { RoutePoint } from './types';
+
+export type { RouteGuide } from './parseRoutes';
 
 // 앞의 5개는 자동차(Tmap searchOption) 스타일, 뒤의 3개는 이동수단 자체(도보/자전거/대중교통).
 // 경로 탐색은 외부 API 여러 개를 부르고 무료 서버는 처음 깨어나는 데 오래 걸려서 넉넉히 둔다. 주소 변환은 부가 정보라 짧게 둔다.
@@ -19,29 +22,26 @@ export type RouteStyle =
 
 export type TravelMode = 'driving' | 'walking' | 'cycling' | 'transit';
 
+// route-styles 의 styles 로 고를 수 있는 자동차 스타일(백엔드 DrivingStyle)
+export type DrivingStyle = Extract<RouteStyle, 'recommended' | 'toll_free' | 'major_road' | 'shortest' | 'avoid_school_zone'>;
+
 export interface StyledRoute {
   style: RouteStyle;
   distanceKm: number;
   durationMin: number;
   path: RoutePoint[];
   instructions: string[];
-}
-
-function parseRoutes(data: unknown): StyledRoute[] | null {
-  const routes = (data as { routes?: unknown[] })?.routes;
-  if (!Array.isArray(routes) || routes.length === 0) return null;
-  return routes.map((r: any) => ({
-    style: r.style,
-    distanceKm: r.distance_km,
-    durationMin: r.duration_min,
-    path: r.path,
-    instructions: Array.isArray(r.instructions) ? r.instructions : [],
-  }));
+  /** include_guides 로 요청했고 응답에 있을 때만 채워진다. 자전거·대중교통은 지원하지 않아 항상 없다 */
+  guides?: RouteGuide[];
 }
 
 // PoC 백엔드가 Tmap searchOption 5가지(추천/무료/고속도로우선/최단거리/어린이보호구역회피)를
-// 동시에 호출해서 돌려준다. 실패하면 null.
-export async function fetchRouteStyles(origin: RoutePoint, destination: RoutePoint): Promise<StyledRoute[] | null> {
+// 동시에 호출해서 돌려준다. 실패하면 null. options 를 생략하면 기존 요청과 똑같다.
+export async function fetchRouteStyles(
+  origin: RoutePoint,
+  destination: RoutePoint,
+  options: RouteRequestOptions = {},
+): Promise<StyledRoute[] | null> {
   if (!API_BASE_URL) return null;
   try {
     const res = await fetchWithTimeout(
@@ -49,7 +49,7 @@ export async function fetchRouteStyles(origin: RoutePoint, destination: RoutePoi
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination }),
+        body: JSON.stringify(buildRouteBody(origin, destination, options)),
       },
       ROUTE_TIMEOUT_MS,
     );
@@ -65,6 +65,7 @@ export async function fetchModeRoute(
   origin: RoutePoint,
   destination: RoutePoint,
   mode: Exclude<TravelMode, 'driving'>,
+  options: Pick<RouteRequestOptions, 'includeGuides'> = {},
 ): Promise<StyledRoute[] | null> {
   if (!API_BASE_URL) return null;
   try {
@@ -73,7 +74,7 @@ export async function fetchModeRoute(
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination, mode }),
+        body: JSON.stringify(buildRouteBody(origin, destination, options, { mode })),
       },
       ROUTE_TIMEOUT_MS,
     );
@@ -82,6 +83,21 @@ export async function fetchModeRoute(
   } catch {
     return null;
   }
+}
+
+// 길안내 시작·재탐색용: 경로 하나와 회전 안내 지점(guides)을 함께 받는다. 기존 경로 탐색 API 를 그대로 쓴다.
+// 자동차는 스타일 하나만 요청해 외부 호출을 줄인다(style 을 생략하면 recommended). 도보는 경로가 하나뿐이다.
+export async function fetchGuidanceRoute(
+  origin: RoutePoint,
+  destination: RoutePoint,
+  mode: 'driving' | 'walking',
+  style: DrivingStyle = 'recommended',
+): Promise<StyledRoute | null> {
+  const routes =
+    mode === 'driving'
+      ? await fetchRouteStyles(origin, destination, { includeGuides: true, styles: [style] })
+      : await fetchModeRoute(origin, destination, 'walking', { includeGuides: true });
+  return routes?.[0] ?? null;
 }
 
 // 대중교통만 버스/지하철/버스+지하철 조합으로 경로가 여러 개 온다. 카테고리별로 골라볼 수 있게 전부 받는다.
