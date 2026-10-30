@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as Speech from 'expo-speech';
 
 import { projectOntoRoute, type Route } from './routeHazards';
+import { resolveVoiceId } from './speechVoice';
 
 // i18n 언어 코드(ko/en/zh) → Speech locale.
 const SPEECH_LOCALE: Record<string, string> = { ko: 'ko-KR', en: 'en-US', zh: 'zh-CN' };
@@ -66,7 +67,8 @@ export function useAnnounceOnApproach<T>({
     }
     if (nearestIndex >= 0) {
       spoken.current.add(nearestIndex);
-      Speech.speak(nearestText, { language: SPEECH_LOCALE[language] ?? SPEECH_LOCALE.ko });
+      const locale = SPEECH_LOCALE[language] ?? SPEECH_LOCALE.ko;
+      resolveVoiceId(locale).then((voice) => Speech.speak(nearestText, { language: locale, voice }));
     }
     // getPoint/getText/maxLateralM 은 deps 에서 뺀다 - 매 렌더 새 클로저지만, 위 목록(active/routeKey/
     // route/candidates/progressM/language)이 바뀔 때마다 effect 가 다시 돌면서 항상 최신 클로저를 쓴다.
