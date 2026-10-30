@@ -6,6 +6,7 @@ import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 
 import { localizeAlert } from '../../lib/localizeAlert';
+import { resolveVoiceId } from '../../lib/speechVoice';
 import { formatTimeKst } from '../../lib/time';
 import type { HazardStage, HazardWarning } from '../../lib/useHazardWarning';
 import { MAX_CONTENT_WIDTH, colors, radius, space } from '../../theme';
@@ -81,8 +82,15 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
   // 부모가 위험구간·단계마다 key 를 줘서 이 컴포넌트는 새 경고마다 새로 마운트된다.
   // 그래서 마운트 시 한 번만 읽으면 경고 단계가 바뀔 때마다(500m → 300m → 100m) 다시 읽힌다.
   useEffect(() => {
-    Speech.speak(messageText, { language: SPEECH_LOCALE[i18n.language] ?? SPEECH_LOCALE.ko });
-    return () => void Speech.stop();
+    let cancelled = false;
+    const locale = SPEECH_LOCALE[i18n.language] ?? SPEECH_LOCALE.ko;
+    resolveVoiceId(locale).then((voice) => {
+      if (!cancelled) Speech.speak(messageText, { language: locale, voice });
+    });
+    return () => {
+      cancelled = true;
+      Speech.stop();
+    };
   }, []);
 
   const details = (

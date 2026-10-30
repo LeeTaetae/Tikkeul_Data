@@ -164,6 +164,7 @@ const zh: Resources = {
     },
     stage: { caution: '注意', approach: '接近警告', final: '最终警告' },
     speedBump: '前方有减速带',
+    speedingSchoolZone: '您已超过儿童保护区限速30公里/小时，请减速慢行',
     close: '关闭',
     detail: '查看详情',
     collapse: '收起',

@@ -7,6 +7,7 @@ import { MOCK_ROUTE_A, MOCK_ROUTE_B, OFF_ROUTE_ALERT, OPPOSITE_ALERT } from '../
 import { formatDistance } from '../src/lib/distance.ts';
 import { matchHazardsToRoute, remainingHazards } from '../src/lib/routeHazards.ts';
 import { formatDateTimeKst, formatTimeKst } from '../src/lib/time.ts';
+import { isSchoolCommuteHourKst, stageOf } from '../src/lib/hazardStage.ts';
 
 const all = [...MOCK_ALERTS, OPPOSITE_ALERT, OFF_ROUTE_ALERT];
 
@@ -47,4 +48,21 @@ test('거리·시각 표기', () => {
   assert.equal(formatDateTimeKst('2026-08-11T00:00:00+09:00', now), '08.11 00:00'); // 다른 날은 날짜 포함
   assert.equal(formatDateTimeKst('2026-10-27T23:59:00+09:00', now), '10.27 23:59');
   assert.equal(formatDateTimeKst('이상한 값', now), '');
+});
+
+test('등교(07-09시)·하교(14-17시) 시간대 판정(KST)', () => {
+  assert.equal(isSchoolCommuteHourKst(new Date('2026-10-28T08:00:00+09:00')), true);
+  assert.equal(isSchoolCommuteHourKst(new Date('2026-10-28T15:30:00+09:00')), true);
+  assert.equal(isSchoolCommuteHourKst(new Date('2026-10-28T12:00:00+09:00')), false);
+  assert.equal(isSchoolCommuteHourKst(new Date('2026-10-28T06:59:00+09:00')), false);
+  assert.equal(isSchoolCommuteHourKst(new Date('2026-10-28T17:00:00+09:00')), false);
+});
+
+test('등하교 시간대엔 어린이보호구역만 caution 단계가 더 멀리서(700m) 뜬다', () => {
+  const commute = new Date('2026-10-28T08:00:00+09:00');
+  const offPeak = new Date('2026-10-28T12:00:00+09:00');
+  assert.equal(stageOf(600, 'school_zone', commute), 'caution');
+  assert.equal(stageOf(600, 'school_zone', offPeak), 'advance');
+  assert.equal(stageOf(600, 'accident', commute), 'advance'); // 다른 유형은 시간대 영향 없음
+  assert.equal(stageOf(100, 'school_zone', commute), 'final'); // final·approach 임계값은 그대로
 });

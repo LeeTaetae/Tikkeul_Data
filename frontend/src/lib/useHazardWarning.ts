@@ -1,25 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { formatDistance } from './distance';
+import { stageOf, type HazardStage } from './hazardStage';
 import type { HazardApproach } from './routeHazards';
 import type { RoadAlert } from '../types/alert';
 
-// 경고 단계. advance 는 500m 보다 먼 경로 사전 알림, 나머지는 근접 경고다.
-export type HazardStage = 'advance' | 'caution' | 'approach' | 'final';
-
-// MVP 임시 기준. 실제 안내 연동 후 설정값으로 옮길 수 있다.
-export const HAZARD_STAGE_DISTANCE_M = { caution: 500, approach: 300, final: 100 } as const;
+export type { HazardStage };
 
 // 값이 클수록 위험구간에 가까운 단계다.
 const RANK: Record<HazardStage, number> = { advance: 0, caution: 1, approach: 2, final: 3 };
 const STAGES: HazardStage[] = ['advance', 'caution', 'approach', 'final'];
-
-export function stageOf(distanceM: number): HazardStage {
-  if (distanceM <= HAZARD_STAGE_DISTANCE_M.final) return 'final';
-  if (distanceM <= HAZARD_STAGE_DISTANCE_M.approach) return 'approach';
-  if (distanceM <= HAZARD_STAGE_DISTANCE_M.caution) return 'caution';
-  return 'advance';
-}
 
 export interface HazardWarning {
   alert: RoadAlert;
@@ -59,7 +49,7 @@ export function useHazardWarning({ active, routeKey, hazards }: Options) {
 
   // 아직 보지 않은 (위험구간, 현재 단계) 중 우선순위가 가장 높은 것
   const candidate = ahead
-    .map((hazard) => ({ hazard, stage: stageOf(hazard.distanceM) }))
+    .map((hazard) => ({ hazard, stage: stageOf(hazard.distanceM, hazard.alert.type) }))
     .filter((c) => !seen.current.has(`${keyOf(c.hazard.alert)}:${c.stage}`))
     .sort((a, b) => RANK[b.stage] - RANK[a.stage] || a.hazard.distanceM - b.hazard.distanceM)[0];
 

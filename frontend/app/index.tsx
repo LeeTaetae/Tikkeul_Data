@@ -26,6 +26,7 @@ import { matchHazardsToRoute, projectOntoRoute, remainingHazards, type Route } f
 import { dedupeInstructions, formatInstructionText } from '../src/lib/routeInstructions';
 import { useHazardWarning } from '../src/lib/useHazardWarning';
 import { useSpeedBumpSpeech } from '../src/lib/useSpeedBumpSpeech';
+import { useSpeedingWarning } from '../src/lib/useSpeedingWarning';
 import { useTurnInstructionSpeech } from '../src/lib/useTurnInstructionSpeech';
 import { KakaoMap } from '../src/map/KakaoMap';
 import { DEMO_ORIGIN, findDemoDestination } from '../src/map/demoDestinations';
@@ -299,6 +300,8 @@ export default function HomeScreen() {
   // shortcut: 연속 위치추적(watchPosition) 대신 5초 간격으로 현재 위치를 다시 읽는다. 실제 내비게이션
   // GPS 추적이 생기면(sim 주석 참고) 그 값을 함께 쓰도록 바꾼다.
   const [liveProgressM, setLiveProgressM] = useState(0);
+  // coords.speed 는 m/s, null 가능(기기·브라우저가 속력을 못 줄 때). null 이면 속도 기반 경고(과속)를 내지 않는다.
+  const [liveSpeedKmh, setLiveSpeedKmh] = useState<number | null>(null);
   useEffect(() => {
     if (!schoolZoneRoute) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
@@ -309,6 +312,7 @@ export default function HomeScreen() {
           if (cancelled) return;
           const p = projectOntoRoute(schoolZoneRoute, { latitude: coords.latitude, longitude: coords.longitude });
           if (p) setLiveProgressM(p.offsetM);
+          setLiveSpeedKmh(coords.speed != null && coords.speed >= 0 ? coords.speed * 3.6 : null);
         },
         () => {},
         { maximumAge: 10000, timeout: 8000 },
@@ -345,6 +349,16 @@ export default function HomeScreen() {
     route: schoolZoneRoute,
     bumps: speedBumpPoints,
     progressM: liveProgressM,
+  });
+
+  // 어린이보호구역 과속 음성 경고(제한속도 30km/h). 속도를 모르면(liveSpeedKmh null) 경고하지 않는다.
+  useSpeedingWarning({
+    active: !!activeRoute,
+    routeKey: schoolZoneRoute?.id ?? '',
+    route: schoolZoneRoute,
+    zones: schoolZoneOnRoute,
+    progressM: liveProgressM,
+    speedKmh: liveSpeedKmh,
   });
 
   const onChangeDestination = (text: string) => {

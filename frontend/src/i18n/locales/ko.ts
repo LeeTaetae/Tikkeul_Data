@@ -162,6 +162,7 @@ const ko = {
     },
     stage: { caution: '주의', approach: '접근 경고', final: '최종 경고' },
     speedBump: '전방에 과속방지턱이 있습니다',
+    speedingSchoolZone: '어린이보호구역 제한속도 30km/h를 넘었습니다. 서행하세요',
     close: '닫기',
     detail: '상세 보기',
     collapse: '접기',
