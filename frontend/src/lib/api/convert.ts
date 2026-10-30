@@ -23,7 +23,7 @@ export function incidentToAlert(incident: Incident, fallbackLocation: string): R
   const parts = [incident.message.trim(), incident.lanes_blocked.trim()].filter(Boolean);
   const description = parts.length > 0 ? parts.join(' · ') : incident.event_detail_type.trim();
 
-  return {
+  const alert: RoadAlert = {
     id: incident.id,
     type,
     severity: BADGE_BY_TYPE[type],
@@ -37,6 +37,13 @@ export function incidentToAlert(incident: Incident, fallbackLocation: string): R
     // headingDeg, translations 는 일부러 넣지 않는다.
     // 방향은 ITS 원문 문자열(direction_text)뿐이라 경로 매칭에 쓸 수 없고, 번역은 공공 API 가 주지 않는다.
   };
+  // 아래는 백엔드가 준 값만 옮긴다. 이전 응답(필드 없음)은 결과가 기존과 똑같도록 키를 만들지 않는다.
+  // revision 은 일부러 옮기지 않는다: 백엔드 revision 은 종료 시각 연장 같은 사소한 변경에도 바뀌어 같은 위험을 반복 경고하게 만든다.
+  if (incident.event_key) alert.eventKey = incident.event_key;
+  if (incident.ended_at) alert.endedAt = incident.ended_at;
+  if (incident.closure) alert.closure = incident.closure;
+  if (incident.direction_scope) alert.directionScope = incident.direction_scope;
+  return alert;
 }
 
 /** 사고 → 정체 → 공사 순, 같은 유형 안에서는 최근 발생 순. 지원하지 않는 유형은 뺀다. */

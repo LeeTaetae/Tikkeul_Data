@@ -43,7 +43,21 @@ export interface Incident {
   location: GeoPoint;
   started_at: string | null;
   ended_at: string | null;
+  // 아래 필드는 백엔드 A단계에서 추가됐다. 이전 응답·캐시에는 없을 수 있어 optional 로 둔다.
+  /** ITS lanesBlockType 원문(예: 차로부분통제) */
+  lanes_block_type?: string;
+  /** 통제 정도. full 은 ITS 명세로 확인되지 않은 문자열 패턴에서 읽은 값이다 */
+  closure?: IncidentClosure;
+  /** 방향 범위. 어느 쪽 방향인지(방위)는 알려 주지 않는다 */
+  direction_scope?: IncidentDirectionScope;
+  /** 같은 사건을 가리키는 안정 키(문구가 바뀌어도 그대로). 중복 판정에 쓴다 */
+  event_key?: string;
+  /** 사건 내용이 바뀌면 달라지는 값 */
+  revision?: string;
 }
+
+export type IncidentClosure = 'none' | 'partial' | 'full' | 'unknown';
+export type IncidentDirectionScope = 'both' | 'single' | 'unknown';
 
 // --- 주의운전구간 ---
 export type CautionKind =

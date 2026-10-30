@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { X } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 
@@ -9,23 +9,16 @@ import { localizeAlert } from '../../lib/localizeAlert';
 import { resolveVoiceId } from '../../lib/speechVoice';
 import { formatTimeKst } from '../../lib/time';
 import type { HazardStage, HazardWarning } from '../../lib/useHazardWarning';
-import { MAX_CONTENT_WIDTH, colors, radius, space } from '../../theme';
-import type { AlertType } from '../../types/alert';
+import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../../theme';
+import { Icon } from '../ui/Icon';
 import { TYPE_STYLE, TypeIcon } from './AlertCard';
 
-// 근접 경고 상단 띠 색. 주황·노랑 위에서는 흰 글자 대비가 모자라 어두운 글자를 쓴다.
-const BAND: Record<AlertType, { bg: string; fg: string }> = {
-  accident: { bg: colors.danger, fg: colors.surface },
-  construction: { bg: '#E8820C', fg: colors.ink },
-  congestion: { bg: colors.zone, fg: colors.ink },
-  school_zone: { bg: '#0B7A5A', fg: colors.surface },
-};
-
-// 단계 알약. 가까울수록 진하게 해서 색 말고 글자로도 구분된다.
+// 거리 단계 알약. 중립색만 쓰고, 가까울수록 테두리 → 채움으로 진해진다. 단계는 알약의 글자("주의"·"접근 경고"·"최종 경고")로도 전달한다.
+// 위험의 심각도는 유형 색 띠·아이콘·심각도 배지가 맡는다. 거리와 심각도를 같은 색으로 섞어 과장하지 않는다.
 const STAGE_PILL: Record<Exclude<HazardStage, 'advance'>, { bg: string; fg: string; border: string }> = {
-  caution: { bg: colors.surface, fg: colors.ink, border: colors.ink },
-  approach: { bg: colors.ink, fg: colors.surface, border: colors.ink },
-  final: { bg: colors.danger, fg: colors.surface, border: colors.danger },
+  caution: { bg: colors.surface, fg: colors.ink, border: colors.muted },
+  approach: { bg: colors.surface, fg: colors.ink, border: colors.ink },
+  final: { bg: colors.ink, fg: colors.surface, border: colors.ink },
 };
 
 // TTS 음성 언어. i18n 언어 코드(ko/en/zh) → Speech locale.
@@ -37,9 +30,7 @@ const keepTail = (s: string) => s.replace(/ (\S+) (\S+)$/, ' $1 $2');
 function CloseButton({ color, label, onPress }: { color: string; label: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={styles.close}>
-      <Svg width={22} height={22} viewBox="0 0 24 24">
-        <Path d="M6 6 L18 18 M18 6 L6 18" stroke={color} strokeWidth={2.6} strokeLinecap="round" fill="none" />
-      </Svg>
+      <Icon icon={X} size={22} color={color} strokeWidth={2.6} />
     </Pressable>
   );
 }
@@ -64,32 +55,52 @@ function SampleTag({ label }: { label: string }) {
 interface Props {
   warning: HazardWarning;
   onClose: () => void;
+  // 하단 시트 등 아래에 떠 있는 것의 높이. 경고가 그 위에 올라앉아 가리지 않게 한다.
+  bottomOffset?: number;
+  // 경고 카드가 실제로 차지하는 높이. 상세 보기를 펴면 커지므로, 부모가 그 위쪽 여유를 계산할 때 쓴다.
+  onHeightChange?: (height: number) => void;
+  // 가로 화면처럼 폭이 넓고 낮은 화면에서 오른쪽 열에 붙이기 위한 정렬·최대 폭. 기본은 가운데 정렬, 폭 MAX_CONTENT_WIDTH.
+  align?: 'center' | 'end';
+  maxWidth?: number;
 }
 
 // 지도 위 하단에 뜨는 위험 경고. 단계에 따라 모양이 다르다.
 // - advance(500m 보다 먼 경로 사전 알림): 작은 흰 카드. 정보 전달용이라 색 띠를 쓰지 않는다.
 // - caution·approach·final(500·300·100m): 유형 색 띠 팝업.
 // 둘 다 "상세 보기"로 같은 자리에서 펼친다. 부모가 위험구간·단계마다 key 를 주면 새 경고는 접힌 채로 시작한다.
-export function NavigationHazardAlert({ warning, onClose }: Props) {
+export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHeightChange, align = 'center', maxWidth }: Props) {
   const { t, i18n } = useTranslation();
   const { height } = useWindowDimensions();
   const [expanded, setExpanded] = useState(false);
   const { alert, message, stage } = warning;
   const text = localizeAlert(alert, i18n.language);
-  const band = BAND[alert.type];
+  // 띠 색은 유형 토큰(hazardTone.strong). 모두 흰 글자 대비 4.5:1 이상이라 글자는 흰색이다.
+  const band = { bg: TYPE_STYLE[alert.type].strong, fg: colors.surface };
+  const reportHeight = (e: { nativeEvent: { layout: { height: number } } }) =>
+    onHeightChange?.(Math.round(e.nativeEvent.layout.height));
   const messageText = keepTail(t(message.key, message.params));
 
   // 부모가 위험구간·단계마다 key 를 줘서 이 컴포넌트는 새 경고마다 새로 마운트된다.
   // 그래서 마운트 시 한 번만 읽으면 경고 단계가 바뀔 때마다(500m → 300m → 100m) 다시 읽힌다.
+  // 정리할 때 Speech.stop() 은 웹에서 speechSynthesis.cancel() 이라 "모든" 음성을 취소한다(턴 안내·과속방지턱·과속 경고 포함).
+  // 그래서 이 경고의 음성이 아직 읽히는 중일 때만 멈춘다. 이미 끝났다면(onDone) 멈출 것이 없고, 부르면 다른 안내만 끊긴다.
+  // 취소된 음성은 onDone 이 아니라 onError 로 끝나므로, 세 경우(끝남·중단·오류) 모두 "끝난 것"으로 본다.
   useEffect(() => {
     let cancelled = false;
+    let spoke = false;
+    let settled = false;
     const locale = SPEECH_LOCALE[i18n.language] ?? SPEECH_LOCALE.ko;
     resolveVoiceId(locale).then((voice) => {
-      if (!cancelled) Speech.speak(messageText, { language: locale, voice });
+      if (cancelled) return;
+      spoke = true;
+      const settle = () => {
+        settled = true;
+      };
+      Speech.speak(messageText, { language: locale, voice, onDone: settle, onStopped: settle, onError: settle });
     });
     return () => {
       cancelled = true;
-      Speech.stop();
+      if (spoke && !settled) Speech.stop();
     };
   }, []);
 
@@ -117,8 +128,8 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
   if (stage === 'advance') {
     const s = TYPE_STYLE[alert.type];
     return (
-      <View style={styles.layer}>
-        <View style={styles.advance} accessibilityLiveRegion="polite">
+      <View style={[styles.layer, { paddingBottom: space.lg + bottomOffset }, align === 'end' && styles.layerEnd]}>
+        <View style={[styles.advance, maxWidth ? { maxWidth } : null]} accessibilityLiveRegion="polite" onLayout={reportHeight}>
           <View style={styles.advanceRow}>
             <View style={[styles.advanceTile, { backgroundColor: s.tint }]}>
               <TypeIcon type={alert.type} color={s.accent} />
@@ -134,7 +145,7 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
             <Pressable
               onPress={() => setExpanded((v) => !v)}
               accessibilityRole="button"
-              accessibilityState={{ expanded }}
+              aria-expanded={expanded}
               style={styles.textButton}
             >
               <Text style={styles.textButtonText}>{expanded ? t('hazard.collapse') : t('hazard.detail')}</Text>
@@ -147,8 +158,8 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
 
   const pill = STAGE_PILL[stage];
   return (
-    <View style={styles.layer}>
-      <View style={styles.card} accessibilityRole="alert" accessibilityLiveRegion="assertive">
+    <View style={[styles.layer, { paddingBottom: space.lg + bottomOffset }, align === 'end' && styles.layerEnd]}>
+      <View style={[styles.card, maxWidth ? { maxWidth } : null]} accessibilityRole="alert" accessibilityLiveRegion="assertive" onLayout={reportHeight}>
         <View style={[styles.band, { backgroundColor: band.bg }]}>
           <TypeIcon type={alert.type} color={band.fg} />
           <Text style={[styles.message, { color: band.fg }]}>{messageText}</Text>
@@ -174,7 +185,7 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
             <Pressable
               onPress={() => setExpanded((v) => !v)}
               accessibilityRole="button"
-              accessibilityState={{ expanded }}
+              aria-expanded={expanded}
               style={({ pressed }) => [styles.detail, pressed && styles.detailPressed]}
             >
               <Text style={styles.detailText}>{expanded ? t('hazard.collapse') : t('hazard.detail')}</Text>
@@ -188,8 +199,8 @@ export function NavigationHazardAlert({ warning, onClose }: Props) {
 
 const styles = StyleSheet.create({
   // 빈 곳은 터치를 지도로 통과시킨다. 하단 탭 바는 Tabs 가 따로 차지하므로 바닥 여백만 둔다.
-  // zIndex: 홈 화면의 안내 중 하단 패널(app/index.tsx 의 bottomPanel, zIndex 2)보다 위에 떠야
-  // 안내 중에도 경고가 패널에 가리지 않는다. 안전 경고가 카테고리 메뉴보다 우선이라 그보다도 위로 둔다.
+  // zIndex: 하단 시트(BottomSheet, zIndex 2)보다 위에 둔다. 위치는 bottomOffset 으로 시트 위에 올려놓아서
+  // 경고가 시트를 가리지도, 시트에 가리지도 않는다. 안전 경고라 메뉴·검색 오버레이보다도 위에 둔다.
   layer: {
     ...StyleSheet.absoluteFill,
     zIndex: 3,
@@ -199,6 +210,7 @@ const styles = StyleSheet.create({
     paddingBottom: space.lg,
     pointerEvents: 'box-none',
   },
+  layerEnd: { alignItems: 'flex-end' },
   close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 
   // 사전 알림(작은 흰 카드)
@@ -209,14 +221,14 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
     paddingLeft: space.md,
     paddingRight: space.xs,
-    borderRadius: radius.md + 2,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.surface,
-    boxShadow: '0 2px 12px rgba(23, 32, 42, 0.18)',
+    boxShadow: shadow.float,
   },
   advanceRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  advanceTile: { width: 40, height: 40, borderRadius: radius.sm + 2, alignItems: 'center', justifyContent: 'center' },
+  advanceTile: { width: 40, height: 40, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   advanceMessage: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 22, fontWeight: '800', color: colors.ink },
   textButton: { minHeight: 36, paddingHorizontal: space.md, justifyContent: 'center' },
   textButtonText: { fontSize: 14, fontWeight: '700', color: colors.brand },
@@ -225,10 +237,10 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: MAX_CONTENT_WIDTH,
-    borderRadius: 18,
+    borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: colors.surface,
-    boxShadow: '0 4px 18px rgba(23, 32, 42, 0.28)',
+    boxShadow: shadow.float,
   },
   band: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingLeft: space.lg, paddingRight: space.xs },
   message: { flex: 1, minWidth: 0, fontSize: 20, lineHeight: 26, fontWeight: '800', paddingVertical: space.sm },

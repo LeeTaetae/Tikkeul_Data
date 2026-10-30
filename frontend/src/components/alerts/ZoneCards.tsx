@@ -1,41 +1,38 @@
+import { CircleAlert, ShieldCheck, type LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 
-import { colors, radius, space } from '../../theme';
+import { colors, hazardTone, radius, space } from '../../theme';
 import type { CautionZone, ProtectionZone } from '../../types/traffic';
+import { Card } from '../ui/Card';
+import { Icon } from '../ui/Icon';
 import { OriginalTag } from './OriginalTag';
 
-// 주의운전구간(파랑)과 보호구역(초록)은 사고·공사·정체(빨강·주황·노랑)와 색·아이콘을 분리한다.
-const CAUTION = { tint: '#E8EEFC', accent: colors.info };
-const PROTECTION = { tint: '#E3F4EE', accent: '#0B7A5A' };
+// 주의운전구간(파랑)과 보호구역(초록)은 사고·공사·정체와 색·아이콘을 분리한다. 색은 hazardTone 토큰이다.
+const CAUTION = { tone: hazardTone.caution, icon: CircleAlert };
+const PROTECTION = { tone: hazardTone.school_zone, icon: ShieldCheck };
 
-function CautionIcon() {
-  const p = { stroke: CAUTION.accent, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' } as const;
+function InfoCard({
+  tone,
+  icon,
+  title,
+  tags,
+  main,
+  sub,
+}: {
+  tone: { tint: string; accent: string };
+  icon: LucideIcon;
+  title: string;
+  tags?: ReactNode;
+  main: string;
+  sub?: string;
+}) {
   return (
-    <Svg width={28} height={28} viewBox="0 0 24 24">
-      <Path d="M12 3 L21 12 L12 21 L3 12 Z" {...p} />
-      <Path d="M12 8 V13" {...p} />
-      <Circle cx={12} cy={16} r={0.6} {...p} />
-    </Svg>
-  );
-}
-
-function ShieldIcon() {
-  const p = { stroke: PROTECTION.accent, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' } as const;
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24">
-      <Path d="M12 3 L19.5 6 V11.5 C19.5 16 16.5 19.5 12 21 C7.5 19.5 4.5 16 4.5 11.5 V6 Z" {...p} />
-      <Path d="M9 12 L11 14 L15 10" {...p} />
-    </Svg>
-  );
-}
-
-function InfoCard({ tint, icon, title, tags, main, sub }: { tint: string; icon: ReactNode; title: string; tags?: ReactNode; main: string; sub?: string }) {
-  return (
-    <View style={styles.card}>
-      <View style={[styles.tile, { backgroundColor: tint }]}>{icon}</View>
+    <Card style={styles.card}>
+      <View style={[styles.tile, { backgroundColor: tone.tint }]}>
+        <Icon icon={icon} size={28} color={tone.accent} />
+      </View>
       <View style={styles.body}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>{title}</Text>
@@ -47,7 +44,7 @@ function InfoCard({ tint, icon, title, tags, main, sub }: { tint: string; icon: 
           <OriginalTag />
         </View>
       </View>
-    </View>
+    </Card>
   );
 }
 
@@ -71,8 +68,8 @@ export function CautionZoneCard({ zone }: { zone: CautionZone }) {
     .join(' ');
   return (
     <InfoCard
-      tint={CAUTION.tint}
-      icon={<CautionIcon />}
+      tone={CAUTION.tone}
+      icon={CAUTION.icon}
       title={t(`traffic.cautionKind.${zone.kind}`)}
       main={zone.message || zone.outbrk_type}
       sub={sub}
@@ -84,8 +81,8 @@ export function ProtectionZoneCard({ zone }: { zone: ProtectionZone }) {
   const { t } = useTranslation();
   return (
     <InfoCard
-      tint={PROTECTION.tint}
-      icon={<ShieldIcon />}
+      tone={PROTECTION.tone}
+      icon={PROTECTION.icon}
       title={t(`traffic.zoneType.${zone.zone_type}`)}
       tags={
         <>
@@ -100,15 +97,7 @@ export function ProtectionZoneCard({ zone }: { zone: ProtectionZone }) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: space.md,
-    padding: space.lg,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    boxShadow: '0 2px 12px rgba(23, 32, 42, 0.08)',
-  },
+  card: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   tile: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, gap: space.xs },
   titleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
@@ -118,6 +107,6 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', gap: space.sm },
   pill: { borderRadius: radius.pill, borderWidth: 1, borderColor: colors.danger, paddingHorizontal: space.sm, paddingVertical: 1 },
   pillMuted: { borderColor: colors.line },
-  pillText: { fontSize: 12, fontWeight: '700', color: colors.danger },
+  pillText: { fontSize: 12, fontWeight: '700', color: colors.dangerStrong },
   pillTextMuted: { color: colors.muted },
 });

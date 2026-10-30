@@ -8,6 +8,7 @@ from .schemas import (
     NavigationResponse,
     ReverseGeocodeResponse,
     RouteRequest,
+    RouteStylesRequest,
     RouteStylesResponse,
     TransitRoutesResponse,
 )
@@ -29,23 +30,26 @@ async def post_route(req: RouteRequest) -> NavigationResponse:
     return NavigationResponse(routes=[best])
 
 
-@router.post("/route-styles", response_model=RouteStylesResponse)
-async def post_route_styles(req: RouteRequest) -> RouteStylesResponse:
+# exclude_none: include_guides 를 켜지 않은 요청은 guides 키가 없는 기존 응답 모양 그대로 받는다.
+@router.post("/route-styles", response_model=RouteStylesResponse, response_model_exclude_none=True)
+async def post_route_styles(req: RouteStylesRequest) -> RouteStylesResponse:
     settings = get_settings()
     tmap = TmapProvider(settings.tmap_app_key)
-    routes = await get_route_styles(req.origin, req.destination, tmap)
+    routes = await get_route_styles(
+        req.origin, req.destination, tmap, styles=req.styles, include_guides=req.include_guides
+    )
     if not routes:
         raise HTTPException(status_code=503, detail="경로를 찾을 수 없습니다")
     return RouteStylesResponse(routes=routes)
 
 
-@router.post("/route-by-mode", response_model=RouteStylesResponse)
+@router.post("/route-by-mode", response_model=RouteStylesResponse, response_model_exclude_none=True)
 async def post_route_by_mode(req: ModeRouteRequest) -> RouteStylesResponse:
     settings = get_settings()
     tmap = TmapProvider(settings.tmap_app_key)
     kakao = KakaoRoutingProvider(settings.kakao_rest_api_key)
     try:
-        route = await get_mode_route(req.origin, req.destination, req.mode, tmap, kakao)
+        route = await get_mode_route(req.origin, req.destination, req.mode, tmap, kakao, include_guides=req.include_guides)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"{req.mode} 경로를 찾을 수 없습니다") from exc
     return RouteStylesResponse(routes=[route])

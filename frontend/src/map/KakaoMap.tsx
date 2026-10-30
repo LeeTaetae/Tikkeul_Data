@@ -6,11 +6,13 @@ import { colors } from '../theme';
 import type { KakaoMapHandle, RoutePoint } from './types';
 
 // 모바일(WebView) 지도는 다음 단계에서 구현한다. 웹은 KakaoMap.web.tsx 를 쓴다.
-export function KakaoMap({ ref }: { ref?: Ref<KakaoMapHandle>; onMapClick?: (point: RoutePoint) => void }) {
+export function KakaoMap({ ref }: { ref?: Ref<KakaoMapHandle>; onMapClick?: (point: RoutePoint) => void; autoLocate?: boolean; onUserPan?: () => void; onReady?: () => void }) {
   useImperativeHandle(ref, () => ({
     moveToMyLocation: () => {},
     showRoute: () => {},
     clearRoute: () => {},
+    setLocationMarker: () => {},
+    panTo: () => {},
   }));
 
   return (

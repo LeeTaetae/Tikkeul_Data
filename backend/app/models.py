@@ -35,6 +35,23 @@ class IncidentKind(str, Enum):
     other = "other"
 
 
+class ClosureKind(str, Enum):
+    """ITS lanesBlockType 에서 읽은 통제 정도. 확인된 값만 부분/전면으로 나누고, 모르는 값은 unknown 으로 둔다."""
+
+    none = "none"  # 통제 유형도 차단 차로 문구도 없음
+    partial = "partial"  # 값에 '부분'이 들어 있음(관측 값: 차로부분통제)
+    full = "full"  # 값에 '전면'이 들어 있음. ITS 명세로 확인하지 못한 문자열 패턴이다(관측 샘플에는 없음)
+    unknown = "unknown"  # 유형 값이 있지만 위 둘이 아니거나, 차단 차로 문구만 있고 유형이 없음
+
+
+class DirectionScope(str, Enum):
+    """ITS roadDrcType 이 방향에 대해 알려 주는 범위. 어느 쪽인지(방위)는 알 수 없다."""
+
+    both = "both"  # 양방향: 진행 방향과 무관하게 적용
+    single = "single"  # 기점/종점: 한쪽 방향만. 우리 경로가 그쪽인지는 이 값만으로 판정할 수 없다
+    unknown = "unknown"  # 비어 있거나 모르는 값
+
+
 class Incident(BaseModel):
     id: str
     kind: IncidentKind
@@ -50,6 +67,14 @@ class Incident(BaseModel):
     location: GeoPoint
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+    # --- 아래는 추가 필드(기본값이 있어 기존 소비자·캐시에 영향이 없다) ---
+    lanes_block_type: str = Field("", description="ITS lanesBlockType 원문(예: 차로부분통제)")
+    closure: ClosureKind = Field(ClosureKind.none, description="lanes_block_type 에서 읽은 통제 정도")
+    direction_scope: DirectionScope = Field(DirectionScope.unknown, description="direction_text 가 알려 주는 방향 범위")
+    event_key: str = Field(
+        "", description="같은 사건을 가리키는 안정 키(시작 시각·좌표·linkId·유형). message 가 바뀌어도 그대로다. id 와 달리 문구에 영향받지 않는다"
+    )
+    revision: str = Field("", description="사건 내용(문구·차단 차로·통제 유형·종료 시각)이 바뀌면 달라지는 값")
 
 
 class IncidentsResponse(BaseModel):

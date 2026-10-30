@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     flexShrink: 0,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.surface,
     borderColor: colors.primary,
     borderWidth: 1,
     borderRadius: radius.pill,

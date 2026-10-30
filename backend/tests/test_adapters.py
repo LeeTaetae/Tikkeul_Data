@@ -1,6 +1,8 @@
 import pytest
 
 from app.adapters import (
+    classify_closure,
+    direction_scope,
     incident_kind,
     parse_caution_zones,
     parse_incidents,
@@ -9,7 +11,7 @@ from app.adapters import (
     parse_traffic_flow,
 )
 from app.geo import BBox, WktError, geometry_center, wkt_to_geojson
-from app.models import CautionKind, IncidentKind, ZoneType
+from app.models import CautionKind, ClosureKind, DirectionScope, IncidentKind, ZoneType
 from app.timeutil import parse_its_datetime
 from tests.fixtures import (
     CAUTION_ITEMS,
@@ -133,3 +135,68 @@ def test_bbox_snapping_widens_to_grid_and_filters_precisely():
     snapped = box.snapped()
     assert (snapped.min_lon, snapped.max_lon, snapped.min_lat, snapped.max_lat) == (126.90, 127.04, 37.46, 37.50)
     assert snapped.contains(37.4605, 126.9051) and not box.contains(37.4605, 126.9051)
+
+
+# --- 돌발정보 추가 필드: 통제 정도·방향 범위·안정 키 (추가 전용) ------------------------------
+@pytest.mark.parametrize(
+    "block_type,lanes_blocked,expected",
+    [
+        ("차로부분통제", "2차로 차단", ClosureKind.partial),  # 관측한 실제 값
+        ("차로전면통제", "", ClosureKind.full),  # '전면' 문자열 패턴(ITS 명세로는 확인하지 못했다)
+        ("", "", ClosureKind.none),
+        ("   ", "", ClosureKind.none),
+        ("", "1차로 차단", ClosureKind.unknown),  # 차단 문구만 있고 유형이 없으면 만들어내지 않는다
+        ("기타통제", "", ClosureKind.unknown),  # 모르는 값은 부분/전면으로 추측하지 않는다
+    ],
+)
+def test_classify_closure(block_type, lanes_blocked, expected):
+    assert classify_closure(block_type, lanes_blocked) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("양방향", DirectionScope.both),
+        ("기점", DirectionScope.single),
+        ("종점", DirectionScope.single),
+        ("", DirectionScope.unknown),
+        ("상행", DirectionScope.unknown),
+    ],
+)
+def test_direction_scope(text, expected):
+    assert direction_scope(text) == expected
+
+
+def test_parse_incidents_keeps_closure_direction_and_raw_fields():
+    accident, congestion, construction = parse_incidents(EVENT_ITEMS)
+    assert (accident.lanes_block_type, accident.closure) == ("차로부분통제", ClosureKind.partial)
+    assert accident.lanes_blocked == "2차로 차단" and accident.direction_text == "종점"  # 원문은 그대로
+    assert accident.direction_scope == DirectionScope.single
+    assert (congestion.closure, congestion.direction_scope) == (ClosureKind.none, DirectionScope.unknown)
+    assert (construction.closure, construction.direction_scope) == (ClosureKind.none, DirectionScope.both)
+    assert construction.ended_at is not None
+
+
+def test_incident_event_key_is_stable_when_only_the_message_changes():
+    original = parse_incidents([EVENT_ITEMS[0]])[0]
+    reworded = parse_incidents([{**EVENT_ITEMS[0], "message": "추돌 사고 (정리 중)"}])[0]
+    assert reworded.id != original.id  # 기존 id 는 문구까지 해시한다(호환을 위해 그대로 둔다)
+    assert reworded.event_key == original.event_key  # 같은 사건은 같은 키
+    assert reworded.revision != original.revision  # 내용이 바뀐 것은 revision 으로 알 수 있다
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"coordX": "127.046400"}, {"coordY": "37.456800"}, {"startDate": "20261028061146"}, {"linkId": "1210000712"}, {"eventType": "공사"}],
+)
+def test_incident_event_key_separates_different_events(change):
+    original = parse_incidents([EVENT_ITEMS[0]])[0]
+    other = parse_incidents([{**EVENT_ITEMS[0], **change}])[0]
+    assert other.event_key != original.event_key
+
+
+def test_incident_revision_changes_with_closure_or_end_time():
+    original = parse_incidents([EVENT_ITEMS[0]])[0]
+    for change in ({"lanesBlocked": "1차로 차단"}, {"lanesBlockType": "차로전면통제"}, {"endDate": "20261028120000"}):
+        assert parse_incidents([{**EVENT_ITEMS[0], **change}])[0].revision != original.revision
+    assert parse_incidents([EVENT_ITEMS[0]])[0].revision == original.revision  # 같은 입력은 같은 값
