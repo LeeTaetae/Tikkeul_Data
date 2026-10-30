@@ -245,3 +245,17 @@ def test_secrets_never_appear_in_logs_or_responses(make_client, caplog):
     for secret in KEYS.values():
         assert secret not in caplog.text
         assert all(secret not in r.text for r in responses)
+
+
+def test_incidents_response_adds_closure_direction_and_stable_key_without_dropping_fields(make_client):
+    client = make_client(Recorder(ok_json(its_ok(EVENT_ITEMS))))
+    items = client.get("/api/traffic/incidents", params=BBOX).json()["items"]
+    accident = next(i for i in items if i["kind"] == "accident")
+    # 추가된 필드
+    assert (accident["closure"], accident["direction_scope"]) == ("partial", "single")
+    assert accident["lanes_block_type"] == "차로부분통제" and accident["event_key"] and accident["revision"]
+    assert accident["id"] != accident["event_key"]  # 기존 id 는 그대로 두고 안정 키를 따로 준다
+    # 기존 필드는 모두 그대로
+    legacy = {"id", "kind", "road_type", "event_type", "event_detail_type", "road_name", "road_no", "direction_text",
+              "lanes_blocked", "message", "link_id", "location", "started_at", "ended_at"}
+    assert legacy <= set(accident)

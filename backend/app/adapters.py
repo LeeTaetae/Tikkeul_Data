@@ -8,6 +8,8 @@ from app.models import (
     CautionKind,
     CautionPoint,
     CautionZone,
+    ClosureKind,
+    DirectionScope,
     GeoPoint,
     Incident,
     IncidentKind,
@@ -46,6 +48,28 @@ def _digest(*parts: str) -> str:
 
 
 # --- 돌발상황 -------------------------------------------------------------
+def classify_closure(block_type: str, lanes_blocked: str) -> ClosureKind:
+    """ITS lanesBlockType → 통제 정도. 관측한 값(차로부분통제)과 '전면' 문자열 패턴만 나누고, 나머지는 만들어내지 않는다."""
+    kind = block_type.strip()
+    if "전면" in kind:
+        return ClosureKind.full
+    if "부분" in kind:
+        return ClosureKind.partial
+    if kind:
+        return ClosureKind.unknown
+    return ClosureKind.unknown if lanes_blocked.strip() else ClosureKind.none
+
+
+def direction_scope(road_direction: str) -> DirectionScope:
+    """ITS roadDrcType → 방향 범위. '양방향'만 방향과 무관하다고 확정할 수 있다. 기점/종점은 한쪽이지만 어느 쪽인지는 모른다."""
+    text = road_direction.strip()
+    if text == "양방향":
+        return DirectionScope.both
+    if text in ("기점", "종점"):
+        return DirectionScope.single
+    return DirectionScope.unknown
+
+
 def incident_kind(event_type: str, detail: str) -> IncidentKind:
     # '차량증가/정체'는 ITS 돌발정보가 직접 붙인 분류다. 속도 기준으로 우리가 판정하지 않는다.
     if detail == "차량증가/정체":
@@ -84,6 +108,12 @@ def parse_incidents(items: List[Raw]) -> List[Incident]:
                 location=location,
                 started_at=parse_its_datetime(raw.get("startDate")),
                 ended_at=parse_its_datetime(raw.get("endDate")),
+                lanes_block_type=_s(raw, "lanesBlockType"),
+                closure=classify_closure(_s(raw, "lanesBlockType"), _s(raw, "lanesBlocked")),
+                direction_scope=direction_scope(_s(raw, "roadDrcType")),
+                # id 는 문구(message)까지 해시에 넣어 기존 소비자와의 호환을 위해 그대로 둔다. 같은 사건 판정에는 event_key 를 쓴다.
+                event_key=_digest(_s(raw, "startDate"), _s(raw, "coordX"), _s(raw, "coordY"), _s(raw, "linkId"), event_type),
+                revision=_digest(_s(raw, "message"), _s(raw, "lanesBlocked"), _s(raw, "lanesBlockType"), _s(raw, "endDate")),
             )
         )
     return result

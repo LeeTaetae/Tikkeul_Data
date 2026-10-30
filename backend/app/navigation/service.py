@@ -48,8 +48,18 @@ async def get_best_route(
     raise RuntimeError("모든 경로 provider 호출에 실패했습니다") from last_error
 
 
-async def get_route_styles(origin: LatLng, destination: LatLng, tmap: TmapProvider) -> list[StyledRoute]:
-    """5가지 스타일을 전부 Tmap에 동시 요청한다. 실패한 스타일은 결과에서 빠진다."""
+async def get_route_styles(
+    origin: LatLng,
+    destination: LatLng,
+    tmap: TmapProvider,
+    styles: Optional[list[RouteStyle]] = None,
+    include_guides: bool = False,
+) -> list[StyledRoute]:
+    """스타일을 Tmap에 동시 요청한다(기본은 5가지 전부). 실패한 스타일은 결과에서 빠진다.
+
+    styles 로 일부만 요청할 수 있다(재탐색처럼 하나만 필요할 때 Tmap 호출 수를 줄인다). 순서는 ROUTE_STYLE_SEARCH_OPTIONS 를 따른다.
+    include_guides 가 켜지면 회전 안내 지점(guides)을 함께 싣는다. 꺼져 있으면 응답에 guides 키가 없다.
+    """
 
     async def fetch(style: RouteStyle, search_option: str) -> Optional[StyledRoute]:
         try:
@@ -62,11 +72,13 @@ async def get_route_styles(origin: LatLng, destination: LatLng, tmap: TmapProvid
             duration_min=route.duration_min,
             path=route.path,
             instructions=instructions,
+            guides=route.guides if include_guides else None,
         )
 
-    results = await asyncio.gather(
-        *(fetch(style, option) for style, option in ROUTE_STYLE_SEARCH_OPTIONS.items())
-    )
+    wanted = ROUTE_STYLE_SEARCH_OPTIONS.items() if styles is None else [
+        (style, option) for style, option in ROUTE_STYLE_SEARCH_OPTIONS.items() if style in styles
+    ]
+    results = await asyncio.gather(*(fetch(style, option) for style, option in wanted))
     return [r for r in results if r is not None]
 
 
@@ -76,20 +88,28 @@ async def get_mode_route(
     mode: TravelMode,
     tmap: TmapProvider,
     kakao: KakaoRoutingProvider,
+    include_guides: bool = False,
 ) -> StyledRoute:
-    """도보는 Tmap, 자전거·대중교통은 카카오맵 REST API로 가져온다 (Tmap에 그 둘이 없음)."""
+    """도보는 Tmap, 자전거·대중교통은 카카오맵 REST API로 가져온다 (Tmap에 그 둘이 없음).
+
+    회전 안내 지점(guides)은 Tmap 이 주는 도보만 지원한다. 자전거·대중교통은 include_guides 여도 싣지 않는다.
+    """
     if mode == "walking":
         route, instructions = await tmap.get_pedestrian_route(origin, destination)
+        guides = route.guides if include_guides else None
     elif mode == "cycling":
         route, instructions = await kakao.get_bicycle_route(origin, destination)
+        guides = None
     else:
         route, instructions = await kakao.get_transit_route(origin, destination)
+        guides = None
     return StyledRoute(
         style=mode,
         distance_km=route.distance_km,
         duration_min=route.duration_min,
         path=route.path,
         instructions=instructions,
+        guides=guides,
     )
 
 
