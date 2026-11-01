@@ -12,7 +12,7 @@ import { buildRequestBody, type ChatTurn } from './conversation';
 const SPEECH_LOCALE: Record<string, string> = { ko: 'ko-KR', en: 'en-US', zh: 'zh-CN' };
 
 export function useChatAssistant() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState<ChatTurn[]>([]);
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
@@ -29,11 +29,13 @@ export function useChatAssistant() {
         const { reply } = await chatApi.send(body);
         setMessages((prev) => [...prev, { role: 'assistant', text: reply }]);
         resolveVoiceId(locale).then((voice) => Speech.speak(reply, { language: locale, voice }));
+      } catch {
+        setMessages((prev) => [...prev, { role: 'assistant', text: t('chat.error') }]);
       } finally {
         setSending(false);
       }
     },
-    [messages, locale],
+    [messages, locale, t],
   );
 
   const startListening = useCallback(async () => {

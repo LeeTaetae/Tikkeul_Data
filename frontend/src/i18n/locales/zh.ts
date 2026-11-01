@@ -12,6 +12,17 @@ const zh: Resources = {
   lang: { label: '语言', ko: '韩语', en: '英语', zh: '中文' },
   menu: { label: '分类菜单', close: '关闭菜单' },
   sheet: { expand: '展开面板', collapse: '收起面板' },
+  chat: {
+    openLabel: '向聊天机器人提问',
+    closeLabel: '关闭聊天机器人',
+    title: '积少成多聊天机器人',
+    placeholder: '请输入您的问题',
+    send: '发送',
+    mic: '语音提问',
+    listening: '正在聆听…',
+    sending: '回复中…',
+    error: '未能获取回复，请重试。',
+  },
   home: {
     title: '积少成多 Data',
     subtitle: '提醒您驾驶中容易忽略的潜在风险。',

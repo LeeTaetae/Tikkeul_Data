@@ -20,6 +20,7 @@ import {
   Crosshair,
   Footprints,
   MapPin,
+  MessageCircle,
   Music,
   Search,
   Share2,
@@ -34,6 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
+import { ChatAssistantPanel } from '../src/components/chat/ChatAssistantPanel';
 import { Logo } from '../src/components/Logo';
 import { Card } from '../src/components/ui/Card';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
@@ -267,6 +269,9 @@ export default function HomeScreen() {
   const [sheetHeight, setSheetHeight] = useState(0);
   // 위험 경고 카드의 실제 높이. 상세 보기를 펴면 커지므로 그때마다 새로 받는다.
   const [alertHeight, setAlertHeight] = useState(HAZARD_ALERT_FALLBACK_HEIGHT);
+
+  // 챗봇 패널 열림 여부. nearbyCategory/pickedPoint 와 같은 시트 자리를 쓰므로 동시에 하나만 연다.
+  const [chatOpen, setChatOpen] = useState(false);
 
   // 검색창 밑 카테고리 버튼(음식점·카페 등)으로 내 주변 장소를 본다.
   const [nearbyCategory, setNearbyCategory] = useState<PlaceCategory | null>(null);
@@ -944,6 +949,7 @@ export default function HomeScreen() {
           )}
           <View style={styles.fabWrap}>
             <RoundButton icon={Crosshair} label={t('map.myLocation')} onPress={() => mapRef.current?.moveToMyLocation()} />
+            <RoundButton icon={MessageCircle} label={t('chat.openLabel')} onPress={() => { onResetSearch(); setChatOpen(true); }} />
           </View>
         </View>
       </View>
@@ -1075,6 +1081,10 @@ export default function HomeScreen() {
       ) : searched ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t(liveError ? 'map.liveError' : 'map.demoHint')}</Text>
+        </BottomSheet>
+      ) : chatOpen ? (
+        <BottomSheet key="chat" {...sheetProps} draggable={false}>
+          <ChatAssistantPanel onClose={() => setChatOpen(false)} />
         </BottomSheet>
       ) : hasPopularSheet ? (
         <BottomSheet key="popular" {...sheetProps}>
@@ -1395,7 +1405,7 @@ const styles = StyleSheet.create({
   },
   searchActionCompact: { width: 44, paddingHorizontal: 0 },
   searchActionText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
-  fabWrap: { alignSelf: 'flex-end' },
+  fabWrap: { alignSelf: 'flex-end', gap: space.sm },
   notice: { fontSize: 14, lineHeight: 20, color: colors.muted },
   pickTopRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   pickTitleBlock: { flex: 1, minWidth: 0, gap: 2 },

@@ -12,6 +12,17 @@ const en: Resources = {
   lang: { label: 'Language', ko: 'Korean', en: 'English', zh: 'Chinese' },
   menu: { label: 'Category menu', close: 'Close menu' },
   sheet: { expand: 'Expand panel', collapse: 'Collapse panel' },
+  chat: {
+    openLabel: 'Ask the chatbot',
+    closeLabel: 'Close chatbot',
+    title: 'Tikkeul Chatbot',
+    placeholder: 'Ask anything',
+    send: 'Send',
+    mic: 'Ask by voice',
+    listening: 'Listening…',
+    sending: 'Replying…',
+    error: "Couldn't get a reply. Please try again.",
+  },
   home: {
     title: 'Tikkeul Data',
     subtitle: 'Heads-up on road risks that are easy to miss while driving.',
