@@ -1,6 +1,6 @@
 import { fetchWithTimeout } from '../lib/api/fetchTimeout';
 import { API_BASE_URL } from '../lib/config';
-import { buildRouteBody, parseRoutes, type RouteGuide, type RouteRequestOptions } from './parseRoutes';
+import { buildRouteBody, parseBestRoute, parseRoutes, type RouteGuide, type RouteRequestOptions } from './parseRoutes';
 import type { RoutePoint } from './types';
 
 export type { RouteGuide } from './parseRoutes';
@@ -61,6 +61,28 @@ export async function fetchRouteStyles(
     );
     if (!res.ok) return null;
     return parseRoutes(await res.json());
+  } catch {
+    return null;
+  }
+}
+
+// route-styles(Tmap 5가지)가 실패했을 때만 쓰는 대체 경로. 백엔드 /navigation/route 는 Tmap 이 안 되면 네이버로 넘어간다.
+// 카드 하나('추천')만 돌려준다. 실제 길안내는 카카오 SDK 가 따로 계산하므로 이 경로는 미리보기용이다. 실패하면 null.
+export async function fetchBestRoute(origin: RoutePoint, destination: RoutePoint): Promise<StyledRoute[] | null> {
+  if (!API_BASE_URL) return null;
+  try {
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/navigation/route`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildRouteBody(origin, destination)),
+      },
+      ROUTE_TIMEOUT_MS,
+    );
+    if (!res.ok) return null;
+    const route = parseBestRoute(await res.json());
+    return route ? [route] : null;
   } catch {
     return null;
   }

@@ -149,3 +149,28 @@ test('guides 와 instructions 가 함께 와도 둘 다 읽는다(include_guides
   assert.deepEqual(route.instructions[0].point, { lat: 37.5, lng: 127.0 });
   assert.equal(route.guides.length, 1);
 });
+
+// Tmap route-styles 가 실패할 때 쓰는 /navigation/route(네이버 등) 응답 → '추천' 카드 하나.
+test('best-route fallback keeps real distance, duration and path, with no invented instructions', async () => {
+  const { parseBestRoute } = await import('../src/map/parseRoutes.ts');
+  const data = { routes: [{ provider: 'naver', distance_km: 1.859, duration_min: 6.2, path: [{ lat: 37.5668, lng: 126.9782 }, { lat: 37.57, lng: 126.992 }] }] };
+  assert.deepEqual(parseBestRoute(data), {
+    style: 'recommended',
+    distanceKm: 1.859,
+    durationMin: 6.2,
+    path: [{ lat: 37.5668, lng: 126.9782 }, { lat: 37.57, lng: 126.992 }],
+    instructions: [],
+  });
+});
+
+test('best-route fallback rejects missing or broken values instead of filling them in', async () => {
+  const { parseBestRoute } = await import('../src/map/parseRoutes.ts');
+  const ok = { provider: 'naver', distance_km: 1, duration_min: 2, path: [{ lat: 37, lng: 127 }, { lat: 37.1, lng: 127.1 }] };
+  for (const bad of [
+    null, {}, { routes: [] }, { detail: '경로를 찾을 수 없습니다' },
+    { routes: [{ ...ok, distance_km: undefined }] },
+    { routes: [{ ...ok, duration_min: 'x' }] },
+    { routes: [{ ...ok, path: [{ lat: 37, lng: 127 }] }] },
+    { routes: [{ ...ok, path: [{ lat: 37, lng: 127 }, { lat: null, lng: 127 }] }] },
+  ]) assert.equal(parseBestRoute(bad), null);
+});

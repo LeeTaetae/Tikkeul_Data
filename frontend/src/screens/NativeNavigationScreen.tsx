@@ -6,6 +6,8 @@ import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { LANGUAGES } from '../i18n';
+import { checkGuidanceFix } from '../lib/location/guidanceFix';
 import { clearGuidanceRequest, getGuidanceRequest } from '../lib/navigation/guidanceSession';
 import { nativeNavigationRequest } from '../lib/navigation/nativeNavigationRequest';
 import { getNativeNavigationStatus, openNativeNavigation } from '../native/kakaoNavigation';
@@ -21,13 +23,18 @@ const FAILURE_KEYS: Record<string, string> = {
   PRECISE_LOCATION_REQUIRED: 'nav.nativePreciseLocation',
   SERVICES_DISABLED: 'nav.gpsServicesDisabled',
   SDK_AUTH_FAILED: 'nav.nativeAuthenticationFailed',
+  GPS_UNAVAILABLE: 'nav.gpsNoSignal',
+  GPS_INACCURATE: 'nav.gpsWeak',
 };
+// 실내·지하에서는 정밀 위치가 늦거나 안 온다. 이 시간 안에 못 받으면 GPS 수신 불량으로 안내한다.
+const FIX_TIMEOUT_MS = 15_000;
 
 export function NativeNavigationScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [locating, setLocating] = useState(false);
   const pending = useRef<Promise<NativeNavigationResult> | null>(null);
   // navigation 은 탭 화면이라 홈으로 돌아가도 이 화면이 남는다. 다시 들어올 때마다(포커스) 새 안내 요청으로 처음부터 시작한다.
   const [session, setSession] = useState(0);
@@ -52,9 +59,28 @@ export function NativeNavigationScreen() {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') throw Object.assign(new Error('Location permission denied'), { code: 'PERMISSION_DENIED' });
       if (__DEV__) console.warn('[native-nav] step permission ok'); // 임시 진단 로그: 확인 후 제거
+      // 출발점은 경로 검색 때 좌표가 아니라 지금 다시 잰 정밀 위치를 쓴다. 기준에 못 미치면 진행하지 않고 알린다
+      // (오래된 좌표·넓은 오차·서울시청 대체 좌표가 SDK 출발점이 되지 않게 한다).
+      setLocating(true);
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), FIX_TIMEOUT_MS)),
+      ]);
+      setLocating(false);
+      if (!position) throw Object.assign(new Error('No current position'), { code: 'GPS_UNAVAILABLE' });
+      const fix = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
+      const problem = checkGuidanceFix(fix, Date.now());
+      // 개발 빌드 전용: 네이티브 TikkeulNavGps 로그(SDK gpsOrigin·gpsMatched)와 비교할 Expo 측정값.
+      if (__DEV__) console.warn('[native-nav] expo fix', { lat: fix.lat.toFixed(5), lng: fix.lng.toFixed(5), accuracyM: fix.accuracy, ageMs: Date.now() - fix.timestamp, problem });
+      if (problem) throw Object.assign(new Error(`Current position is ${problem}`), { code: problem === 'inaccurate' ? 'GPS_INACCURATE' : 'GPS_UNAVAILABLE' });
       await Speech.stop();
       if (__DEV__) console.warn('[native-nav] step speech ok, opening'); // 임시 진단 로그: 확인 후 제거
-      return openNativeNavigation(options);
+      return openNativeNavigation({
+        ...options,
+        originLatitude: fix.lat,
+        originLongitude: fix.lng,
+        language: LANGUAGES.find(lng => lng === i18n.language) ?? 'ko',
+      });
     };
     // Reuse the in-flight call through React development effect replays. A second
     // native UI must never open because Strict Mode repeated a mount effect.
@@ -85,7 +111,7 @@ export function NativeNavigationScreen() {
   return <SafeAreaView style={styles.root}>
     <View style={styles.card}>
       {!error && <ActivityIndicator color={colors.brand} size="large" />}
-      <Text style={styles.title}>{t(error ?? 'nav.nativeOpening')}</Text>
+      <Text style={styles.title}>{t(error ?? (locating ? 'nav.locating' : 'nav.nativeOpening'))}</Text>
       {!!request?.destinationLabel && <Text style={styles.destination}>{request.destinationLabel}</Text>}
       {error && <>
         <Pressable accessibilityRole="button" onPress={retry} style={styles.button}><Text style={styles.buttonText}>{t('nav.retry')}</Text></Pressable>

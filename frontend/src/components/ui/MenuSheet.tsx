@@ -10,6 +10,7 @@ import { authApi } from '../../lib/auth/api';
 import { useAuth } from '../../lib/auth/AuthContext';
 import { authErrorMessage } from '../../lib/auth/errorMessage';
 import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../../theme';
+import { CarIconSetting } from '../CarIconSetting';
 import { Chip } from './Chip';
 import { Icon } from './Icon';
 import { RoundButton } from './RoundButton';
@@ -171,6 +172,8 @@ export function MenuSheet({ visible, onClose }: Props) {
               </Pressable>
             )}
           </View>
+
+          <CarIconSetting />
 
           <View style={styles.languages}>
             <Text style={styles.sectionTitle}>{t('lang.label')}</Text>

@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -46,6 +47,7 @@ class KakaoNavigationActivity : AppCompatActivity(),
   private var naviView: KNNaviView? = null
   private var guidance: KNGuidance? = null
   private var sessionFinished = false
+  private var picker: CarIconPicker? = null
   private lateinit var container: FrameLayout
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +60,7 @@ class KakaoNavigationActivity : AppCompatActivity(),
     setContentView(container)
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
+        if (picker?.isOpen == true) { picker?.close(); return }
         naviView?.guideCancel() ?: closeSession()
       }
     })
@@ -142,9 +145,32 @@ class KakaoNavigationActivity : AppCompatActivity(),
         active.citsGuideDelegate = this
         container.removeAllViews()
         container.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // The car icon is cosmetic: any failure keeps the SDK marker and must never block guidance.
+        runCatching { CarIcons.apply(view, CarIcons.get(this)) }
         view.initWithGuidance(active, trip, priority, avoid)
+        runCatching {
+          picker = CarIconPicker(this, intent.getStringExtra("language") ?: "ko", ::changeCarIcon).also { it.attach(container) }
+        }
       }
     }
+  }
+
+  // Changing the icon only swaps the marker images; the trip, guidance and route state are untouched.
+  private fun changeCarIcon(id: String) {
+    val view = naviView ?: return
+    val current = picker ?: return
+    CarIcons.set(this, id)
+    current.select(id)
+    current.close()
+    val applied = runCatching {
+      val before = view.mapComponent.mapView.userLocation?.icon
+      CarIcons.apply(view, id)
+      // Re-setting the same documented useDarkMode value re-renders the components (and the car marker)
+      // without changing day/night or guidance state. Detect whether the marker bitmap was actually replaced.
+      view.useDarkMode = view.useDarkMode
+      view.mapComponent.mapView.userLocation?.icon !== before
+    }.getOrDefault(false)
+    Toast.makeText(this, current.label(if (applied) "changed" else "nextTrip"), Toast.LENGTH_SHORT).show()
   }
 
   private fun fail(code: String, message: String) {
@@ -191,7 +217,10 @@ class KakaoNavigationActivity : AppCompatActivity(),
   override fun guidanceGuideEnded(g: KNGuidance) { naviView?.guidanceGuideEnded(g, true) }
   override fun guidanceDidUpdateRoutes(g: KNGuidance, routes: List<KNRoute>, info: KNMultiRouteInfo?) { naviView?.guidanceDidUpdateRoutes(g, routes, info) }
   override fun guidanceDidUpdateIndoorRoute(g: KNGuidance, route: KNRoute?) { naviView?.guidanceDidUpdateIndoorRoute(g, route) }
-  override fun guidanceDidUpdateLocation(g: KNGuidance, location: KNGuide_Location) { naviView?.guidanceDidUpdateLocation(g, location) }
+  override fun guidanceDidUpdateLocation(g: KNGuidance, location: KNGuide_Location) {
+    naviView?.guidanceDidUpdateLocation(g, location)
+    LocationDebug.log(this, location, intent.getDoubleExtra("originLatitude", Double.NaN), intent.getDoubleExtra("originLongitude", Double.NaN))
+  }
   override fun guidanceDidUpdateRouteGuide(g: KNGuidance, route: KNGuide_Route) { naviView?.guidanceDidUpdateRouteGuide(g, route) }
   override fun guidanceDidUpdateSafetyGuide(g: KNGuidance, safety: KNGuide_Safety?) { naviView?.guidanceDidUpdateSafetyGuide(g, safety) }
   override fun guidanceDidUpdateAroundSafeties(g: KNGuidance, safeties: List<KNSafety>?) { naviView?.guidanceDidUpdateAroundSafeties(g, safeties) }

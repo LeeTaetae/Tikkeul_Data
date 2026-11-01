@@ -24,7 +24,7 @@ interface KakaoMapProps {
 }
 
 export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onReady, onPlaceClick }: KakaoMapProps) {
-  const webRef = useRef<WebView>(null);
+  const webRef = useRef<WebView<object>>(null);
   const readyRef = useRef(false);
   const queueRef = useRef<string[]>([]);
   const { t } = useTranslation();
@@ -103,7 +103,7 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
 
   return (
     <View style={styles.box}>
-      <WebView
+      <WebView<object>
         ref={webRef}
         source={{ html: kakaoMapHtml(KAKAO_JS_KEY) }}
         originWhitelist={['*']}

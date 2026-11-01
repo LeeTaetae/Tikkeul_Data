@@ -82,6 +82,16 @@ export function parseRoutes(data: unknown): StyledRoute[] | null {
   });
 }
 
+// /navigation/route(Tmap 실패 시 네이버) 응답 {routes:[{provider, distance_km, duration_min, path}]} 을 '추천' 카드 하나로 바꾼다.
+// 이 응답에는 안내 문구가 없어 instructions 는 비워 둔다. 거리·시간·경로가 하나라도 깨졌으면 null(값을 지어내지 않는다).
+export function parseBestRoute(data: unknown): StyledRoute | null {
+  const r = (data as { routes?: any[] })?.routes?.[0];
+  if (!r || !isNum(r.distance_km) || !isNum(r.duration_min) || !Array.isArray(r.path)) return null;
+  const path: RoutePoint[] = r.path.filter((p: any) => p && isNum(p.lat) && isNum(p.lng)).map((p: any) => ({ lat: p.lat, lng: p.lng }));
+  if (path.length < 2 || path.length !== r.path.length) return null;
+  return { style: 'recommended', distanceKm: r.distance_km, durationMin: r.duration_min, path, instructions: [] };
+}
+
 export interface RouteRequestOptions {
   /** 길안내 시작·재탐색 요청만 true. 경로 검색 목록은 켜지 않는다(응답이 커진다) */
   includeGuides?: boolean;
