@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import anthropic
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,8 @@ from fastapi.responses import JSONResponse
 from app.auth.rate_limit import AttemptLimiter, ResendCooldown
 from app.auth.router import router as auth_router
 from app.cache import TtlCache
+from app.chat.router import router as chat_router
+from app.chat.service import ChatService
 from app.config import Settings, get_settings
 from app.db import create_db_and_tables, make_engine
 from app.errors import ApiError
@@ -29,6 +32,7 @@ _KEY_NAMES = [
     "kakao_rest_api_key",
     "jwt_secret",
     "resend_api_key",
+    "anthropic_api_key",
 ]
 
 
@@ -47,6 +51,8 @@ def create_app(
     async def lifespan(app: FastAPI):
         client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(settings.http_timeout_s, connect=5.0))
         app.state.service = TrafficService(Upstream(client, settings), settings, cache or TtlCache())
+        anthropic_key = settings.secret("anthropic_api_key")
+        app.state.chat_service = ChatService(anthropic.AsyncAnthropic(api_key=anthropic_key), app.state.service) if anthropic_key else None
         app.state.settings = settings
         app.state.db_engine = make_engine(settings)
         app.state.resend_cooldown = ResendCooldown()
@@ -86,6 +92,8 @@ def create_app(
     app.include_router(trips_router)
 
     app.include_router(favorites_router)
+
+    app.include_router(chat_router)
 
     return app
 

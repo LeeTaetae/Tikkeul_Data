@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     protection_zone_service_key: Optional[SecretStr] = None
     # 좌표 -> 시군구코드 변환(Kakao Local). 서버에서만 쓰고 프런트엔드에는 내보내지 않는다.
     kakao_rest_api_key: Optional[SecretStr] = None
+    anthropic_api_key: Optional[SecretStr] = None
 
     its_base_url: str = "https://openapi.its.go.kr:9443"
     # ITS 가 이 서버의 IP 대역에서 연결되지 않을 때 쓰는 한국 PC 중계(relay/). 비워 두면 its_base_url 로 직접 호출한다.
