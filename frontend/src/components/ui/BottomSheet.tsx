@@ -18,12 +18,23 @@ interface Props {
   maxExpandedHeight?: number;
   // 시트가 실제로 차지하는 높이를 알린다. 시트 위에 다른 것(위험 경고)을 올려놓을 때 쓴다.
   onHeightChange?: (height: number) => void;
+  // 화면 키보드가 가리는 높이(px, useKeyboardHeight()). 시트 안에 입력창이 있을 때만 넘긴다 - 그만큼 시트를
+  // 위로 띄워서 키보드가 입력창을 덮지 않게 한다. 기본 0(기존 동작 그대로).
+  keyboardOffset?: number;
   children: ReactNode;
 }
 
 // 지도 위로 올라오는 하단 시트(경로 결과·상세 경로·위험 정보).
 // 시트 바깥은 터치를 지도로 통과시키고(box-none), 드래그는 손잡이에만 걸어서 안쪽 ScrollView 스크롤과 충돌하지 않는다.
-export function BottomSheet({ windowHeight, bottomInset, draggable = true, maxExpandedHeight, onHeightChange, children }: Props) {
+export function BottomSheet({
+  windowHeight,
+  bottomInset,
+  draggable = true,
+  maxExpandedHeight,
+  onHeightChange,
+  keyboardOffset = 0,
+  children,
+}: Props) {
   const { t } = useTranslation();
   const expandedHeight = Math.max(COLLAPSED_HEIGHT, Math.min(Math.round(windowHeight * 0.75), maxExpandedHeight ?? Infinity));
   const expandedRef = useRef(expandedHeight);
@@ -76,7 +87,7 @@ export function BottomSheet({ windowHeight, bottomInset, draggable = true, maxEx
   const sheetHeight = draggable ? { height, maxHeight: height } : { maxHeight: Math.round(windowHeight * 0.6) };
 
   return (
-    <View style={styles.layer}>
+    <View style={[styles.layer, { bottom: keyboardOffset }]}>
       <View
         style={[styles.sheet, sheetHeight]}
         onLayout={(e) => onHeightChange?.(Math.round(e.nativeEvent.layout.height))}

@@ -959,7 +959,7 @@ export default function HomeScreen() {
           챗봇은 제일 먼저 검사한다 - 안내 중이든 다른 패널이 열려 있든 상태를 건드리지 않고 그 위에 잠깐 떴다가,
           닫으면(chatOpen=false) 원래 있던 패널로 그대로 돌아간다. */}
       {chatOpen ? (
-        <BottomSheet key="chat" {...sheetProps} draggable={false}>
+        <BottomSheet key="chat" {...sheetProps} draggable={false} keyboardOffset={keyboardHeight}>
           <ChatAssistantPanel onClose={() => setChatOpen(false)} />
         </BottomSheet>
       ) : nearbyCategory ? (
