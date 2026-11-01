@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
+from google import genai
+from google.genai import types as genai_types
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,6 +12,8 @@ from fastapi.responses import JSONResponse
 from app.auth.rate_limit import AttemptLimiter, ResendCooldown
 from app.auth.router import router as auth_router
 from app.cache import TtlCache
+from app.chat.router import router as chat_router
+from app.chat.service import ChatService
 from app.config import Settings, get_settings
 from app.db import create_db_and_tables, make_engine
 from app.errors import ApiError
@@ -29,6 +33,7 @@ _KEY_NAMES = [
     "kakao_rest_api_key",
     "jwt_secret",
     "resend_api_key",
+    "gemini_api_key",
 ]
 
 
@@ -47,6 +52,9 @@ def create_app(
     async def lifespan(app: FastAPI):
         client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(settings.http_timeout_s, connect=5.0))
         app.state.service = TrafficService(Upstream(client, settings), settings, cache or TtlCache())
+        gemini_key = settings.secret("gemini_api_key")
+        chat_client = genai.Client(api_key=gemini_key, http_options=genai_types.HttpOptions(timeout=15000)) if gemini_key else None
+        app.state.chat_service = ChatService(chat_client, app.state.service) if chat_client else None
         app.state.settings = settings
         app.state.db_engine = make_engine(settings)
         app.state.resend_cooldown = ResendCooldown()
@@ -86,6 +94,8 @@ def create_app(
     app.include_router(trips_router)
 
     app.include_router(favorites_router)
+
+    app.include_router(chat_router)
 
     return app
 

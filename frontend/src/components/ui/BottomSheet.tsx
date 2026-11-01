@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { PanResponder, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../../theme';
@@ -18,12 +18,27 @@ interface Props {
   maxExpandedHeight?: number;
   // 시트가 실제로 차지하는 높이를 알린다. 시트 위에 다른 것(위험 경고)을 올려놓을 때 쓴다.
   onHeightChange?: (height: number) => void;
+  // 시트 안에 입력창이 있어 키보드가 가릴 수 있을 때 true. 웹은 useKeyboardHeight() 값(px)을 keyboardOffset 로
+  // 받아 그만큼 시트를 직접 띄운다(visualViewport 기반이라 정확함). 네이티브는 keyboardOffset 값과 무관하게
+  // avoidKeyboard 만 보고 RN 표준 KeyboardAvoidingView 에 맡긴다 - iOS/Android 키보드 타이밍·애니메이션이
+  // 플랫폼마다 달라 직접 높이를 추적하는 것보다 안정적이다.
+  avoidKeyboard?: boolean;
+  keyboardOffset?: number;
   children: ReactNode;
 }
 
 // 지도 위로 올라오는 하단 시트(경로 결과·상세 경로·위험 정보).
 // 시트 바깥은 터치를 지도로 통과시키고(box-none), 드래그는 손잡이에만 걸어서 안쪽 ScrollView 스크롤과 충돌하지 않는다.
-export function BottomSheet({ windowHeight, bottomInset, draggable = true, maxExpandedHeight, onHeightChange, children }: Props) {
+export function BottomSheet({
+  windowHeight,
+  bottomInset,
+  draggable = true,
+  maxExpandedHeight,
+  onHeightChange,
+  avoidKeyboard = false,
+  keyboardOffset = 0,
+  children,
+}: Props) {
   const { t } = useTranslation();
   const expandedHeight = Math.max(COLLAPSED_HEIGHT, Math.min(Math.round(windowHeight * 0.75), maxExpandedHeight ?? Infinity));
   const expandedRef = useRef(expandedHeight);
@@ -75,8 +90,14 @@ export function BottomSheet({ windowHeight, bottomInset, draggable = true, maxEx
 
   const sheetHeight = draggable ? { height, maxHeight: height } : { maxHeight: Math.round(windowHeight * 0.6) };
 
+  const Layer = Platform.OS === 'web' ? View : KeyboardAvoidingView;
+  const layerProps =
+    Platform.OS === 'web'
+      ? { style: [styles.layer, { bottom: keyboardOffset }] }
+      : { style: styles.layer, behavior: Platform.OS === 'ios' ? ('padding' as const) : ('height' as const), enabled: avoidKeyboard };
+
   return (
-    <View style={styles.layer}>
+    <Layer {...layerProps}>
       <View
         style={[styles.sheet, sheetHeight]}
         onLayout={(e) => onHeightChange?.(Math.round(e.nativeEvent.layout.height))}
@@ -98,7 +119,7 @@ export function BottomSheet({ windowHeight, bottomInset, draggable = true, maxEx
           {children}
         </ScrollView>
       </View>
-    </View>
+    </Layer>
   );
 }
 
