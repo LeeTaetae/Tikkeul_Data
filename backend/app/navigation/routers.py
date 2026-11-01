@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -9,6 +10,7 @@ from .schemas import (
     ModeRouteRequest,
     NavigationResponse,
     NearbyPlacesResponse,
+    PlaceAtPointResponse,
     PlaceSearchResponse,
     ReverseGeocodeResponse,
     RouteRequest,
@@ -115,6 +117,34 @@ async def get_place_search(query: str, lat: Optional[float] = None, lng: Optiona
     except Exception as exc:
         raise HTTPException(status_code=503, detail="장소를 검색할 수 없습니다") from exc
     return PlaceSearchResponse(places=places)
+
+
+@places_router.get("/at", response_model=PlaceAtPointResponse)
+async def get_place_at_point(lat: float, lng: float, radius_m: int = 60) -> PlaceAtPointResponse:
+    """지도에서 탭한 좌표의 장소 상세 패널용. 주소는 항상 시도하고, 장소명·카테고리는 반경 안에 걸리는 게 있을 때만 채운다."""
+    settings = get_settings()
+    kakao = KakaoRoutingProvider(settings.kakao_rest_api_key)
+    point = LatLng(lat=lat, lng=lng)
+
+    async def safe_address() -> Optional[str]:
+        try:
+            return await kakao.reverse_geocode(point)
+        except Exception:
+            return None
+
+    async def safe_place():
+        try:
+            return await kakao.find_place_at(point, radius_m)
+        except Exception:
+            return None
+
+    address, place = await asyncio.gather(safe_address(), safe_place())
+    return PlaceAtPointResponse(
+        name=place.name if place else None,
+        category=place.category if place else None,
+        address=address,
+        distance_m=place.distance_m if place else None,
+    )
 
 
 @geocode_router.get("/reverse", response_model=ReverseGeocodeResponse)

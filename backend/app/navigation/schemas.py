@@ -156,6 +156,7 @@ class NearbyPlace(BaseModel):
     lng: float
     address: str
     distance_m: int
+    category: str = ""
 
 
 class NearbyPlacesResponse(BaseModel):
@@ -171,3 +172,13 @@ class PlaceSearchResult(BaseModel):
 
 class PlaceSearchResponse(BaseModel):
     places: list[PlaceSearchResult]
+
+
+class PlaceAtPointResponse(BaseModel):
+    """지도에서 좌표 하나를 탭했을 때의 장소 정보. 카카오는 좌표→장소명 역조회가 없어 best-effort 다.
+    name 이 None 이면 근처(기본 60m)에 걸리는 장소가 없다는 뜻 — address 만으로 보여준다."""
+
+    name: Optional[str] = None
+    category: Optional[str] = None
+    address: Optional[str] = None
+    distance_m: Optional[int] = None

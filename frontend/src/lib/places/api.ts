@@ -39,3 +39,23 @@ export async function fetchNearbyPlaces(category: PlaceCategory, origin: RoutePo
   const data: { places: { name: string; address: string; distance_m: number; lat: number; lng: number }[] } = await res.json();
   return data.places.map((p) => ({ name: p.name, address: p.address, distanceM: p.distance_m, point: { lat: p.lat, lng: p.lng } }));
 }
+
+export interface PlaceAtPoint {
+  name: string | null;
+  category: string | null;
+  address: string | null;
+  distanceM: number | null;
+}
+
+// 지도를 탭한 좌표의 장소 정보(장소 선택 패널용). 카카오는 좌표→장소명 역조회가 없어 best-effort 다 —
+// 근처(기본 60m)에 걸리는 장소가 없으면 name 이 null 이고 address 만 채워진다.
+export async function fetchPlaceAt(point: RoutePoint): Promise<PlaceAtPoint | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/places/at?lat=${point.lat}&lng=${point.lng}`);
+    if (!res.ok) return null;
+    const data: { name: string | null; category: string | null; address: string | null; distance_m: number | null } = await res.json();
+    return { name: data.name, category: data.category, address: data.address, distanceM: data.distance_m };
+  } catch {
+    return null;
+  }
+}

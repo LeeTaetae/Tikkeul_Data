@@ -1,8 +1,10 @@
 import type * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -10,7 +12,24 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Bus, Crosshair, Footprints, MapPin, Search, TrainFront, X, type LucideIcon } from 'lucide-react-native';
+import {
+  Bus,
+  CalendarDays,
+  Coffee,
+  Compass,
+  Crosshair,
+  Footprints,
+  MapPin,
+  Music,
+  Search,
+  Share2,
+  Star,
+  TrainFront,
+  TrendingUp,
+  Utensils,
+  X,
+  type LucideIcon,
+} from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -39,9 +58,13 @@ import { pickUrgentWarning } from '../src/lib/urgentWarning';
 import { KakaoMap } from '../src/map/KakaoMap';
 import { findDemoDestination } from '../src/map/demoDestinations';
 import { getCurrentLocation } from '../src/lib/location/getCurrentLocation';
-import { NEARBY_CATEGORIES, fetchNearbyPlaces, type NearbyPlace, type PlaceCategory } from '../src/lib/places/api';
+import { NEARBY_CATEGORIES, fetchNearbyPlaces, fetchPlaceAt, type NearbyPlace, type PlaceAtPoint, type PlaceCategory } from '../src/lib/places/api';
+import { favoritesApi } from '../src/lib/favorites/api';
 import { searchPlaces, type PlaceSearchResult } from '../src/lib/places/search';
 import { loadRecentRoutes, loadRecents, saveRecent, saveRecentRoute, type RecentDestination, type RecentRoute } from '../src/lib/recents';
+import { useAuth } from '../src/lib/auth/AuthContext';
+import { tripsApi, type FrequentDestination } from '../src/lib/trips/api';
+import { PLACEHOLDER_TRENDS, type TrendCategory } from '../src/lib/trends/placeholderTrends';
 import { clearPendingSearch, getPendingSearch } from '../src/lib/navigation/pendingSearch';
 import {
   fetchAddress,
@@ -78,6 +101,13 @@ const MODE_LABEL: Record<TravelMode, string> = {
 };
 const MODES: TravelMode[] = ['driving', 'walking', 'cycling', 'transit'];
 
+const TREND_ICON: Record<TrendCategory, LucideIcon> = {
+  event: CalendarDays,
+  restaurant: Utensils,
+  cafe: Coffee,
+  performance: Music,
+};
+
 type TransitCategory = 'all' | 'BUS' | 'SUBWAY' | 'BUS_AND_SUBWAY';
 const TRANSIT_CATEGORY_LABEL: Record<TransitCategory, string> = {
   all: 'map.transitAll',
@@ -106,6 +136,24 @@ function formatDuration(totalMinutes: number, t: (key: string, options?: Record<
 // 천 단위 콤마. Hermes의 Intl 지원이 기기마다 달라 toLocaleString 대신 직접 포맷한다.
 function formatThousands(n: number): string {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// 장소 이름에 흔한 단어가 있으면 그에 맞는 한 줄 설명을, 없으면 무난한 기본 문구를 돌려준다.
+// 실제 방문 기록에는 설명이 따로 없어서(이름·주소·방문횟수뿐) 이름만 보고 짐작하는 수준이다 - 틀릴 수 있다.
+const PLACE_DESCRIPTION_RULES: { pattern: RegExp; text: string }[] = [
+  { pattern: /공원|동산|수목원|정원/, text: '여유롭게 쉴 수 있는 공원' },
+  { pattern: /카페|커피|로스터리/, text: '커피 한 잔 하기 좋은 카페' },
+  { pattern: /도서관|책방|서점/, text: '조용히 책 읽기 좋은 곳' },
+  { pattern: /영화관|시네마|CGV|메가박스|롯데시네마/, text: '영화 보기 좋은 곳' },
+  { pattern: /박물관|미술관|전시|아트/, text: '구경하기 좋은 전시 공간' },
+  { pattern: /백화점|마트|쇼핑|몰/, text: '쇼핑하기 좋은 곳' },
+  { pattern: /체육관|운동장|헬스|스포츠/, text: '몸을 움직이기 좋은 곳' },
+  { pattern: /식당|맛집|김밥|분식|고기|국밥|치킨|버거|떡볶이|식탁/, text: '한 끼 든든하게 먹기 좋은 곳' },
+  { pattern: /역$|터미널|공항/, text: '오가는 사람이 많은 교통 요지' },
+];
+
+function describePlace(name: string): string {
+  return PLACE_DESCRIPTION_RULES.find((rule) => rule.pattern.test(name))?.text ?? '방문자들이 많이 찾는 곳';
 }
 
 // 구간 색 — 지하철은 파랑, 버스는 직행/급행이면 빨강 그 외엔 초록(카카오맵 배색과 맞춤), 도보는 회색.
@@ -171,6 +219,7 @@ function SearchAction({ label, compact, onPress }: { label: string; compact: boo
 export default function HomeScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const { status: authStatus, token: authToken } = useAuth();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   // 좁은 화면(320px 등)에서는 검색 버튼을 글자 대신 아이콘으로 줄여 입력창 폭을 지킨다.
@@ -196,6 +245,8 @@ export default function HomeScreen() {
   const [originAddress, setOriginAddress] = useState<string | null>(null);
   const [destinationAddress, setDestinationAddress] = useState<string | null>(null);
   const [pickedPoint, setPickedPoint] = useState<RoutePoint | null>(null);
+  const [pickedPlace, setPickedPlace] = useState<PlaceAtPoint | null>(null);
+  const [pickedFavorited, setPickedFavorited] = useState(false);
   const [routeStyles, setRouteStyles] = useState<StyledRoute[] | null>(null);
   const [transitResult, setTransitResult] = useState<TransitRoutesResult | null>(null);
   const [transitCategory, setTransitCategory] = useState<TransitCategory>('all');
@@ -222,6 +273,16 @@ export default function HomeScreen() {
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[] | null>(null);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState(false);
+
+  // 홈 화면 기본 패널: 내 주변에서 전체 유저가 많이 간 곳(로그인 불필요, 집계만). 다른 시트가 없을 때만 보인다.
+  const [popularPlaces, setPopularPlaces] = useState<FrequentDestination[] | null>(null);
+  const [popularTab, setPopularTab] = useState<'nearby' | 'trending'>('nearby');
+  useEffect(() => {
+    getCurrentLocation()
+      .then((point) => tripsApi.popular({ lat: point.lat, lng: point.lng, limit: 20 }))
+      .then(setPopularPlaces)
+      .catch(() => setPopularPlaces(null));
+  }, []);
 
   // 도착지 입력창에 2글자 이상 치면 실제 장소 검색(자동완성)을 보여준다. 데모 목적지 4곳만 되던 한계를 없앤다.
   const [destinationSuggestions, setDestinationSuggestions] = useState<PlaceSearchResult[]>([]);
@@ -346,6 +407,18 @@ export default function HomeScreen() {
     setManualOrigin(null);
   };
 
+  // 로그인 상태에서만 "자주/최근 간 곳" 랭킹(대중교통·네비게이션 탭)에 쓸 방문 기록을 남긴다.
+  // 실패해도 경로 검색 자체를 막지 않는다(부가 기능).
+  const logTrip = (origin: RoutePoint, destination: RoutePoint, label: string, addressText: string | null) => {
+    if (!authToken) return;
+    tripsApi
+      .create(
+        { origin: { lat: origin.lat, lon: origin.lng }, destination: { lat: destination.lat, lon: destination.lng, label, address_text: addressText ?? '' } },
+        authToken,
+      )
+      .catch(() => {});
+  };
+
   // travelMode를 매개변수로 받는다 — setMode 직후 바로 호출될 수 있어서(모드 전환 시 재검색),
   // state를 읽으면 리렌더 전 값(stale closure)을 쓰게 될 수 있기 때문이다.
   const searchRoutes = async (
@@ -383,6 +456,7 @@ export default function HomeScreen() {
         mapRef.current?.showRoute(transit.routes[0].path);
         setRecents(saveRecent({ label: destinationLabel, point: destinationPoint }));
         setRecentRoutes(saveRecentRoute({ originLabel, destinationLabel, destinationPoint, mode: travelMode }));
+        logTrip(origin, destinationPoint, label, destinationAddressValue);
         return transit.routes.map(toStyledRoute);
       }
       setLiveError(true);
@@ -405,6 +479,7 @@ export default function HomeScreen() {
       setRouteStyles(results);
       setRecents(saveRecent({ label: destinationLabel, point: destinationPoint }));
       setRecentRoutes(saveRecentRoute({ originLabel, destinationLabel, destinationPoint, mode: travelMode }));
+      logTrip(origin, destinationPoint, label, destinationAddressValue);
       return results;
     }
     setRouteStyles(null);
@@ -496,6 +571,14 @@ export default function HomeScreen() {
     mapRef.current?.clearRoute();
   };
 
+  // 출발/도착 두 칸(plannerOpen)을 입력하다가 지도를 손으로 움직이면 원래 검색창으로 되돌린다.
+  // 검색 결과가 이미 나와 있을 때(inRouteView)는 지도를 둘러보는 동작일 수 있어 건드리지 않는다.
+  const onMapPan = () => {
+    if (plannerOpen && !searched && routeStyles === null && transitResult === null && !activeRoute) {
+      onResetSearch();
+    }
+  };
+
   const closeNearby = () => {
     setNearbyCategory(null);
     setNearbyPlaces(null);
@@ -534,6 +617,13 @@ export default function HomeScreen() {
     await searchRoutes(place.point, place.name, mode);
   };
 
+  const onPickPopularPlace = async (place: FrequentDestination) => {
+    const point: RoutePoint = { lat: place.lat, lng: place.lon };
+    setDestination(place.label);
+    setManualDestination(point);
+    await searchRoutes(point, place.label, mode);
+  };
+
   const onStartGuidance = (route: StyledRoute) => {
     // 자동차·도보는 별도 길안내 화면이 GPS 를 맡는다. 홈의 안내 상태(위치 폴링·위험 경고)는 꺼서 위치 추적기가 둘이 되지 않게 한다.
     // 자전거·대중교통은 실시간 길안내를 지원하지 않아 기존처럼 홈에서 안내 상태만 보여준다.
@@ -560,14 +650,35 @@ export default function HomeScreen() {
 
   const onMapClick = (point: RoutePoint) => setPickedPoint(point);
 
+  // 지도를 탭해 위치를 고르면, 그 좌표가 뭔지(장소명·카테고리, 없으면 주소)를 바로 조회해 패널에 보여준다.
+  useEffect(() => {
+    if (!pickedPoint) {
+      setPickedPlace(null);
+      return;
+    }
+    let cancelled = false;
+    setPickedPlace(null);
+    setPickedFavorited(false);
+    fetchPlaceAt(pickedPoint).then((place) => {
+      if (!cancelled) setPickedPlace(place);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickedPoint]);
+
   // 지도에서 고른 위치를 출발지로만 지정한다 — 바로 안내를 시작하지 않고, 도착지를 마저 입력받는다.
+  // 경로 검색을 기다리지 않고 여기서 바로 역지오코딩해서, "지도에서 선택한 위치" 대신 실제 주소를 보여준다.
   const onPickOrigin = () => {
     if (!pickedPoint) return;
-    setManualOrigin(pickedPoint);
+    const origin = pickedPoint;
+    setManualOrigin(origin);
     setOriginText(t('map.pickedLocation'));
+    setOriginAddress(null);
     setPickedPoint(null);
     setPlannerOpen(true);
     destinationInputRef.current?.focus();
+    fetchAddress(origin).then((address) => setOriginAddress(address));
   };
 
   // 지도에서 고른 위치를 도착지로 지정하고, 검색 결과(경로 스타일 선택지)를 보여준다.
@@ -582,13 +693,46 @@ export default function HomeScreen() {
     await searchRoutes(destinationPoint, label, mode);
   };
 
+  // 선택한 위치를 즐겨찾기(저장 탭)에 custom 으로 추가한다. 비로그인이면 로그인부터 하게 한다.
+  const onPressPickedFavorite = () => {
+    if (!pickedPoint || pickedFavorited) return;
+    if (authStatus !== 'authenticated' || !authToken) {
+      router.push('/login');
+      return;
+    }
+    const label = pickedPlace?.name ?? pickedPlace?.address ?? t('map.pickedLocation');
+    favoritesApi
+      .create({ kind: 'custom', label, lat: pickedPoint.lat, lon: pickedPoint.lng, address_text: pickedPlace?.address ?? '' }, authToken)
+      .then(() => setPickedFavorited(true))
+      .catch(() => {});
+  };
+
+  // 장소 이름(또는 주소)과 좌표를 공유한다. 웹은 Web Share API, 없으면 클립보드로 대신한다.
+  const onSharePicked = async () => {
+    if (!pickedPoint) return;
+    const title = pickedPlace?.name ?? pickedPlace?.address ?? t('map.pickedLocation');
+    const text = [title, pickedPlace?.address, `${pickedPoint.lat.toFixed(6)}, ${pickedPoint.lng.toFixed(6)}`].filter(Boolean).join('\n');
+    try {
+      if (Platform.OS === 'web') {
+        const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { share?: (data: { title?: string; text?: string }) => Promise<void> }) : null;
+        if (nav?.share) await nav.share({ title, text });
+        else await navigator.clipboard?.writeText(text);
+      } else {
+        await Share.share({ message: text });
+      }
+    } catch {
+      // 공유 시트를 취소한 경우 등 - 조용히 무시
+    }
+  };
+
   // 위험 경고: 시트가 있으면 그 높이만큼 위로 올린다. 시트를 크게 펼쳐도 경고 카드(닫기 버튼 포함)가 화면 위로 잘리지 않게
   // 카드 높이만큼의 여유는 남긴다. 그 경우 경고는 시트의 맨 윗부분(손잡이)만 덮고 안쪽 내용은 가리지 않는다.
   const urgent = pickUrgentWarning(warning, schoolZoneWarning.warning);
   // 경고가 떠 있을 때 그 카드(+위아래 여백)가 차지하는 높이. 시트·최근 검색 패널은 이만큼을 비워 둔다.
   const alertReserve = urgent ? alertHeight + space.lg + space.sm : 0;
   const maxSheetHeightWithAlert = Math.max(0, windowHeight - TAB_BAR_ALLOWANCE - alertReserve - insets.top);
-  const hasSheet = !!(nearbyCategory || pickedPoint || activeRoute || liveLoading || routeStyles || transitResult || searched);
+  const hasPopularSheet = !nearbyCategory && !pickedPoint && !activeRoute && !liveLoading && !routeStyles && !transitResult && !searched;
+  const hasSheet = !!(nearbyCategory || pickedPoint || activeRoute || liveLoading || routeStyles || transitResult || searched || hasPopularSheet);
   const hazardOffset = hasSheet
     ? Math.min(sheetHeight, maxSheetHeightWithAlert)
     : 0;
@@ -608,7 +752,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.mapLayer}>
-        <KakaoMap ref={mapRef} onMapClick={onMapClick} onPlaceClick={(i) => nearbyPlaces?.[i] && onPickNearbyPlace(nearbyPlaces[i])} />
+        <KakaoMap ref={mapRef} onMapClick={onMapClick} onUserPan={onMapPan} onPlaceClick={(i) => nearbyPlaces?.[i] && onPickNearbyPlace(nearbyPlaces[i])} />
       </View>
 
       {/* 위험 경고는 상단 오버레이(메뉴·시뮬레이터)보다 먼저 그려 그 아래에 깔린다. */}
@@ -834,19 +978,47 @@ export default function HomeScreen() {
           )}
         </BottomSheet>
       ) : pickedPoint ? (
-        <BottomSheet key="pick" draggable={false} {...sheetProps}>
-          <Text style={styles.notice}>{t('map.pickPrompt')}</Text>
-          <View style={styles.pickActions}>
-            <Pressable style={styles.pickButton} onPress={onPickOrigin} accessibilityRole="button">
-              <Text style={styles.pickButtonText}>{t('map.setAsOrigin')}</Text>
+        <BottomSheet key="pick" {...sheetProps}>
+          <View style={styles.pickTopRow}>
+            <View style={styles.pickTitleBlock}>
+              <Text style={styles.pickTitle} numberOfLines={2}>
+                {pickedPlace === null ? t('map.liveLoading') : (pickedPlace.name ?? pickedPlace.address ?? t('map.pickedLocation'))}
+              </Text>
+              {pickedPlace?.category ? (
+                <Text style={styles.pickCategory} numberOfLines={1}>
+                  {pickedPlace.category}
+                </Text>
+              ) : null}
+            </View>
+            <RoundButton
+              icon={Star}
+              label={t(pickedFavorited ? 'favorites.added' : 'favorites.add')}
+              variant={pickedFavorited ? 'brand' : 'soft'}
+              size={44}
+              onPress={onPressPickedFavorite}
+            />
+            <RoundButton icon={X} label={t('map.cancel')} variant="soft" size={44} onPress={() => setPickedPoint(null)} />
+          </View>
+          <View style={styles.pickActionRow}>
+            <Pressable style={[styles.pickActionButton, styles.pickActionButtonOrigin]} onPress={onPickOrigin} accessibilityRole="button">
+              <Text style={[styles.pickActionText, styles.pickActionTextOrigin]}>{t('map.setAsOrigin')}</Text>
             </Pressable>
-            <Pressable style={styles.pickButton} onPress={onPickDestination} accessibilityRole="button">
-              <Text style={styles.pickButtonText}>{t('map.setAsDestination')}</Text>
+            <Pressable style={[styles.pickActionButton, styles.pickActionButtonDestination]} onPress={onPickDestination} accessibilityRole="button">
+              <Text style={[styles.pickActionText, styles.pickActionTextDestination]}>{t('map.setAsDestination')}</Text>
             </Pressable>
-            <Pressable style={styles.pickCancel} onPress={() => setPickedPoint(null)} accessibilityRole="button">
-              <Text style={styles.pickCancelText}>{t('map.cancel')}</Text>
+            <Pressable style={styles.pickShareButton} onPress={onSharePicked} accessibilityRole="button">
+              <Icon icon={Share2} size={16} color={colors.ink} />
+              <Text style={styles.pickActionText}>{t('map.share')}</Text>
             </Pressable>
           </View>
+          {pickedPlace?.name && pickedPlace.address ? (
+            <View style={styles.pickAddressRow}>
+              <Icon icon={MapPin} size={14} color={colors.muted} />
+              <Text style={styles.pickAddressText} numberOfLines={1}>
+                {pickedPlace.address}
+              </Text>
+            </View>
+          ) : null}
         </BottomSheet>
       ) : activeRoute ? (
         <BottomSheet key="guide" {...sheetProps}>
@@ -903,6 +1075,89 @@ export default function HomeScreen() {
       ) : searched ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t(liveError ? 'map.liveError' : 'map.demoHint')}</Text>
+        </BottomSheet>
+      ) : hasPopularSheet ? (
+        <BottomSheet key="popular" {...sheetProps}>
+          <View style={styles.popularTabBar}>
+            <Pressable
+              style={[styles.popularTab, popularTab === 'nearby' && styles.popularTabActive]}
+              onPress={() => setPopularTab('nearby')}
+              accessibilityRole="button"
+              aria-selected={popularTab === 'nearby'}
+            >
+              <Icon icon={Compass} size={15} color={popularTab === 'nearby' ? colors.surface : colors.muted} />
+              <Text style={[styles.popularTabText, popularTab === 'nearby' && styles.popularTabTextActive]}>
+                {t('places.popularNearby')}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.popularTab, popularTab === 'trending' && styles.popularTabActive]}
+              onPress={() => setPopularTab('trending')}
+              accessibilityRole="button"
+              aria-selected={popularTab === 'trending'}
+            >
+              <Icon icon={TrendingUp} size={15} color={popularTab === 'trending' ? colors.surface : colors.muted} />
+              <Text style={[styles.popularTabText, popularTab === 'trending' && styles.popularTabTextActive]}>
+                {t('places.popularTrending')}
+              </Text>
+            </Pressable>
+          </View>
+          {popularTab === 'nearby' ? (
+            popularPlaces && popularPlaces.length > 0 ? (
+              <View style={styles.popularGrid}>
+                {popularPlaces.map((place, i) => (
+                  <Pressable
+                    key={`${place.label}-${place.lat}-${place.lon}`}
+                    style={styles.popularCard}
+                    onPress={() => onPickPopularPlace(place)}
+                    accessibilityRole="button"
+                  >
+                    <View style={styles.popularRankBadge}>
+                      <Text style={styles.popularRankText}>{i + 1}</Text>
+                    </View>
+                    <Text style={styles.popularCardLabel} numberOfLines={2}>
+                      {place.label}
+                    </Text>
+                    <Text style={styles.popularCardAddress} numberOfLines={1}>
+                      {place.address_text}
+                    </Text>
+                    <View style={styles.popularHashtag}>
+                      <Text style={styles.popularHashtagText} numberOfLines={1}>
+                        #{describePlace(place.label)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.notice}>{t('places.empty')}</Text>
+            )
+          ) : (
+            <>
+              <View style={styles.popularGrid}>
+                {PLACEHOLDER_TRENDS.map((item) => (
+                  <View key={item.name} style={styles.popularCard}>
+                    <View style={styles.trendCategoryRow}>
+                      <Icon icon={TREND_ICON[item.category]} size={14} color={colors.brand} />
+                      <Text style={styles.trendCategoryText}>{t(`places.trendCategory.${item.category}`)}</Text>
+                    </View>
+                    <Text style={styles.popularCardLabel} numberOfLines={2}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.popularCardAddress} numberOfLines={1}>
+                      {item.region}
+                    </Text>
+                    <View style={styles.popularHashtag}>
+                      <Text style={styles.popularHashtagText} numberOfLines={2}>
+                        #{item.description}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.trendDisclaimer}>{t('places.trendDisclaimer')}</Text>
+            </>
+          )}
         </BottomSheet>
       ) : null}
     </View>
@@ -1142,11 +1397,30 @@ const styles = StyleSheet.create({
   searchActionText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
   fabWrap: { alignSelf: 'flex-end' },
   notice: { fontSize: 14, lineHeight: 20, color: colors.muted },
-  pickActions: { flexDirection: 'row', gap: space.sm },
-  pickButton: { flex: 1, minHeight: 44, borderRadius: radius.sm, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
-  pickButtonText: { color: colors.surface, fontSize: 13, fontWeight: '700' },
-  pickCancel: { minHeight: 44, paddingHorizontal: space.md, borderRadius: radius.sm, backgroundColor: colors.paper, borderColor: colors.line, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  pickCancelText: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  pickTopRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  pickTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  pickTitle: { fontSize: 17, fontWeight: '700', color: colors.ink, lineHeight: 22 },
+  pickCategory: { fontSize: 13, color: colors.muted },
+  pickActionRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
+  pickActionButton: { flex: 1, minHeight: 44, borderRadius: radius.pill, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  pickActionButtonOrigin: { borderColor: colors.guide, backgroundColor: colors.surface },
+  pickActionButtonDestination: { borderColor: colors.dangerStrong, backgroundColor: colors.surface },
+  pickActionText: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  pickActionTextOrigin: { color: colors.guide },
+  pickActionTextDestination: { color: colors.dangerStrong },
+  pickShareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  pickAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.md },
+  pickAddressText: { flex: 1, minWidth: 0, fontSize: 13, color: colors.muted },
   routeMain: { flex: 1, gap: 2 },
   routeName: { fontSize: 16, fontWeight: '700', color: colors.ink },
   routeMeta: { fontSize: 14, color: colors.muted },
@@ -1213,4 +1487,44 @@ const styles = StyleSheet.create({
   nearbyItemMain: { flex: 1, minWidth: 0, gap: 2 },
   nearbyAddress: { fontSize: 12, color: colors.muted },
   nearbyDistance: { fontSize: 13, fontWeight: '700', color: colors.muted },
+  popularTabBar: { flexDirection: 'row', backgroundColor: colors.paper, borderRadius: radius.pill, padding: 4, gap: 4 },
+  popularTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, borderRadius: radius.pill },
+  popularTabActive: { backgroundColor: colors.brand, boxShadow: shadow.card },
+  popularTabText: { fontSize: 13, fontWeight: '700', color: colors.muted },
+  popularTabTextActive: { color: colors.surface },
+  popularGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, paddingVertical: space.xs },
+  popularCard: {
+    width: '47%',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    padding: space.md,
+    gap: 4,
+  },
+  popularRankBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  popularRankText: { fontSize: 12, fontWeight: '800', color: colors.surface },
+  popularCardLabel: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  popularCardAddress: { fontSize: 11, color: colors.muted },
+  popularHashtag: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    maxWidth: '100%',
+    paddingHorizontal: space.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primarySoft,
+  },
+  popularHashtagText: { fontSize: 11, fontWeight: '600', color: colors.brand },
+  trendCategoryRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  trendCategoryText: { fontSize: 11, fontWeight: '700', color: colors.brand },
+  trendDisclaimer: { fontSize: 11, color: colors.muted, marginTop: space.xs },
 });

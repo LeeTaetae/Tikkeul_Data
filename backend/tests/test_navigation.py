@@ -11,7 +11,7 @@ import pytest
 
 from app.navigation import routers as nav_routers
 from app.navigation.config import Settings as NavSettings
-from app.navigation.schemas import LatLng, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption
+from app.navigation.schemas import LatLng, NearbyPlace, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption
 from app.navigation.service import (
     LONG_DISTANCE_KM_THRESHOLD,
     ROUTE_STYLE_SEARCH_OPTIONS,
@@ -185,6 +185,11 @@ class StubKakao:
             raise RuntimeError("kakao 실패")
         return "서울특별시 중구 세종대로 110"
 
+    found_place = None  # None 이면 find_place_at 이 None 을 돌려준다(반경 안에 장소 없음)
+
+    async def find_place_at(self, point, radius_m=60):
+        return StubKakao.found_place
+
 
 @pytest.fixture
 def nav_client(make_client, monkeypatch):
@@ -193,6 +198,7 @@ def nav_client(make_client, monkeypatch):
     monkeypatch.setattr(nav_routers, "NaverProvider", StubNaver)
     monkeypatch.setattr(nav_routers, "KakaoRoutingProvider", StubKakao)
     monkeypatch.setattr(StubKakao, "fail_geocode", False)
+    monkeypatch.setattr(StubKakao, "found_place", None)
     return make_client(lambda request: httpx.Response(200, json={}), make_settings(cors_allow_origins=VERCEL))
 
 
@@ -234,6 +240,35 @@ def test_reverse_geocode_and_failure_returns_null_address(nav_client):
     assert ok.status_code == 200 and ok.json() == {"address": "서울특별시 중구 세종대로 110"}
     StubKakao.fail_geocode = True
     assert nav_client.get("/geocode/reverse", params={"lat": 37.5665, "lng": 126.978}).json() == {"address": None}
+
+
+def test_place_at_point_returns_address_only_when_nothing_nearby(nav_client):
+    res = nav_client.get("/places/at", params={"lat": 37.5665, "lng": 126.978})
+    assert res.status_code == 200
+    assert res.json() == {"name": None, "category": None, "address": "서울특별시 중구 세종대로 110", "distance_m": None}
+
+
+def test_place_at_point_returns_the_nearby_place_when_found(nav_client):
+    StubKakao.found_place = NearbyPlace(
+        name="부천시민문화동산", lat=37.5665, lng=126.978, address="경기 부천시 원미구 길주로 1", distance_m=12, category="공원"
+    )
+    res = nav_client.get("/places/at", params={"lat": 37.5665, "lng": 126.978})
+    assert res.json() == {
+        "name": "부천시민문화동산",
+        "category": "공원",
+        "address": "서울특별시 중구 세종대로 110",
+        "distance_m": 12,
+    }
+
+
+def test_place_at_point_falls_back_when_place_lookup_fails(nav_client, monkeypatch):
+    async def always_fail(self, point, radius_m=60):
+        raise RuntimeError("kakao 실패")
+
+    monkeypatch.setattr(StubKakao, "find_place_at", always_fail)
+    res = nav_client.get("/places/at", params={"lat": 37.5665, "lng": 126.978})
+    assert res.status_code == 200
+    assert res.json()["name"] is None and res.json()["address"] == "서울특별시 중구 세종대로 110"
 
 
 def test_route_styles_503_when_every_style_fails(nav_client, monkeypatch):
@@ -523,3 +558,45 @@ def test_http_styles_limits_tmap_calls_for_reroute(nav_client, monkeypatch):
 @pytest.mark.parametrize("styles", [[], ["walking"], ["transit"], ["nope"], "recommended"])
 def test_http_styles_rejects_empty_or_non_driving_values(nav_client, styles):
     assert nav_client.post("/navigation/route-styles", json={**BODY, "styles": styles}).status_code == 422
+
+
+def _patch_kakao_category_http(monkeypatch, by_group_code: dict):
+    """group_code -> documents 리스트. 목록에 없는 group_code 는 빈 결과를 준다."""
+    from app.navigation import providers
+
+    real_client = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        group_code = request.url.params.get("category_group_code")
+        return httpx.Response(200, json={"documents": by_group_code.get(group_code, [])})
+
+    monkeypatch.setattr(providers.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw))
+
+
+def _doc(name, distance, category_name="", x=126.978, y=37.5665):
+    return {"place_name": name, "x": str(x), "y": str(y), "distance": str(distance), "category_name": category_name, "road_address_name": "경기 부천시 원미구 길주로 1"}
+
+
+def test_find_place_at_picks_the_nearest_across_categories(monkeypatch):
+    from app.navigation.providers import KakaoRoutingProvider
+
+    _patch_kakao_category_http(
+        monkeypatch,
+        {
+            "FD6": [_doc("먼음식점", 50)],
+            "AT4": [_doc("부천시민문화동산", 12, "여행 > 관광,명소 > 공원")],
+            "CE7": [_doc("가까운카페", 20)],
+        },
+    )
+    kakao = KakaoRoutingProvider("fake-key")
+    place = asyncio.run(kakao.find_place_at(LatLng(lat=37.5665, lng=126.978)))
+    assert place is not None
+    assert place.name == "부천시민문화동산" and place.category == "공원" and place.distance_m == 12
+
+
+def test_find_place_at_returns_none_when_nothing_nearby(monkeypatch):
+    from app.navigation.providers import KakaoRoutingProvider
+
+    _patch_kakao_category_http(monkeypatch, {})
+    kakao = KakaoRoutingProvider("fake-key")
+    assert asyncio.run(kakao.find_place_at(LatLng(lat=37.5665, lng=126.978))) is None

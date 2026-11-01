@@ -1,8 +1,22 @@
+import asyncio
 from typing import Optional, Protocol
 
 import httpx
 
 from .schemas import LatLng, NearbyPlace, PlaceSearchResult, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption, TransitStep, TransitStop, TransitVehicle
+
+# 카카오 로컬의 전체 카테고리 그룹 코드(developers.kakao.com/docs/latest/ko/local/dev-guide#search-by-category).
+# find_place_at 이 "좌표 하나 근처엔 뭐가 있나"를 알아보려고 이 전부를 훑는다(카카오는 좌표→장소명 역조회가 없다).
+_ALL_CATEGORY_GROUP_CODES = [
+    "MT1", "CS2", "PS3", "SC4", "AC5", "PK6", "OL7", "SW8", "BK9",
+    "CT1", "AG2", "PO3", "AT4", "AD5", "FD6", "CE7", "HP8", "PM9",
+]
+
+
+def _category_label(category_name: str) -> str:
+    """카카오 category_name 은 "여행 > 관광,명소 > 공원" 같은 상위>하위 경로다. 가장 구체적인 마지막 항목만 보여준다."""
+    parts = [p.strip() for p in category_name.split(">") if p.strip()]
+    return parts[-1] if parts else ""
 
 
 class NavigationProvider(Protocol):
@@ -288,9 +302,44 @@ class KakaoRoutingProvider:
                 lng=float(doc["x"]),
                 address=doc.get("road_address_name") or doc.get("address_name", ""),
                 distance_m=int(doc["distance"]) if doc.get("distance") else 0,
+                category=_category_label(doc.get("category_name", "")),
             )
             for doc in data.get("documents", [])
         ]
+
+    # 지도를 탭한 좌표 근처에서 가장 가까운 장소 하나를 찾는다. 카카오는 좌표→장소명 역조회를 지원하지 않아,
+    # 전체 카테고리(_ALL_CATEGORY_GROUP_CODES)를 좁은 반경으로 한 번에 훑어(asyncio.gather) 가장 가까운 결과를 고르는
+    # best-effort 방식이다. 반경 안에 아무 장소도 없으면 None(= 호출 쪽은 주소만 보여준다).
+    async def find_place_at(self, point: LatLng, radius_m: int = 60) -> Optional[NearbyPlace]:
+        async def fetch(group_code: str) -> list[dict]:
+            try:
+                return await self._category_documents(point, radius_m, group_code)
+            except Exception:
+                return []
+
+        results = await asyncio.gather(*(fetch(code) for code in _ALL_CATEGORY_GROUP_CODES))
+        candidates = [doc for docs in results for doc in docs]
+        if not candidates:
+            return None
+        nearest = min(candidates, key=lambda d: int(d.get("distance") or radius_m))
+        return NearbyPlace(
+            name=nearest["place_name"],
+            lat=float(nearest["y"]),
+            lng=float(nearest["x"]),
+            address=nearest.get("road_address_name") or nearest.get("address_name", ""),
+            distance_m=int(nearest["distance"]) if nearest.get("distance") else 0,
+            category=_category_label(nearest.get("category_name", "")),
+        )
+
+    async def _category_documents(self, point: LatLng, radius_m: int, category_group_code: str) -> list[dict]:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                "https://dapi.kakao.com/v2/local/search/category.json",
+                headers={"Authorization": f"KakaoAK {self._rest_api_key}", "KA": self._KA_HEADER},
+                params={"x": point.lng, "y": point.lat, "radius": radius_m, "sort": "distance", "size": 1, "category_group_code": category_group_code},
+            )
+            resp.raise_for_status()
+            return resp.json().get("documents", [])
 
     # 자유 검색(장소명·주소 아무거나). 홈 화면 도착지 검색과 자동완성에 쓴다. 전국 범위 - radius 로 가두지 않는다.
     # point 를 주면 그 좌표 근처 결과를 우선 정렬한다(카카오 기본 정렬: 정확도순이지만 x/y 가 있으면 가중치를 준다).

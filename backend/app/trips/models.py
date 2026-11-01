@@ -56,3 +56,12 @@ class RecentDestination(SQLModel):
     lon: float
     address_text: str
     last_used_at: datetime
+
+
+class FrequentDestination(SQLModel):
+    label: str
+    lat: float
+    lon: float
+    address_text: str
+    visit_count: int
+    last_used_at: datetime
