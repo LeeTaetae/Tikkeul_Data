@@ -1,7 +1,8 @@
 import json
 from typing import List, Optional
 
-import anthropic
+from google import genai
+from google.genai import errors, types
 
 from app.chat.models import ChatMessage
 from app.errors import ApiError, api_error
@@ -17,12 +18,23 @@ SYSTEM_PROMPT = (
 )
 
 TOOLS = [
-    {"name": "nearby_incidents", "description": "사용자의 현재 위치 주변 돌발상황(사고·공사·정체)을 실시간으로 조회한다.",
-     "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "nearby_caution_zones", "description": "사용자의 현재 위치 주변 주의운전구간(사고잦은구간 등)을 실시간으로 조회한다.",
-     "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "nearby_protection_zones", "description": "사용자의 현재 위치가 속한 지역의 어린이·노인·장애인 보호구역 등록 현황을 조회한다.",
-     "input_schema": {"type": "object", "properties": {}, "required": []}},
+    types.Tool(function_declarations=[
+        types.FunctionDeclaration(
+            name="nearby_incidents",
+            description="사용자의 현재 위치 주변 돌발상황(사고·공사·정체)을 실시간으로 조회한다.",
+            parameters_json_schema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.FunctionDeclaration(
+            name="nearby_caution_zones",
+            description="사용자의 현재 위치 주변 주의운전구간(사고잦은구간 등)을 실시간으로 조회한다.",
+            parameters_json_schema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.FunctionDeclaration(
+            name="nearby_protection_zones",
+            description="사용자의 현재 위치가 속한 지역의 어린이·노인·장애인 보호구역 등록 현황을 조회한다.",
+            parameters_json_schema={"type": "object", "properties": {}, "required": []},
+        ),
+    ])
 ]
 
 # shortcut: 반경을 고정 0.01도(~1.1km)로 둔다. 더 넓게/좁게 조절이 필요해지면 사용자 요청 거리(예: "5km 안")를 받아 가변으로 바꾼다.
@@ -34,32 +46,38 @@ _NO_LOCATION = "위치 정보가 없어 확인할 수 없습니다."
 
 
 class ChatService:
-    def __init__(self, client: anthropic.AsyncAnthropic, service: TrafficService, model: str = "claude-haiku-5-5"):
+    def __init__(self, client: genai.Client, service: TrafficService, model: str = "gemini-flash-latest"):
         self._client = client
         self._service = service
         self._model = model
 
     async def reply(self, message: str, history: List[ChatMessage], lat: Optional[float], lon: Optional[float]) -> str:
-        messages = [{"role": h.role, "content": h.text} for h in history] + [{"role": "user", "content": message}]
+        # Gemini 는 "assistant" 가 아니라 "model" 역할을 쓴다.
+        contents = [
+            types.Content(role="user" if h.role == "user" else "model", parts=[types.Part.from_text(text=h.text)])
+            for h in history
+        ] + [types.Content(role="user", parts=[types.Part.from_text(text=message)])]
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            tools=TOOLS,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
         response = None
         for _ in range(_MAX_TOOL_ITERATIONS):
             try:
-                response = await self._client.messages.create(
-                    model=self._model, max_tokens=1024, system=SYSTEM_PROMPT, tools=TOOLS, messages=messages,
-                )
-            except anthropic.APIError as exc:
+                response = await self._client.aio.models.generate_content(model=self._model, contents=contents, config=config)
+            except errors.APIError as exc:
                 raise api_error("CHAT_UNAVAILABLE") from exc
-            if response.stop_reason != "tool_use":
-                return _extract_text(response) or _FALLBACK_REPLY
-            messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
-                result = await self._run_tool(block.name, lat, lon)
-                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
-            messages.append({"role": "user", "content": tool_results})
-        return (_extract_text(response) if response else "") or _FALLBACK_REPLY
+            calls = response.function_calls or []
+            if not calls:
+                return (response.text or "").strip() or _FALLBACK_REPLY
+            contents.append(response.candidates[0].content)
+            result_parts = []
+            for call in calls:
+                result = await self._run_tool(call.name, lat, lon)
+                result_parts.append(types.Part.from_function_response(name=call.name, response={"result": result}))
+            contents.append(types.Content(role="user", parts=result_parts))
+        return ((response.text or "").strip() if response else "") or _FALLBACK_REPLY
 
     async def _run_tool(self, name: str, lat: Optional[float], lon: Optional[float]) -> str:
         if lat is None or lon is None:
@@ -79,10 +97,6 @@ class ChatService:
         except ApiError as exc:
             return f"조회할 수 없습니다: {exc.message}"
         return "알 수 없는 조회 요청입니다."
-
-
-def _extract_text(response) -> str:
-    return next((b.text for b in response.content if b.type == "text"), "")
 
 
 # 보호구역은 시군구 전체 단위(최대 수천 건)라, 다 그대로 넘기면 프롬프트 토큰이 커진다. 개수와 유형별 집계

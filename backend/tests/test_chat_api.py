@@ -28,7 +28,7 @@ def test_chat_endpoint_returns_reply(make_client):
 
 
 def test_chat_endpoint_without_key_returns_not_configured(make_client):
-    client = make_client(_no_upstream_calls, make_settings(anthropic_api_key=None))
+    client = make_client(_no_upstream_calls, make_settings(gemini_api_key=None))
     response = client.post("/api/chat", json={"message": "안녕", "history": []})
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "NOT_CONFIGURED"
