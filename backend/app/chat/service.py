@@ -4,7 +4,7 @@ from typing import List, Optional
 import anthropic
 
 from app.chat.models import ChatMessage
-from app.errors import ApiError
+from app.errors import ApiError, api_error
 from app.geo import BBox
 from app.service import TrafficService
 
@@ -43,9 +43,12 @@ class ChatService:
         messages = [{"role": h.role, "content": h.text} for h in history] + [{"role": "user", "content": message}]
         response = None
         for _ in range(_MAX_TOOL_ITERATIONS):
-            response = await self._client.messages.create(
-                model=self._model, max_tokens=1024, system=SYSTEM_PROMPT, tools=TOOLS, messages=messages,
-            )
+            try:
+                response = await self._client.messages.create(
+                    model=self._model, max_tokens=1024, system=SYSTEM_PROMPT, tools=TOOLS, messages=messages,
+                )
+            except anthropic.APIError as exc:
+                raise api_error("CHAT_UNAVAILABLE") from exc
             if response.stop_reason != "tool_use":
                 return _extract_text(response) or _FALLBACK_REPLY
             messages.append({"role": "assistant", "content": response.content})
@@ -72,7 +75,7 @@ class ChatService:
             if name == "nearby_protection_zones":
                 region = await self._service.region(lat, lon)
                 items, _ = await self._service.protection_zones(region.sgg_cd, False)
-                return json.dumps([{"name": z.name, "zone_type": z.zone_type.value} for z in items], ensure_ascii=False)
+                return json.dumps(_summarize_protection_zones(items), ensure_ascii=False)
         except ApiError as exc:
             return f"조회할 수 없습니다: {exc.message}"
         return "알 수 없는 조회 요청입니다."
@@ -80,3 +83,12 @@ class ChatService:
 
 def _extract_text(response) -> str:
     return next((b.text for b in response.content if b.type == "text"), "")
+
+
+# 보호구역은 시군구 전체 단위(최대 수천 건)라, 다 그대로 넘기면 프롬프트 토큰이 커진다. 개수와 유형별 집계
+# + 예시 몇 개만 준다.
+def _summarize_protection_zones(items) -> dict:
+    by_type: dict = {}
+    for z in items:
+        by_type[z.zone_type.value] = by_type.get(z.zone_type.value, 0) + 1
+    return {"total": len(items), "by_type": by_type, "sample": [z.name for z in items[:5]]}

@@ -949,14 +949,20 @@ export default function HomeScreen() {
           )}
           <View style={styles.fabWrap}>
             <RoundButton icon={Crosshair} label={t('map.myLocation')} onPress={() => mapRef.current?.moveToMyLocation()} />
-            <RoundButton icon={MessageCircle} label={t('chat.openLabel')} onPress={() => { onResetSearch(); setChatOpen(true); }} />
+            <RoundButton icon={MessageCircle} label={t('chat.openLabel')} onPress={() => setChatOpen(true)} />
           </View>
         </View>
       </View>
 
       {/* 하단 패널 6곳. 고정 4곳(지점 선택·탐색 중·경로 카드·안내 문구)은 draggable={false}, 드래그 2곳(안내 중·대중교통)은 기본값.
-          key 는 패널 종류가 바뀔 때 접힘 상태를 새로 시작하게 한다(예전엔 컴포넌트 종류가 달라 자연히 새로 시작했다). */}
-      {nearbyCategory ? (
+          key 는 패널 종류가 바뀔 때 접힘 상태를 새로 시작하게 한다(예전엔 컴포넌트 종류가 달라 자연히 새로 시작했다).
+          챗봇은 제일 먼저 검사한다 - 안내 중이든 다른 패널이 열려 있든 상태를 건드리지 않고 그 위에 잠깐 떴다가,
+          닫으면(chatOpen=false) 원래 있던 패널로 그대로 돌아간다. */}
+      {chatOpen ? (
+        <BottomSheet key="chat" {...sheetProps} draggable={false}>
+          <ChatAssistantPanel onClose={() => setChatOpen(false)} />
+        </BottomSheet>
+      ) : nearbyCategory ? (
         <BottomSheet key="nearby" {...sheetProps}>
           <Text style={styles.recentsTitle}>{t('places.nearbyTitle', { category: t(`places.${nearbyCategory}`) })}</Text>
           {nearbyLoading ? (
@@ -1081,10 +1087,6 @@ export default function HomeScreen() {
       ) : searched ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t(liveError ? 'map.liveError' : 'map.demoHint')}</Text>
-        </BottomSheet>
-      ) : chatOpen ? (
-        <BottomSheet key="chat" {...sheetProps} draggable={false}>
-          <ChatAssistantPanel onClose={() => setChatOpen(false)} />
         </BottomSheet>
       ) : hasPopularSheet ? (
         <BottomSheet key="popular" {...sheetProps}>

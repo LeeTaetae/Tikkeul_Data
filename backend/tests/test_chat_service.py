@@ -1,5 +1,8 @@
 import asyncio
 
+import anthropic
+import httpx
+
 from app.chat.models import ChatMessage
 from app.chat.service import ChatService
 
@@ -108,6 +111,37 @@ def test_region_not_found_does_not_crash():
     assert reply == "국내 위치가 아니에요."
 
 
+def test_nearby_protection_zones_summarizes_instead_of_dumping_everything():
+    import json
+    from types import SimpleNamespace
+
+    zones = (
+        [SimpleNamespace(name=f"어린이보호구역{i}", zone_type=SimpleNamespace(value="child")) for i in range(3)]
+        + [SimpleNamespace(name="노인보호구역1", zone_type=SimpleNamespace(value="senior"))]
+    )
+
+    class ZonedService(FakeTrafficService):
+        async def region(self, lat, lon):
+            return SimpleNamespace(sgg_cd="41135")
+
+        async def protection_zones(self, sgg_cd, include_geometry=False):
+            return zones, None
+
+    client = FakeClient([
+        FakeResponse([ToolUseBlock("t1", "nearby_protection_zones", {})], "tool_use"),
+        FakeResponse([TextBlock("어린이보호구역 3곳, 노인보호구역 1곳이 있어요.")], "end_turn"),
+    ])
+    svc = ChatService(client, ZonedService())
+    reply = asyncio.run(svc.reply("보호구역 있어?", [], 37.5, 127.0))
+    assert reply == "어린이보호구역 3곳, 노인보호구역 1곳이 있어요."
+
+    tool_result = client.messages.calls[1]["messages"][-1]["content"][0]["content"]
+    payload = json.loads(tool_result)
+    assert payload["total"] == 4
+    assert payload["by_type"] == {"child": 3, "senior": 1}
+    assert len(payload["sample"]) <= 5
+
+
 def test_gives_up_after_max_tool_iterations():
     responses = [FakeResponse([ToolUseBlock("t1", "nearby_incidents", {})], "tool_use") for _ in range(10)]
     client = FakeClient(responses)
@@ -115,3 +149,24 @@ def test_gives_up_after_max_tool_iterations():
     reply = asyncio.run(svc.reply("위험구간?", [], 37.5, 127.0))
     assert reply == "답변을 만들지 못했어요. 다시 물어봐 주세요."
     assert len(client.messages.calls) == 4
+
+
+class FailingMessages:
+    async def create(self, **kwargs):
+        raise anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+
+
+class FailingClient:
+    def __init__(self):
+        self.messages = FailingMessages()
+
+
+def test_anthropic_api_error_becomes_chat_unavailable():
+    from app.errors import ApiError
+
+    svc = ChatService(FailingClient(), FakeTrafficService())
+    try:
+        asyncio.run(svc.reply("안녕", [], None, None))
+        assert False, "should have raised"
+    except ApiError as exc:
+        assert exc.code == "CHAT_UNAVAILABLE"

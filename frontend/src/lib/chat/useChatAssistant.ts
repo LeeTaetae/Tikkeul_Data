@@ -1,12 +1,11 @@
 import { useCallback, useState } from 'react';
 import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
-import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
-
 import { getCurrentLocation } from '../location/getCurrentLocation';
 import { resolveVoiceId } from '../speechVoice';
 import { chatApi } from './api';
 import { buildRequestBody, type ChatTurn } from './conversation';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from './speechRecognition';
 
 // i18n 언어 코드(ko/en/zh) → 음성 인식·TTS locale. useAnnounceOnApproach.ts 의 같은 매핑과 별개로 둔다 - 공유 모듈이 아니다.
 const SPEECH_LOCALE: Record<string, string> = { ko: 'ko-KR', en: 'en-US', zh: 'zh-CN' };

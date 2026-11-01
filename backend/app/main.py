@@ -52,7 +52,8 @@ def create_app(
         client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(settings.http_timeout_s, connect=5.0))
         app.state.service = TrafficService(Upstream(client, settings), settings, cache or TtlCache())
         anthropic_key = settings.secret("anthropic_api_key")
-        app.state.chat_service = ChatService(anthropic.AsyncAnthropic(api_key=anthropic_key), app.state.service) if anthropic_key else None
+        chat_client = anthropic.AsyncAnthropic(api_key=anthropic_key, timeout=15.0, max_retries=1) if anthropic_key else None
+        app.state.chat_service = ChatService(chat_client, app.state.service) if chat_client else None
         app.state.settings = settings
         app.state.db_engine = make_engine(settings)
         app.state.resend_cooldown = ResendCooldown()

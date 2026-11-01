@@ -32,3 +32,18 @@ def test_chat_endpoint_without_key_returns_not_configured(make_client):
     response = client.post("/api/chat", json={"message": "안녕", "history": []})
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "NOT_CONFIGURED"
+
+
+def test_chat_endpoint_rejects_oversized_message(make_client):
+    client = make_client(_no_upstream_calls)
+    client.app.state.chat_service = FakeChatService()
+    response = client.post("/api/chat", json={"message": "a" * 501, "history": []})
+    assert response.status_code == 422
+
+
+def test_chat_endpoint_rejects_oversized_history(make_client):
+    client = make_client(_no_upstream_calls)
+    client.app.state.chat_service = FakeChatService()
+    history = [{"role": "user", "text": "hi"} for _ in range(7)]
+    response = client.post("/api/chat", json={"message": "안녕", "history": history})
+    assert response.status_code == 422
