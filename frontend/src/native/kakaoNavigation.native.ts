@@ -1,9 +1,12 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
-import type { NativeNavigationOptions, NativeNavigationResult, NativeNavigationStatus } from './navigationTypes';
+import { CAR_ICONS, type CarIconId, type NativeNavigationOptions, type NativeNavigationResult, type NativeNavigationStatus } from './navigationTypes';
 
 interface KakaoNavigationModule {
   getStatus(): Omit<NativeNavigationStatus, 'available'>;
   openNavigation(options: NativeNavigationOptions): Promise<NativeNavigationResult>;
+  // Android 빌드에만 있다(iOS 모듈과 이전 APK 에는 없다).
+  getCarIcon?(): string;
+  setCarIcon?(id: CarIconId): void;
 }
 
 const nativeModule = () => requireOptionalNativeModule<KakaoNavigationModule>('KakaoNavigation');
@@ -11,6 +14,17 @@ const nativeModule = () => requireOptionalNativeModule<KakaoNavigationModule>('K
 export function getNativeNavigationStatus(): NativeNavigationStatus {
   const module = nativeModule();
   return module ? { ...module.getStatus(), available: true } : { available: false, configured: false };
+}
+
+/** 이 빌드가 주행 아이콘 변경을 지원하면 저장된 값, 아니면 null(메뉴를 숨긴다) */
+export function getCarIcon(): CarIconId | null {
+  const value = nativeModule()?.getCarIcon?.();
+  if (value === undefined) return null;
+  return (CAR_ICONS as readonly string[]).includes(value) ? (value as CarIconId) : 'default';
+}
+
+export function setCarIcon(id: CarIconId): void {
+  nativeModule()?.setCarIcon?.(id);
 }
 
 export async function openNativeNavigation(options: NativeNavigationOptions): Promise<NativeNavigationResult> {

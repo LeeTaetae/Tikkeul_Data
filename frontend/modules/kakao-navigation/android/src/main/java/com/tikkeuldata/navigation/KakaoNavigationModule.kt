@@ -21,6 +21,7 @@ class NavigationOptions : Record {
   @Field var destinationLongitude: Double = Double.NaN
   @Field var destinationLabel: String = ""
   @Field var routeStyle: String = "recommended"
+  @Field var language: String = "ko"
 
   fun valid(): Boolean = originLatitude.isFinite() && originLatitude in -90.0..90.0 &&
     destinationLatitude.isFinite() && destinationLatitude in -90.0..90.0 &&
@@ -69,6 +70,16 @@ class KakaoNavigationModule : Module() {
         "sdkVersion" to "1.12.8-hotfix05", "platform" to "android")
     }
 
+    // Stored natively so the navigation screen and the app settings share one value across restarts.
+    Function("getCarIcon") {
+      appContext.reactContext?.let { CarIcons.get(it) } ?: CarIcons.DEFAULT
+    }
+
+    Function("setCarIcon") { id: String ->
+      val context = appContext.reactContext ?: throw IllegalStateException("No React context")
+      CarIcons.set(context, id)
+    }
+
     AsyncFunction("openNavigation") { options: NavigationOptions, promise: Promise ->
       val activity = appContext.currentActivity
       when {
@@ -85,6 +96,7 @@ class KakaoNavigationModule : Module() {
               putExtra("destinationLongitude", options.destinationLongitude)
               putExtra("destinationLabel", options.destinationLabel.take(256))
               putExtra("routeStyle", options.routeStyle)
+              putExtra("language", options.language)
             })
           } catch (error: Exception) {
             NavigationSession.close("OPEN_FAILED", error.localizedMessage)

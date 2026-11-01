@@ -70,6 +70,7 @@ import { PLACEHOLDER_TRENDS, type TrendCategory } from '../src/lib/trends/placeh
 import { clearPendingSearch, getPendingSearch } from '../src/lib/navigation/pendingSearch';
 import {
   fetchAddress,
+  fetchBestRoute,
   fetchModeRoute,
   fetchRouteStyles,
   fetchTransitRoutes,
@@ -469,7 +470,8 @@ export default function HomeScreen() {
     }
     const [results, originAddressValue, destinationAddressValue] = await Promise.all([
       travelMode === 'driving'
-        ? fetchRouteStyles(origin, destinationPoint)
+        ? // Tmap 5가지 스타일이 실패(한도 초과 429 → 503 등)하면 /navigation/route 의 추천 경로 하나로 대신한다.
+          fetchRouteStyles(origin, destinationPoint).then((styles) => styles ?? fetchBestRoute(origin, destinationPoint))
         : fetchModeRoute(origin, destinationPoint, travelMode),
       fetchAddress(origin),
       fetchAddress(destinationPoint),
