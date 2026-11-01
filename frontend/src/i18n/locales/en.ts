@@ -22,6 +22,11 @@ const en: Resources = {
     listening: 'Listening…',
     sending: 'Replying…',
     error: "Couldn't get a reply. Please try again.",
+    emptyTitle: 'What do you want to know?',
+    suggestion1: 'Any danger zones nearby?',
+    suggestion2: 'Is there traffic right now?',
+    suggestion3: "What's a protection zone?",
+    disclaimer: 'Replies are for reference and may not match real conditions.',
   },
   home: {
     title: 'Tikkeul Data',

@@ -22,6 +22,11 @@ const zh: Resources = {
     listening: '正在聆听…',
     sending: '回复中…',
     error: '未能获取回复，请重试。',
+    emptyTitle: '您想了解什么？',
+    suggestion1: '附近有危险路段吗？',
+    suggestion2: '现在有拥堵路段吗？',
+    suggestion3: '什么是保护区？',
+    disclaimer: '回答仅供参考，可能与实际情况不同。',
   },
   home: {
     title: '积少成多 Data',

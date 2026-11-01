@@ -20,6 +20,11 @@ const ko = {
     listening: '듣고 있어요…',
     sending: '답변 중…',
     error: '답변을 받지 못했어요. 다시 시도해 주세요.',
+    emptyTitle: '무엇이 궁금하세요?',
+    suggestion1: '주변에 위험구간 있어?',
+    suggestion2: '지금 정체 구간 있어?',
+    suggestion3: '보호구역이 뭐야?',
+    disclaimer: '답변은 참고용이며 실제 상황과 다를 수 있어요.',
   },
   home: {
     title: '티끌모아Data',
