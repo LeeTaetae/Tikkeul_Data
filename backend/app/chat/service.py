@@ -46,7 +46,7 @@ _NO_LOCATION = "위치 정보가 없어 확인할 수 없습니다."
 
 
 class ChatService:
-    def __init__(self, client: genai.Client, service: TrafficService, model: str = "gemini-flash-latest"):
+    def __init__(self, client: genai.Client, service: TrafficService, model: str = "gemini-flash-lite-latest"):
         self._client = client
         self._service = service
         self._model = model
