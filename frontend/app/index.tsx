@@ -20,6 +20,7 @@ import {
   Crosshair,
   Footprints,
   MapPin,
+  MessageCircle,
   Music,
   Search,
   Share2,
@@ -34,6 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
+import { ChatAssistantPanel } from '../src/components/chat/ChatAssistantPanel';
 import { Logo } from '../src/components/Logo';
 import { Card } from '../src/components/ui/Card';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
@@ -268,6 +270,9 @@ export default function HomeScreen() {
   const [sheetHeight, setSheetHeight] = useState(0);
   // 위험 경고 카드의 실제 높이. 상세 보기를 펴면 커지므로 그때마다 새로 받는다.
   const [alertHeight, setAlertHeight] = useState(HAZARD_ALERT_FALLBACK_HEIGHT);
+
+  // 챗봇 패널 열림 여부. nearbyCategory/pickedPoint 와 같은 시트 자리를 쓰므로 동시에 하나만 연다.
+  const [chatOpen, setChatOpen] = useState(false);
 
   // 검색창 밑 카테고리 버튼(음식점·카페 등)으로 내 주변 장소를 본다.
   const [nearbyCategory, setNearbyCategory] = useState<PlaceCategory | null>(null);
@@ -946,13 +951,20 @@ export default function HomeScreen() {
           )}
           <View style={styles.fabWrap}>
             <RoundButton icon={Crosshair} label={t('map.myLocation')} onPress={() => mapRef.current?.moveToMyLocation()} />
+            <RoundButton icon={MessageCircle} label={t('chat.openLabel')} variant="brand" onPress={() => setChatOpen(true)} />
           </View>
         </View>
       </View>
 
       {/* 하단 패널 6곳. 고정 4곳(지점 선택·탐색 중·경로 카드·안내 문구)은 draggable={false}, 드래그 2곳(안내 중·대중교통)은 기본값.
-          key 는 패널 종류가 바뀔 때 접힘 상태를 새로 시작하게 한다(예전엔 컴포넌트 종류가 달라 자연히 새로 시작했다). */}
-      {nearbyCategory ? (
+          key 는 패널 종류가 바뀔 때 접힘 상태를 새로 시작하게 한다(예전엔 컴포넌트 종류가 달라 자연히 새로 시작했다).
+          챗봇은 제일 먼저 검사한다 - 안내 중이든 다른 패널이 열려 있든 상태를 건드리지 않고 그 위에 잠깐 떴다가,
+          닫으면(chatOpen=false) 원래 있던 패널로 그대로 돌아간다. */}
+      {chatOpen ? (
+        <BottomSheet key="chat" {...sheetProps} draggable={false} avoidKeyboard keyboardOffset={keyboardHeight}>
+          <ChatAssistantPanel onClose={() => setChatOpen(false)} />
+        </BottomSheet>
+      ) : nearbyCategory ? (
         <BottomSheet key="nearby" {...sheetProps}>
           <Text style={styles.recentsTitle}>{t('places.nearbyTitle', { category: t(`places.${nearbyCategory}`) })}</Text>
           {nearbyLoading ? (
@@ -1397,7 +1409,7 @@ const styles = StyleSheet.create({
   },
   searchActionCompact: { width: 44, paddingHorizontal: 0 },
   searchActionText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
-  fabWrap: { alignSelf: 'flex-end' },
+  fabWrap: { alignSelf: 'flex-end', gap: space.sm },
   notice: { fontSize: 14, lineHeight: 20, color: colors.muted },
   pickTopRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   pickTitleBlock: { flex: 1, minWidth: 0, gap: 2 },

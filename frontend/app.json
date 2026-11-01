@@ -57,7 +57,14 @@
           }
         }
       ],
-      "expo-dev-client"
+      "expo-dev-client",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "챗봇에게 음성으로 질문하기 위해 마이크를 사용합니다.",
+          "speechRecognitionPermission": "음성 질문을 글자로 바꾸기 위해 음성 인식을 사용합니다."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
