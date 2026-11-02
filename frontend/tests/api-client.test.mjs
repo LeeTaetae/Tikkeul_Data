@@ -96,6 +96,17 @@ test('loginGoogle 요청 조립: POST /api/auth/social/google 에 { id_token } �
   assert.equal(seenInit.body, JSON.stringify({ id_token: 'fake-id-token' }));
 });
 
+// authApi.loginKakao 도 동일한 제약(react-native 의존)으로 client.ts 조립 결과만 검증한다.
+test('loginKakao 요청 조립: POST /api/auth/social/kakao 에 { access_token } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ ok: true })));
+  await client.post('/api/auth/social/kakao', { access_token: 'fake-access-token' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/social/kakao');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ access_token: 'fake-access-token' }));
+});
+
 test('token 옵션을 주면 Authorization 헤더가 붙는다', async () => {
   let seen = null;
   const client = clientWith(async (url, init) => ((seen = init), json({ ok: true })));

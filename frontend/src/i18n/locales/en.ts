@@ -305,6 +305,8 @@ const en: Resources = {
     loginButton: 'Log in',
     loginWithGoogle: 'Continue with Google',
     loggingInGoogle: 'Signing in with Google...',
+    loginWithKakao: 'Continue with Kakao',
+    loggingInKakao: 'Signing in with Kakao...',
     orDivider: 'or',
     signupButton: 'Sign up',
     noAccount: "Don't have an account?",

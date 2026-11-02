@@ -11,12 +11,13 @@ import { RoundButton } from '../src/components/ui/RoundButton';
 import { TextField } from '../src/components/ui/TextField';
 import { authErrorMessage } from '../src/lib/auth/errorMessage';
 import { useAuth } from '../src/lib/auth/AuthContext';
+import { isKakaoLoginAvailable } from '../src/native/kakaoLogin';
 import { colors, space } from '../src/theme';
 
 export default function LoginScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, loginWithKakao } = useAuth();
   // 비로그인 상태에서 로그인 전용 기능을 누르면 이 화면으로 오는데, 성공하면 원래 가려던 곳으로 돌려보낸다.
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
 
@@ -25,6 +26,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [kakaoSubmitting, setKakaoSubmitting] = useState(false);
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   const canSubmit = email.trim().includes('@') && password.length > 0 && !submitting;
@@ -57,6 +59,22 @@ export default function LoginScreen() {
       if ((e as { code?: string })?.code !== 'GOOGLE_SIGNIN_CANCELLED') setError(authErrorMessage(e, t));
     } finally {
       setGoogleSubmitting(false);
+    }
+  };
+
+  const onKakaoSubmit = async () => {
+    if (kakaoSubmitting) return;
+    setError(null);
+    setKakaoSubmitting(true);
+    try {
+      await loginWithKakao();
+      if (redirect) router.replace(redirect as never);
+      else router.back();
+    } catch (e) {
+      // 사용자가 카카오 로그인 창을 취소한 경우는 오류가 아니다.
+      if ((e as { code?: string })?.code !== 'KAKAO_LOGIN_CANCELLED') setError(authErrorMessage(e, t));
+    } finally {
+      setKakaoSubmitting(false);
     }
   };
 
@@ -116,6 +134,15 @@ export default function LoginScreen() {
         disabled={submitting || googleSubmitting}
         loading={googleSubmitting}
       />
+
+      {isKakaoLoginAvailable() && (
+        <PrimaryButton
+          label={kakaoSubmitting ? t('auth.loggingInKakao') : t('auth.loginWithKakao')}
+          onPress={onKakaoSubmit}
+          disabled={submitting || googleSubmitting || kakaoSubmitting}
+          loading={kakaoSubmitting}
+        />
+      )}
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>{t('auth.noAccount')}</Text>

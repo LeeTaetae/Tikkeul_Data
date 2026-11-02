@@ -303,6 +303,8 @@ const ko = {
     loginButton: '로그인',
     loginWithGoogle: 'Google로 로그인',
     loggingInGoogle: 'Google 로그인 중...',
+    loginWithKakao: '카카오로 로그인',
+    loggingInKakao: '카카오 로그인 중...',
     orDivider: '또는',
     signupButton: '가입하기',
     noAccount: '계정이 없으신가요?',

@@ -23,6 +23,8 @@ export const authApi = {
     client.post<TokenResponse>('/api/auth/login', { email, password }, options),
   loginGoogle: (idToken: string, options?: RequestOptions) =>
     client.post<TokenResponse>('/api/auth/social/google', { id_token: idToken }, options),
+  loginKakao: (accessToken: string, options?: RequestOptions) =>
+    client.post<TokenResponse>('/api/auth/social/kakao', { access_token: accessToken }, options),
   me: (token: string, options?: RequestOptions) => client.get<AuthUser>('/api/auth/me', {}, { ...options, token }),
   checkEmail: (email: string, options?: RequestOptions) =>
     client.get<{ available: boolean }>('/api/auth/check-email', { email }, options),

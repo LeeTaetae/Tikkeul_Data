@@ -20,6 +20,27 @@ function withKakaoNavigation(config) {
     if (key) app['meta-data'].push({ $: { 'android:name': 'com.tikkeuldata.kakao.NATIVE_APP_KEY', 'android:value': key } });
     return mod;
   });
+  config = withAndroidManifest(config, mod => {
+    const key = process.env.KAKAO_NAVI_NATIVE_APP_KEY?.trim();
+    const app = mod.modResults.manifest.application?.[0];
+    if (!app) throw new Error('Android application manifest is missing');
+    const activityName = 'com.kakao.sdk.auth.AuthCodeHandlerActivity';
+    app.activity = (app.activity || []).filter(item => item.$['android:name'] !== activityName);
+    if (key) {
+      app.activity.push({
+        $: { 'android:name': activityName, 'android:exported': 'true' },
+        'intent-filter': [{
+          action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
+          category: [
+            { $: { 'android:name': 'android.intent.category.DEFAULT' } },
+            { $: { 'android:name': 'android.intent.category.BROWSABLE' } },
+          ],
+          data: [{ $: { 'android:scheme': `kakao${key}`, 'android:host': 'oauth' } }],
+        }],
+      });
+    }
+    return mod;
+  });
   config = withProjectBuildGradle(config, mod => {
     if (!mod.modResults.contents.includes('// tikkeul-kakao-navigation repositories')) {
       mod.modResults.contents += `\n// tikkeul-kakao-navigation repositories\nallprojects {\n  repositories {\n${repositories.map(url => `    maven { url '${url}' }`).join('\n')}\n  }\n}\n`;
@@ -55,6 +76,12 @@ function withKakaoNavigation(config) {
     const ats = mod.modResults.NSAppTransportSecurity ||= {};
     const domains = ats.NSExceptionDomains ||= {};
     domains['kakao.com'] = { ...(domains['kakao.com'] || {}), NSIncludesSubdomains: true, NSExceptionAllowsInsecureHTTPLoads: true };
+    // Kakao Login's redirect URI scheme (kakao{NATIVE_APP_KEY}://oauth), reusing the same native app key as KakaoNavi.
+    const scheme = key ? `kakao${key}` : null;
+    mod.modResults.CFBundleURLTypes = (mod.modResults.CFBundleURLTypes || []).filter(
+      entry => !((entry.CFBundleURLSchemes || []).length === 1 && entry.CFBundleURLSchemes[0]?.startsWith('kakao')),
+    );
+    if (scheme) mod.modResults.CFBundleURLTypes.push({ CFBundleURLSchemes: [scheme] });
     return mod;
   });
 }

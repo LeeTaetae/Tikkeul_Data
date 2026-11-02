@@ -305,6 +305,8 @@ const zh: Resources = {
     loginButton: '登录',
     loginWithGoogle: '使用 Google 登录',
     loggingInGoogle: '正在使用 Google 登录...',
+    loginWithKakao: '使用 Kakao 登录',
+    loggingInKakao: '正在使用 Kakao 登录...',
     orDivider: '或',
     signupButton: '注册',
     noAccount: '还没有账号？',

@@ -1,0 +1,7 @@
+{
+  "name": "tikkeul-kakao-login",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native Kakao login for Tikkeul Data",
+  "license": "UNLICENSED"
+}
