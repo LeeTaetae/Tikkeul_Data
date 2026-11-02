@@ -56,7 +56,8 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "dynamic"
+            "useFrameworks": "dynamic",
+            "networkInspector": false
           },
           "android": {
             "minSdkVersion": 26

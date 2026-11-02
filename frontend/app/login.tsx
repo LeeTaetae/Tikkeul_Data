@@ -4,10 +4,13 @@ import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
+import { GoogleIcon } from '../src/components/icons/GoogleIcon';
+import { KakaoIcon } from '../src/components/icons/KakaoIcon';
 import { Logo } from '../src/components/Logo';
 import { Screen } from '../src/components/Screen';
 import { PrimaryButton } from '../src/components/ui/PrimaryButton';
 import { RoundButton } from '../src/components/ui/RoundButton';
+import { SocialButton } from '../src/components/ui/SocialButton';
 import { TextField } from '../src/components/ui/TextField';
 import { authErrorMessage } from '../src/lib/auth/errorMessage';
 import { useAuth } from '../src/lib/auth/AuthContext';
@@ -129,20 +132,27 @@ export default function LoginScreen() {
       </View>
 
       {Platform.OS !== 'web' && (
-        <PrimaryButton
+        <SocialButton
+          icon={<GoogleIcon />}
           label={googleSubmitting ? t('auth.loggingInGoogle') : t('auth.loginWithGoogle')}
           onPress={onGoogleSubmit}
-          disabled={submitting || googleSubmitting}
+          disabled={submitting || googleSubmitting || kakaoSubmitting}
           loading={googleSubmitting}
+          backgroundColor="#FFFFFF"
+          textColor="#1F1F1F"
+          borderColor="#DADCE0"
         />
       )}
 
       {isKakaoLoginAvailable() && (
-        <PrimaryButton
+        <SocialButton
+          icon={<KakaoIcon />}
           label={kakaoSubmitting ? t('auth.loggingInKakao') : t('auth.loginWithKakao')}
           onPress={onKakaoSubmit}
           disabled={submitting || googleSubmitting || kakaoSubmitting}
           loading={kakaoSubmitting}
+          backgroundColor="#FEE500"
+          textColor="#181600"
         />
       )}
 
