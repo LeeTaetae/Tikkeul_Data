@@ -30,33 +30,43 @@ def migrate(db_path: Path) -> None:
     try:
         before = conn.execute("SELECT COUNT(*) FROM user").fetchone()[0]
 
+        # SQLite 3.26+는 테이블을 RENAME 하면 "다른" 테이블이 그 이름을 참조하는 FK(favoriteplace.user_id,
+        # trip.user_id 등)까지 자동으로 새 이름으로 고쳐 쓴다. 그래서 user -> user_old로 먼저 RENAME 하면
+        # 그 FK들이 user_old를 가리키게 바뀌고, 뒤에서 user_old를 DROP하는 순간 끊어진다.
+        # 반대로 새 테이블을 user_new라는 이름으로 만들고 기존 user를 DROP한 다음 user_new를 user로
+        # RENAME하면, FK는 이름으로 "user"를 참조하므로 자동으로 최종 테이블을 가리키게 된다.
+        conn.execute("PRAGMA foreign_keys=OFF")
         conn.execute("BEGIN")
-        conn.execute("ALTER TABLE user RENAME TO user_old")
         conn.execute(
             """
-            CREATE TABLE user (
+            CREATE TABLE user_new (
                 id INTEGER PRIMARY KEY,
                 provider TEXT NOT NULL DEFAULT 'local',
                 provider_id TEXT,
                 email TEXT UNIQUE,
                 password_hash TEXT,
                 email_verified BOOLEAN NOT NULL DEFAULT 0,
-                created_at DATETIME NOT NULL
+                created_at DATETIME NOT NULL,
+                UNIQUE (provider, provider_id)
             )
             """
         )
         conn.execute(
-            "INSERT INTO user (id, provider, provider_id, email, password_hash, email_verified, created_at) "
-            "SELECT id, 'local', NULL, email, password_hash, email_verified, created_at FROM user_old"
+            "INSERT INTO user_new (id, provider, provider_id, email, password_hash, email_verified, created_at) "
+            "SELECT id, 'local', NULL, email, password_hash, email_verified, created_at FROM user"
         )
 
-        after = conn.execute("SELECT COUNT(*) FROM user").fetchone()[0]
+        after = conn.execute("SELECT COUNT(*) FROM user_new").fetchone()[0]
         if after != before:
             conn.execute("ROLLBACK")
             raise RuntimeError(f"마이그레이션 전후 row 수가 다릅니다 (전: {before}, 후: {after}) - 롤백했습니다.")
 
-        conn.execute("DROP TABLE user_old")
+        conn.execute("DROP TABLE user")
+        conn.execute("ALTER TABLE user_new RENAME TO user")
+        conn.execute("CREATE UNIQUE INDEX ix_user_email ON user (email)")
+        conn.execute("CREATE INDEX ix_user_provider_id ON user (provider_id)")
         conn.commit()
+        conn.execute("PRAGMA foreign_keys=ON")
     finally:
         conn.close()
 

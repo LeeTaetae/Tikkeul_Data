@@ -82,6 +82,17 @@ def test_login_wrong_password_and_unknown_email_both_401_invalid_credentials(mak
     assert wrong.json()["error"]["code"] == unknown.json()["error"]["code"] == "INVALID_CREDENTIALS"
 
 
+def test_login_with_google_only_account_is_401_not_500(make_client):
+    # password_hash=None인 구글 전용 계정에 일반 로그인 폼으로 들어오면 500이 아니라 깨끗한 401이어야 한다.
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+    with Session(client.app.state.db_engine) as session:
+        session.add(User(provider="google", provider_id="g-1", email="google-only@example.com", password_hash=None, email_verified=True))
+        session.commit()
+    res = client.post("/api/auth/login", json={"email": "google-only@example.com", "password": "anything123"})
+    assert res.status_code == 401 and res.json()["error"]["code"] == "INVALID_CREDENTIALS"
+
+
 def test_me_without_token_is_401(make_client):
     client = make_client(lambda r: None)
     res = client.get("/api/auth/me")

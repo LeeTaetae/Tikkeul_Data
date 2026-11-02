@@ -3,6 +3,7 @@ from typing import Optional
 import httpx
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.id_token import verify_oauth2_token
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.auth.models import User, normalize_email
@@ -54,5 +55,11 @@ def find_or_create_social_user(session: Session, provider: str, provider_id: str
     # 소셜 로그인은 공급자가 이미 이메일을 확인했다고 간주한다.
     user = User(provider=provider, provider_id=provider_id, email=email, password_hash=None, email_verified=True)
     session.add(user)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # "확인 후 삽입" 사이의 동시 요청 레이스 - 같은 provider+provider_id(동시 첫 로그인)거나,
+        # 같은 email(동시 가입)로 그 사이 다른 트랜잭션이 먼저 커밋한 경우. 둘 다 raw 500 대신 깨끗한 오류로 바꾼다.
+        session.rollback()
+        raise api_error("EMAIL_TAKEN" if email is not None else "SOCIAL_LOGIN_FAILED")
     return user

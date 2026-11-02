@@ -93,7 +93,7 @@ def login(body: LoginRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
     with Session(request.app.state.db_engine) as session:
         user = session.exec(select(User).where(User.email == body.email)).first()
-        if user is None or not verify_password(body.password, user.password_hash):
+        if user is None or user.password_hash is None or not verify_password(body.password, user.password_hash):
             raise api_error("INVALID_CREDENTIALS")
         token = create_access_token(user.id, settings)
         return TokenResponse(
@@ -107,15 +107,19 @@ def login_with_google(body: SocialLoginRequest, request: Request) -> TokenRespon
     settings = request.app.state.settings
     payload = verify_google_id_token(body.id_token, settings)
     with Session(request.app.state.db_engine) as session:
-        user = find_or_create_social_user(
-            session, provider="google", provider_id=payload["sub"], email=payload.get("email"), nickname=payload.get("name")
-        )
+        nickname = payload.get("name")
+        # 구글이 이메일을 아직 확인하지 않았다고 보고하면(email_verified=False, 드물지만 공식 문서에 명시된 가능성) 그
+        # 이메일을 신뢰하지 않는다 - 안 그러면 남의 이메일을 주장해 EMAIL_TAKEN으로 그 이메일의 실제 소유자를 막을 수 있다.
+        email = payload.get("email") if payload.get("email_verified") else None
+        user = find_or_create_social_user(session, provider="google", provider_id=payload["sub"], email=email, nickname=nickname)
         token = create_access_token(user.id, settings)
         session.commit()
         session.refresh(user)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic(
+                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, created_at=user.created_at
+            ),
         )
 
 
@@ -124,16 +128,17 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request) -> TokenResponse
     settings = request.app.state.settings
     payload = verify_kakao_access_token(body.access_token, settings)
     profile = (payload.get("kakao_account") or {}).get("profile") or {}
+    nickname = profile.get("nickname")
     with Session(request.app.state.db_engine) as session:
-        user = find_or_create_social_user(
-            session, provider="kakao", provider_id=str(payload["id"]), email=None, nickname=profile.get("nickname")
-        )
+        user = find_or_create_social_user(session, provider="kakao", provider_id=str(payload["id"]), email=None, nickname=nickname)
         token = create_access_token(user.id, settings)
         session.commit()
         session.refresh(user)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic(
+                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, created_at=user.created_at
+            ),
         )
 
 

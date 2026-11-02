@@ -1,6 +1,6 @@
 import { Lock, Mail, X } from 'lucide-react-native';
 import { useRef, useState, type ComponentRef } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
@@ -128,12 +128,14 @@ export default function LoginScreen() {
         <View style={styles.dividerLine} />
       </View>
 
-      <PrimaryButton
-        label={googleSubmitting ? t('auth.loggingInGoogle') : t('auth.loginWithGoogle')}
-        onPress={onGoogleSubmit}
-        disabled={submitting || googleSubmitting}
-        loading={googleSubmitting}
-      />
+      {Platform.OS !== 'web' && (
+        <PrimaryButton
+          label={googleSubmitting ? t('auth.loggingInGoogle') : t('auth.loginWithGoogle')}
+          onPress={onGoogleSubmit}
+          disabled={submitting || googleSubmitting}
+          loading={googleSubmitting}
+        />
+      )}
 
       {isKakaoLoginAvailable() && (
         <PrimaryButton

@@ -5,7 +5,9 @@ const client = createApiClient({ baseUrl: API_BASE_URL });
 
 export interface AuthUser {
   id: number;
-  email: string;
+  provider: string;
+  email: string | null;
+  nickname: string | null;
   email_verified: boolean;
   created_at: string;
 }

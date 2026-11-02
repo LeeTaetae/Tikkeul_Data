@@ -117,7 +117,7 @@ export function MenuSheet({ visible, onClose }: Props) {
                 <View style={styles.accountRow}>
                   <Icon icon={User} size={20} color={colors.muted} />
                   <Text style={styles.accountEmail} numberOfLines={1}>
-                    {user.email}
+                    {user.provider === 'kakao' && user.email === null ? t('auth.kakaoUser') : user.email}
                   </Text>
                 </View>
                 {user.email_verified ? (

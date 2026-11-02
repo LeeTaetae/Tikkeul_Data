@@ -63,7 +63,7 @@ Expected: FAIL (`migrate_social_login` 모듈/함수 없음)
 
 - [ ] **Step 3: `backend/scripts/migrate_social_login.py`에 `migrate(db_path: Path) -> None` 구현**
 
-SQLite 표준 테이블 재생성 절차: `db_path`를 타임스탬프 붙여 복사(백업) → `ALTER TABLE user RENAME TO user_old` → 새 스키마로 `CREATE TABLE user(...)` (provider TEXT NOT NULL DEFAULT 'local', provider_id TEXT, email TEXT, password_hash TEXT, email_verified BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME NOT NULL) → `INSERT INTO user SELECT id, 'local', NULL, email, password_hash, email_verified, created_at FROM user_old` → `DROP TABLE user_old`. 트랜잭션으로 묶는다. 마이그레이션 전후 row 수를 세어 다르면 `RuntimeError`로 중단(커밋 전). 스크립트 하단에 `if __name__ == "__main__":` 로 `get_settings().database_url`에서 경로를 뽑아 실행하는 CLI 진입점도 둔다.
+SQLite 표준 테이블 재생성 절차(먼저 `user`를 `RENAME`하면 SQLite 3.26+가 `favoriteplace`/`trip`의 FK 참조까지 같이 `user_old`로 고쳐 써버려서 뒤에 `user_old`를 드롭하면 그 FK가 끊긴다 - 그래서 반드시 새 테이블을 먼저 만들고 기존 `user`를 지우는 순서로 한다): `db_path`를 타임스탬프 붙여 복사(백업) → `PRAGMA foreign_keys=OFF` → 새 스키마로 `CREATE TABLE user_new(...)` (provider TEXT NOT NULL DEFAULT 'local', provider_id TEXT, email TEXT, password_hash TEXT, email_verified BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, UNIQUE(provider, provider_id)) → `INSERT INTO user_new SELECT id, 'local', NULL, email, password_hash, email_verified, created_at FROM user` → `DROP TABLE user`(RENAME 아님) → `ALTER TABLE user_new RENAME TO user` → `ix_user_email`·`provider_id` 인덱스 재생성 → `PRAGMA foreign_keys=ON`. 이 순서면 `favoriteplace`/`trip`의 FK는 이름으로 `user`를 참조하므로 그대로 최종 `user` 테이블을 가리키게 된다. 트랜잭션으로 묶는다. 마이그레이션 전후 row 수를 세어 다르면 `RuntimeError`로 중단(커밋 전). 스크립트 하단에 `if __name__ == "__main__":` 로 `get_settings().database_url`에서 경로를 뽑아 실행하는 CLI 진입점도 둔다.
 
 - [ ] **Step 4: 테스트 통과 확인**
 

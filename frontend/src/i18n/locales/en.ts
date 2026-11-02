@@ -345,6 +345,7 @@ const en: Resources = {
     verificationTooSoon: 'Please wait a bit before requesting another verification email',
     verificationNotConfigured: 'Email verification is not set up on the server yet',
     login: 'Log in',
+    kakaoUser: 'Kakao user',
   },
   favorites: {
     title: 'Favorites',

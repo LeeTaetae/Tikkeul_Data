@@ -345,6 +345,7 @@ const zh: Resources = {
     verificationTooSoon: '请稍等片刻后再试',
     verificationNotConfigured: '服务器尚未设置验证邮件发送',
     login: '登录',
+    kakaoUser: 'Kakao用户',
   },
   favorites: {
     title: '收藏地点',

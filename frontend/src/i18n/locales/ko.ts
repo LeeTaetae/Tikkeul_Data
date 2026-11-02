@@ -343,6 +343,7 @@ const ko = {
     verificationTooSoon: '조금 후에 다시 보낼 수 있어요',
     verificationNotConfigured: '서버에 인증메일 발송이 아직 설정되지 않았어요',
     login: '로그인',
+    kakaoUser: '카카오 사용자',
   },
   favorites: {
     title: '즐겨찾기',

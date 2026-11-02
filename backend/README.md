@@ -64,6 +64,7 @@ copy .env.example .env   # 그 다음 .env 에 키를 직접 입력한다
 | `KAKAO_REST_API_KEY` | Kakao Local 좌표→시군구 변환. **REST API 키**이며 지도용 JavaScript 키와 다르다. 서버에서만 쓴다 |
 | `ITS_RELAY_URL`, `ITS_RELAY_TOKEN` (선택) | ITS 중계(`relay/`) 주소와 인증 토큰. 둘 다 있으면 ITS 키 없이 중계를 거쳐 호출하고, 비우면 ITS 로 직접 호출한다. 주소는 `https://`(개발용 `http://127.0.0.1` 예외) |
 | `CORS_ALLOW_ORIGINS` (선택) | 허용할 웹 출처(쉼표 구분). 비우면 `localhost:8081` 등 로컬 개발 주소만 |
+| `GOOGLE_WEB_CLIENT_ID` | 구글 소셜 로그인 ID 토큰 검증의 audience. 공개 클라이언트 ID이고 비밀값이 아니다 |
 
 - `.env`는 Git에 올리지 않는다. `.env.example`에는 **변수명만** 쓴다(`tests/test_environment.py`가 값이 비어 있는지 검사한다).
 - 키는 프런트엔드(`EXPO_PUBLIC_*`)에 넣지 않는다. 키가 없는 API는 서버가 `NOT_CONFIGURED` 오류를 내고 나머지는 정상 동작한다.
@@ -74,6 +75,19 @@ copy .env.example .env   # 그 다음 .env 에 키를 직접 입력한다
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000 --no-access-log
 ```
+
+## 소셜 로그인 DB 마이그레이션
+
+`user` 테이블에 소셜 로그인용 `provider`/`provider_id`를 추가하고 `email`/`password_hash`를 nullable 로 바꾸는
+스크립트다. 이 기능을 받은 뒤 **딱 한 번** 실행한다.
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\migrate_social_login.py
+```
+
+- 실행 전 DB 파일을 타임스탬프 붙여 자동 백업한다(같은 폴더에 `tikkeul.db.bak-*`).
+- 이미 마이그레이션된 DB에 다시 실행해도 안전하다(idempotent) - 이미 `provider` 컬럼이 있으면 아무것도 하지 않고 끝난다.
 
 - **`--no-access-log`를 붙인다.** 접속 로그에는 요청 URL이 그대로 찍혀서 사용자가 보고 있는 영역(좌표)이 남는다.
 - 자동 문서: `http://127.0.0.1:8000/docs` (운영 노출 여부는 API_SPEC.md의 TBD)

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import field_validator
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 
 def _utcnow() -> datetime:
@@ -10,6 +10,8 @@ def _utcnow() -> datetime:
 
 
 class User(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("provider", "provider_id", name="uq_user_provider_provider_id"),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
     provider: str = Field(default="local")
     provider_id: Optional[str] = Field(default=None, index=True)
