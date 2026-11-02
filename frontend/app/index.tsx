@@ -66,6 +66,7 @@ import { searchPlaces, type PlaceSearchResult } from '../src/lib/places/search';
 import { loadRecentRoutes, loadRecents, saveRecent, saveRecentRoute, type RecentDestination, type RecentRoute } from '../src/lib/recents';
 import { useAuth } from '../src/lib/auth/AuthContext';
 import { tripsApi, type FrequentDestination } from '../src/lib/trips/api';
+import { toFallbackPopular } from '../src/lib/places/popularFallback';
 import { PLACEHOLDER_TRENDS, type TrendCategory } from '../src/lib/trends/placeholderTrends';
 import { clearPendingSearch, getPendingSearch } from '../src/lib/navigation/pendingSearch';
 import {
@@ -285,7 +286,16 @@ export default function HomeScreen() {
   const [popularTab, setPopularTab] = useState<'nearby' | 'trending'>('nearby');
   useEffect(() => {
     getCurrentLocation()
-      .then((point) => tripsApi.popular({ lat: point.lat, lng: point.lng, limit: 20 }))
+      .then(async (point) => {
+        const popular = await tripsApi.popular({ lat: point.lat, lng: point.lng, limit: 20 });
+        if (popular.length > 0) return popular;
+        // 트립 데이터가 없는 콜드스타트 동네: 카카오 주변 음식점·카페로 대체.
+        const [restaurants, cafes] = await Promise.all([
+          fetchNearbyPlaces('restaurant', point, 1000).catch(() => []),
+          fetchNearbyPlaces('cafe', point, 1000).catch(() => []),
+        ]);
+        return toFallbackPopular([...restaurants, ...cafes], 20);
+      })
       .then(setPopularPlaces)
       .catch(() => setPopularPlaces(null));
   }, []);
