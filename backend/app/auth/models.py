@@ -66,6 +66,10 @@ class LoginRequest(SQLModel):
         return normalize_email(v)
 
 
+class SocialLoginRequest(SQLModel):
+    id_token: str
+
+
 class UserPublic(SQLModel):
     id: int
     provider: str

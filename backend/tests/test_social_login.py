@@ -1,0 +1,73 @@
+from sqlmodel import Session, select
+
+from app.auth import social as social_module
+from app.auth.models import User
+from app.auth.security import hash_password
+from tests.conftest import make_settings
+
+
+def _patch_verify(monkeypatch, payload=None, error=None):
+    def fake_verify(id_token, settings):
+        if error is not None:
+            raise error
+        return payload
+
+    monkeypatch.setattr(social_module, "verify_google_id_token", fake_verify)
+    # router 가 함수를 직접 import 해서 쓰는 경우를 대비해 router 모듈도 같이 패치한다
+    from app.auth import router as router_module
+
+    monkeypatch.setattr(router_module, "verify_google_id_token", fake_verify)
+
+
+def test_google_login_first_time_creates_user(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+    _patch_verify(monkeypatch, payload={"sub": "google-uid-1", "email": "new@example.com"})
+
+    res = client.post("/api/auth/social/google", json={"id_token": "fake-token"})
+    assert res.status_code in (200, 201)
+    body = res.json()
+    assert "access_token" in body
+    assert body["user"]["provider"] == "google"
+    assert body["user"]["email"] == "new@example.com"
+
+    with Session(client.app.state.db_engine) as session:
+        user = session.exec(select(User).where(User.provider_id == "google-uid-1")).first()
+        assert user is not None and user.provider == "google"
+
+
+def test_google_login_same_provider_id_reuses_user(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+    _patch_verify(monkeypatch, payload={"sub": "google-uid-2", "email": "again@example.com"})
+
+    first = client.post("/api/auth/social/google", json={"id_token": "fake-token"})
+    second = client.post("/api/auth/social/google", json={"id_token": "fake-token"})
+    assert first.json()["user"]["id"] == second.json()["user"]["id"]
+
+    with Session(client.app.state.db_engine) as session:
+        users = session.exec(select(User).where(User.provider_id == "google-uid-2")).all()
+        assert len(users) == 1
+
+
+def test_google_login_email_already_used_by_local_account_is_409(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+    with Session(client.app.state.db_engine) as session:
+        session.add(User(email="taken@example.com", password_hash=hash_password("password123"), email_verified=True))
+        session.commit()
+    _patch_verify(monkeypatch, payload={"sub": "google-uid-3", "email": "taken@example.com"})
+
+    res = client.post("/api/auth/social/google", json={"id_token": "fake-token"})
+    assert res.status_code == 409 and res.json()["error"]["code"] == "EMAIL_TAKEN"
+
+
+def test_google_login_invalid_token_is_502_social_login_failed(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+    from app.errors import api_error
+
+    _patch_verify(monkeypatch, error=api_error("SOCIAL_LOGIN_FAILED"))
+
+    res = client.post("/api/auth/social/google", json={"id_token": "garbage"})
+    assert res.status_code == 502 and res.json()["error"]["code"] == "SOCIAL_LOGIN_FAILED"

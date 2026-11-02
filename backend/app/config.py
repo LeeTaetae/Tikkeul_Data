@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # 운영에서는 Render 서비스의 실제 URL로 덮어써야 한다 - 안 그러면 메일 링크가 localhost를 가리킨다.
     api_base_url: str = "http://localhost:8000"
 
+    # 구글 소셜 로그인 - ID 토큰 검증의 audience로만 쓰는 공개 클라이언트 ID(비밀값 아님).
+    google_web_client_id: str = ""
+
     def secret(self, name: str) -> Optional[str]:
         value = getattr(self, name)
         text = value.get_secret_value().strip() if value is not None else ""

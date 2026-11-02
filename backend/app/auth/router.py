@@ -12,11 +12,13 @@ from app.auth.models import (
     SignupCodeVerifyRequest,
     SignupCodeVerifyResponse,
     SignupRequest,
+    SocialLoginRequest,
     TokenResponse,
     User,
     UserPublic,
     normalize_email,
 )
+from app.auth.social import find_or_create_social_user, verify_google_id_token
 from app.auth.security import (
     check_signup_verified,
     create_access_token,
@@ -93,6 +95,23 @@ def login(body: LoginRequest, request: Request) -> TokenResponse:
         if user is None or not verify_password(body.password, user.password_hash):
             raise api_error("INVALID_CREDENTIALS")
         token = create_access_token(user.id, settings)
+        return TokenResponse(
+            access_token=token,
+            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+        )
+
+
+@router.post("/social/google", response_model=TokenResponse)
+def login_with_google(body: SocialLoginRequest, request: Request) -> TokenResponse:
+    settings = request.app.state.settings
+    payload = verify_google_id_token(body.id_token, settings)
+    with Session(request.app.state.db_engine) as session:
+        user = find_or_create_social_user(
+            session, provider="google", provider_id=payload["sub"], email=payload.get("email"), nickname=payload.get("name")
+        )
+        token = create_access_token(user.id, settings)
+        session.commit()
+        session.refresh(user)
         return TokenResponse(
             access_token=token,
             user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
