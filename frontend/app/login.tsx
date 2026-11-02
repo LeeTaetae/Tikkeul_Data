@@ -16,7 +16,7 @@ import { colors, space } from '../src/theme';
 export default function LoginScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   // 비로그인 상태에서 로그인 전용 기능을 누르면 이 화면으로 오는데, 성공하면 원래 가려던 곳으로 돌려보낸다.
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
 
@@ -24,6 +24,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   const canSubmit = email.trim().includes('@') && password.length > 0 && !submitting;
@@ -40,6 +41,22 @@ export default function LoginScreen() {
       setError(authErrorMessage(e, t));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const onGoogleSubmit = async () => {
+    if (googleSubmitting) return;
+    setError(null);
+    setGoogleSubmitting(true);
+    try {
+      await loginWithGoogle();
+      if (redirect) router.replace(redirect as never);
+      else router.back();
+    } catch (e) {
+      // 사용자가 구글 로그인 창을 취소한 경우는 오류가 아니다.
+      if ((e as { code?: string })?.code !== 'GOOGLE_SIGNIN_CANCELLED') setError(authErrorMessage(e, t));
+    } finally {
+      setGoogleSubmitting(false);
     }
   };
 
@@ -87,6 +104,19 @@ export default function LoginScreen() {
         loading={submitting}
       />
 
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>{t('auth.orDivider')}</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
+      <PrimaryButton
+        label={googleSubmitting ? t('auth.loggingInGoogle') : t('auth.loginWithGoogle')}
+        onPress={onGoogleSubmit}
+        disabled={submitting || googleSubmitting}
+        loading={googleSubmitting}
+      />
+
       <View style={styles.footer}>
         <Text style={styles.footerText}>{t('auth.noAccount')}</Text>
         <Text style={styles.link} onPress={() => router.replace(redirect ? { pathname: '/signup', params: { redirect } } : '/signup')}>
@@ -102,6 +132,9 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', gap: space.xs, paddingVertical: space.lg },
   subtitle: { fontSize: 15, color: colors.muted, textAlign: 'center' },
   form: { gap: space.md },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingVertical: space.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
+  dividerText: { fontSize: 13, color: colors.muted },
   footer: { flexDirection: 'row', justifyContent: 'center', gap: space.xs, paddingTop: space.sm },
   footerText: { fontSize: 14, color: colors.muted },
   link: { fontSize: 14, fontWeight: '800', color: colors.brand },

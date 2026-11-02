@@ -84,6 +84,18 @@ test('post: JSON 본문을 보내고 Content-Type 을 붙인다', async () => {
   assert.equal(seen.body, JSON.stringify({ email: 'a@b.com' }));
 });
 
+// authApi.loginGoogle 은 이 경로/바디 모양으로 요청을 조립한다(client.ts 가 실제로 보내는 것을 확인한다).
+// src/lib/auth/api.ts 는 config.ts 를 거쳐 react-native 를 import 해서 plain Node 에선 직접 import 할 수 없다(기존 authApi 함수들도 동일한 제약으로 미테스트).
+test('loginGoogle 요청 조립: POST /api/auth/social/google 에 { id_token } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ ok: true })));
+  await client.post('/api/auth/social/google', { id_token: 'fake-id-token' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/social/google');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ id_token: 'fake-id-token' }));
+});
+
 test('token 옵션을 주면 Authorization 헤더가 붙는다', async () => {
   let seen = null;
   const client = clientWith(async (url, init) => ((seen = init), json({ ok: true })));
