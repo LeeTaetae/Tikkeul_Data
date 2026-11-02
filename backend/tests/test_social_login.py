@@ -65,9 +65,25 @@ def test_google_login_email_already_used_by_local_account_is_409(make_client, mo
 def test_google_login_invalid_token_is_502_social_login_failed(make_client, monkeypatch):
     settings = make_settings()
     client = make_client(lambda r: None, settings=settings)
-    from app.errors import api_error
 
-    _patch_verify(monkeypatch, error=api_error("SOCIAL_LOGIN_FAILED"))
+    # verify_google_id_token 자체는 실제 함수를 그대로 실행시키고, 그 함수가 감싸는
+    # google 라이브러리 호출만 ValueError 를 던지게 해서 try/except 변환 로직을 실제로 통과시킨다.
+    def fake_verify_oauth2_token(id_token, request, audience=None):
+        raise ValueError("invalid token")
+
+    monkeypatch.setattr(social_module, "verify_oauth2_token", fake_verify_oauth2_token)
 
     res = client.post("/api/auth/social/google", json={"id_token": "garbage"})
     assert res.status_code == 502 and res.json()["error"]["code"] == "SOCIAL_LOGIN_FAILED"
+
+
+def test_google_login_email_case_variant_of_local_account_is_409(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+    with Session(client.app.state.db_engine) as session:
+        session.add(User(email="user@example.com", password_hash=hash_password("password123"), email_verified=True))
+        session.commit()
+    _patch_verify(monkeypatch, payload={"sub": "google-uid-4", "email": "User@Example.com"})
+
+    res = client.post("/api/auth/social/google", json={"id_token": "fake-token"})
+    assert res.status_code == 409 and res.json()["error"]["code"] == "EMAIL_TAKEN"

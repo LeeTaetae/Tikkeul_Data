@@ -4,7 +4,7 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.id_token import verify_oauth2_token
 from sqlmodel import Session, select
 
-from app.auth.models import User
+from app.auth.models import User, normalize_email
 from app.config import Settings
 from app.errors import api_error
 
@@ -26,6 +26,7 @@ def find_or_create_social_user(session: Session, provider: str, provider_id: str
     if existing is not None:
         return existing
     if email is not None:
+        email = normalize_email(email)
         email_collision = session.exec(select(User).where(User.email == email)).first()
         if email_collision is not None:
             raise api_error("EMAIL_TAKEN")
