@@ -40,7 +40,10 @@ def list_favorites(request: Request, user: User = Depends(get_current_user)) -> 
 def create_favorite(body: FavoritePlaceCreate, request: Request, user: User = Depends(get_current_user)) -> FavoritePlace:
     with Session(request.app.state.db_engine) as session:
         _check_kind_not_taken(session, user, body.kind)
-        place = FavoritePlace(user_id=user.id, **body.model_dump())
+        data = body.model_dump()
+        if body.kind != FavoriteKind.custom:
+            data["category"] = None
+        place = FavoritePlace(user_id=user.id, **data)
         session.add(place)
         try:
             session.commit()
@@ -60,6 +63,9 @@ def update_favorite(favorite_id: int, body: FavoritePlaceUpdate, request: Reques
         updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
         if "kind" in updates:
             _check_kind_not_taken(session, user, updates["kind"], exclude_id=place.id)
+        final_kind = updates.get("kind", place.kind)
+        if final_kind != FavoriteKind.custom:
+            updates["category"] = None
         for field, value in updates.items():
             setattr(place, field, value)
         session.add(place)
