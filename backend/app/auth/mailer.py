@@ -53,3 +53,13 @@ def send_signup_code_email(to_email: str, code: str, settings: Settings, client:
         f"<p>{settings.signup_code_expires_minutes}분 안에 입력하지 않으면 만료돼요.</p>"
     )
     return _send(to_email, "회원가입 인증번호 - 티끌모아Data", html, settings, client)
+
+
+def send_reset_code_email(to_email: str, code: str, settings: Settings, client: Optional[httpx.Client] = None) -> bool:
+    """비밀번호 재설정 인증번호(6자리) 메일. 성공하면 True."""
+    html = (
+        f"<p>아래 인증번호를 입력해 주세요.</p>"
+        f'<p style="font-size:28px;font-weight:700;letter-spacing:4px">{code}</p>'
+        f"<p>{settings.signup_code_expires_minutes}분 안에 입력하지 않으면 만료돼요.</p>"
+    )
+    return _send(to_email, "비밀번호 재설정 인증번호 - 티끌모아Data", html, settings, client)

@@ -60,6 +60,8 @@ def create_app(
         app.state.resend_cooldown = ResendCooldown()
         app.state.signup_code_cooldown = ResendCooldown(cooldown_s=30.0)
         app.state.signup_code_attempts = AttemptLimiter(max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
+        app.state.reset_code_cooldown = ResendCooldown(cooldown_s=30.0)
+        app.state.reset_code_attempts = AttemptLimiter(max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
         create_db_and_tables(app.state.db_engine)
         yield
         if http_client is None:

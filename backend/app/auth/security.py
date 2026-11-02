@@ -111,3 +111,46 @@ def check_signup_verified(token: str, email: str, settings: Settings) -> None:
         raise api_error("EMAIL_NOT_VERIFIED")
     if payload.get("purpose") != "signup_verified" or payload.get("email") != email:
         raise api_error("EMAIL_NOT_VERIFIED")
+
+
+# ── 비밀번호 재설정 이메일 인증번호(6자리) ────────────────────────────────────
+# 가입 전 인증번호와 같은 구조(서버는 코드를 저장하지 않고 HMAC 만 JWT 에 담아 돌려준다). purpose 클레임만 달라서
+# signup 쪽 토큰이 비밀번호 재설정에 재사용되는 걸 막는다.
+
+
+def create_reset_code_token(email: str, code: str, settings: Settings) -> str:
+    secret = _require_secret(settings)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.signup_code_expires_minutes)
+    payload = {"email": email, "code_hash": _code_hmac(code, secret), "purpose": "reset_password_code", "exp": expires_at}
+    return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
+
+
+def verify_reset_code(challenge: str, email: str, code: str, settings: Settings) -> None:
+    """challenge·code 가 email 에 대해 유효하면 조용히 통과, 아니면 INVALID_CODE."""
+    secret = _require_secret(settings)
+    try:
+        payload = jwt.decode(challenge, secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        raise api_error("INVALID_CODE")
+    if payload.get("purpose") != "reset_password_code" or payload.get("email") != email:
+        raise api_error("INVALID_CODE")
+    if not hmac.compare_digest(_code_hmac(code, secret), payload.get("code_hash", "")):
+        raise api_error("INVALID_CODE")
+
+
+def create_reset_verified_token(email: str, settings: Settings) -> str:
+    secret = _require_secret(settings)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.signup_verified_expires_minutes)
+    payload = {"email": email, "purpose": "reset_password_verified", "exp": expires_at}
+    return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
+
+
+def check_reset_verified(token: str, email: str, settings: Settings) -> None:
+    """비밀번호 재설정 요청에 실린 토큰이 이 email 에 대해 유효한 인증 완료 토큰인지 확인한다."""
+    secret = _require_secret(settings)
+    try:
+        payload = jwt.decode(token, secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        raise api_error("UNAUTHORIZED")
+    if payload.get("purpose") != "reset_password_verified" or payload.get("email") != email:
+        raise api_error("UNAUTHORIZED")

@@ -1,12 +1,18 @@
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.auth.deps import get_current_user
-from app.auth.mailer import send_signup_code_email, send_verification_email
+from app.auth.mailer import send_reset_code_email, send_signup_code_email, send_verification_email
 from app.auth.models import (
     EmailAvailability,
     KakaoLoginRequest,
     LoginRequest,
+    PasswordResetRequest,
+    PasswordResetSendCodeRequest,
+    PasswordResetSendCodeResponse,
+    PasswordResetVerifyRequest,
+    PasswordResetVerifyResponse,
     SendVerificationResponse,
     SignupCodeRequest,
     SignupCodeSentResponse,
@@ -21,15 +27,19 @@ from app.auth.models import (
 )
 from app.auth.social import find_or_create_social_user, verify_google_id_token, verify_kakao_access_token
 from app.auth.security import (
+    check_reset_verified,
     check_signup_verified,
     create_access_token,
     create_email_verify_token,
+    create_reset_code_token,
+    create_reset_verified_token,
     create_signup_code_token,
     create_signup_verified_token,
     decode_email_verify_token,
     generate_signup_code,
     hash_password,
     verify_password,
+    verify_reset_code,
     verify_signup_code,
 )
 from app.errors import api_error
@@ -185,6 +195,60 @@ def verify_email(token: str, request: Request) -> UserPublic:
         if user is None:
             raise api_error("UNAUTHORIZED")  # 토큰 발급 후 계정이 삭제된 경우 - get_current_user 와 같은 처리
         user.email_verified = True
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+
+
+# ── 비밀번호 재설정 ──────────────────────────────────────────────────────────
+
+
+@router.post("/password-reset/send-code", response_model=PasswordResetSendCodeResponse)
+def send_reset_code(body: PasswordResetSendCodeRequest, request: Request) -> PasswordResetSendCodeResponse:
+    settings = request.app.state.settings
+    with Session(request.app.state.db_engine) as session:
+        user = session.exec(select(User).where(User.email == body.email)).first()
+    if user is None:
+        # 계정 존재 여부를 숨긴다 - 아무것도 안 보냈지만 "성공"과 구분 안 되는 응답을 돌려준다.
+        return PasswordResetSendCodeResponse(sent=True, challenge=None, social_only=False)
+    if user.password_hash is None:
+        return PasswordResetSendCodeResponse(sent=False, challenge=None, social_only=True)
+    if settings.secret("resend_api_key") is None:
+        raise api_error("NOT_CONFIGURED")
+    if not request.app.state.reset_code_cooldown.try_mark(body.email):
+        raise api_error("TOO_MANY_REQUESTS")
+    code = generate_signup_code()
+    if not send_reset_code_email(body.email, code, settings):
+        raise api_error("EMAIL_SEND_FAILED")
+    request.app.state.reset_code_attempts.reset(body.email)  # 새 코드를 받았으니 이전 실패 횟수는 지운다
+    return PasswordResetSendCodeResponse(sent=True, challenge=create_reset_code_token(body.email, code, settings), social_only=False)
+
+
+@router.post("/password-reset/verify-code", response_model=PasswordResetVerifyResponse)
+def verify_reset_code_endpoint(body: PasswordResetVerifyRequest, request: Request) -> PasswordResetVerifyResponse:
+    settings = request.app.state.settings
+    if not request.app.state.reset_code_attempts.try_attempt(body.email):
+        raise api_error("TOO_MANY_REQUESTS")
+    verify_reset_code(body.challenge, body.email, body.code, settings)
+    return PasswordResetVerifyResponse(verified=True, token=create_reset_verified_token(body.email, settings))
+
+
+@router.post("/password-reset", response_model=UserPublic)
+def reset_password(body: PasswordResetRequest, request: Request) -> UserPublic:
+    settings = request.app.state.settings
+    try:
+        # 서명 검증 전에 email 클레임만 먼저 들여다본다 - 실제 검증(서명·만료·purpose·email 일치)은
+        # 바로 뒤 check_reset_verified 가 한다.
+        email = jwt.decode(body.token, options={"verify_signature": False}).get("email")
+    except jwt.PyJWTError:
+        raise api_error("UNAUTHORIZED")
+    check_reset_verified(body.token, email, settings)
+    with Session(request.app.state.db_engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if user is None:
+            raise api_error("UNAUTHORIZED")
+        user.password_hash = hash_password(body.new_password)
         session.add(user)
         session.commit()
         session.refresh(user)
