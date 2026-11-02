@@ -89,6 +89,18 @@ cd backend
 - 실행 전 DB 파일을 타임스탬프 붙여 자동 백업한다(같은 폴더에 `tikkeul.db.bak-*`).
 - 이미 마이그레이션된 DB에 다시 실행해도 안전하다(idempotent) - 이미 `provider` 컬럼이 있으면 아무것도 하지 않고 끝난다.
 
+## 즐겨찾기 카테고리 DB 마이그레이션
+
+`favoriteplace` 테이블에 커스텀 즐겨찾기용 `category`(nullable) 컬럼을 추가하는 스크립트다. 이 기능을 받은 뒤 **딱 한 번** 실행한다.
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\migrate_favorite_categories.py
+```
+
+- 실행 전 DB 파일을 타임스탬프 붙여 자동 백업한다(같은 폴더에 `tikkeul.db.bak-*`).
+- 이미 마이그레이션된 DB에 다시 실행해도 안전하다(idempotent) - 이미 `category` 컬럼이 있으면 아무것도 하지 않고 끝난다.
+
 - **`--no-access-log`를 붙인다.** 접속 로그에는 요청 URL이 그대로 찍혀서 사용자가 보고 있는 영역(좌표)이 남는다.
 - 자동 문서: `http://127.0.0.1:8000/docs` (운영 노출 여부는 API_SPEC.md의 TBD)
 - 프런트엔드는 `EXPO_PUBLIC_API_BASE_URL`(기본 `http://localhost:8000`)로 접속한다.
