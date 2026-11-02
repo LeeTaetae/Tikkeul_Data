@@ -14,6 +14,15 @@ from pathlib import Path
 
 
 def migrate(db_path: Path) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(user)")}
+        if "provider" in columns:
+            print("이미 마이그레이션된 DB 입니다 - 아무것도 하지 않습니다.")
+            return
+    finally:
+        conn.close()
+
     backup_path = db_path.parent / f"{db_path.name}.bak-{datetime.now(timezone.utc):%Y%m%d%H%M%S}"
     shutil.copy2(db_path, backup_path)
 
@@ -29,7 +38,7 @@ def migrate(db_path: Path) -> None:
                 id INTEGER PRIMARY KEY,
                 provider TEXT NOT NULL DEFAULT 'local',
                 provider_id TEXT,
-                email TEXT,
+                email TEXT UNIQUE,
                 password_hash TEXT,
                 email_verified BOOLEAN NOT NULL DEFAULT 0,
                 created_at DATETIME NOT NULL
