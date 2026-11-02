@@ -29,7 +29,10 @@ def verify_kakao_access_token(access_token: str, settings: Settings) -> dict:
         raise api_error("SOCIAL_LOGIN_FAILED")
     if not (200 <= resp.status_code < 300):
         raise api_error("SOCIAL_LOGIN_FAILED")
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        raise api_error("SOCIAL_LOGIN_FAILED")
     if data.get("id") is None:
         raise api_error("SOCIAL_LOGIN_FAILED")
     return data

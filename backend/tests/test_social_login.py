@@ -151,3 +151,35 @@ def test_kakao_login_invalid_token_is_502_social_login_failed(make_client, monke
 
     res = client.post("/api/auth/social/kakao", json={"access_token": "garbage"})
     assert res.status_code == 502 and res.json()["error"]["code"] == "SOCIAL_LOGIN_FAILED"
+
+
+def test_kakao_login_network_error_is_502_social_login_failed(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+
+    def fake_httpx_get(url, headers=None, timeout=None):
+        raise social_module.httpx.ConnectError("boom")
+
+    monkeypatch.setattr(social_module.httpx, "get", fake_httpx_get)
+
+    res = client.post("/api/auth/social/kakao", json={"access_token": "garbage"})
+    assert res.status_code == 502 and res.json()["error"]["code"] == "SOCIAL_LOGIN_FAILED"
+
+
+def test_kakao_login_missing_id_is_502_social_login_failed(make_client, monkeypatch):
+    settings = make_settings()
+    client = make_client(lambda r: None, settings=settings)
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {}
+
+    def fake_httpx_get(url, headers=None, timeout=None):
+        return FakeResp()
+
+    monkeypatch.setattr(social_module.httpx, "get", fake_httpx_get)
+
+    res = client.post("/api/auth/social/kakao", json={"access_token": "garbage"})
+    assert res.status_code == 502 and res.json()["error"]["code"] == "SOCIAL_LOGIN_FAILED"
