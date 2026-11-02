@@ -353,6 +353,7 @@ const en: Resources = {
     resetPasswordButton: 'Reset password',
     resettingPassword: 'Resetting...',
     resetPasswordDone: 'Your password has been reset. Please log in again',
+    resetSessionExpired: 'This session expired. Please start over',
     login: 'Log in',
     kakaoUser: 'Kakao user',
   },

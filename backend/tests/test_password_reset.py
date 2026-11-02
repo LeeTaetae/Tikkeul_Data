@@ -39,8 +39,18 @@ def test_send_code_for_unknown_email_pretends_to_succeed(make_client, monkeypatc
     res = client.post("/api/auth/password-reset/send-code", json={"email": "nobody@example.com"})
     assert res.status_code == 200
     body = res.json()
-    assert body == {"sent": True, "challenge": None, "social_only": False}
+    # 응답 모양이 실제 계정 분기와 구분되지 않아야 한다 - challenge 도 진짜처럼 채워진 문자열.
+    assert body["sent"] is True and body["social_only"] is False
+    assert isinstance(body["challenge"], str) and len(body["challenge"]) > 0
     assert len(sent) == 0  # 실제로는 아무것도 안 보냈다
+
+    # 가짜 challenge 로 verify-code 를 시도하면 500 이 아니라 평범한 INVALID_CODE 로 실패해야 한다.
+    verify_res = client.post(
+        "/api/auth/password-reset/verify-code",
+        json={"email": "nobody@example.com", "code": "123456", "challenge": body["challenge"]},
+    )
+    assert verify_res.status_code == 400
+    assert verify_res.json()["error"]["code"] == "INVALID_CODE"
 
 
 def test_send_code_for_social_only_account_reveals_social_only(make_client, monkeypatch):

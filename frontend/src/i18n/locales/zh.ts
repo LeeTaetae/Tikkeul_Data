@@ -353,6 +353,7 @@ const zh: Resources = {
     resetPasswordButton: '修改密码',
     resettingPassword: '修改中...',
     resetPasswordDone: '密码已修改，请重新登录',
+    resetSessionExpired: '会话已过期，请重新开始',
     login: '登录',
     kakaoUser: 'Kakao用户',
   },

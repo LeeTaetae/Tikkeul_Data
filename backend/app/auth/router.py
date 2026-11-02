@@ -210,8 +210,11 @@ def send_reset_code(body: PasswordResetSendCodeRequest, request: Request) -> Pas
     with Session(request.app.state.db_engine) as session:
         user = session.exec(select(User).where(User.email == body.email)).first()
     if user is None:
-        # 계정 존재 여부를 숨긴다 - 아무것도 안 보냈지만 "성공"과 구분 안 되는 응답을 돌려준다.
-        return PasswordResetSendCodeResponse(sent=True, challenge=None, social_only=False)
+        # 계정 존재 여부를 숨긴다 - 실제로는 메일을 안 보내지만, 응답 모양(challenge 포함)은
+        # 실제 계정 분기와 동일하게 만든다. 가짜 challenge 는 verify-code 에서 INVALID_CODE 로
+        # 자연스럽게 실패한다. (쿨다운/메일 설정 체크는 일부러 안 거친다 - 실제 계정에만 있는 분기)
+        dummy_code = generate_signup_code()
+        return PasswordResetSendCodeResponse(sent=True, challenge=create_reset_code_token(body.email, dummy_code, settings), social_only=False)
     if user.password_hash is None:
         return PasswordResetSendCodeResponse(sent=False, challenge=None, social_only=True)
     if settings.secret("resend_api_key") is None:

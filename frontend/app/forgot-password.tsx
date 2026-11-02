@@ -9,6 +9,7 @@ import { Screen } from '../src/components/Screen';
 import { PrimaryButton } from '../src/components/ui/PrimaryButton';
 import { RoundButton } from '../src/components/ui/RoundButton';
 import { TextField } from '../src/components/ui/TextField';
+import { ApiClientError } from '../src/lib/api/client';
 import { authApi } from '../src/lib/auth/api';
 import { authErrorMessage } from '../src/lib/auth/errorMessage';
 import { colors, space } from '../src/theme';
@@ -51,6 +52,20 @@ export default function ForgotPasswordScreen() {
   const passwordValid = password.length >= PASSWORD_MIN && passwordBytes <= PASSWORD_MAX_BYTES;
   const confirmError = confirm.length > 0 && confirm !== password ? t('auth.passwordMismatch') : undefined;
   const canSubmitPassword = passwordValid && confirm === password && !submitting;
+
+  // signup.tsx 의 onEmailChange 와 같은 패턴: 이메일을 고치면 이전 단계에서 받은
+  // challenge/code 는 더 이상 이 이메일 것이 아니다 - 이메일 단계로 되돌린다.
+  const onEmailChange = (v: string) => {
+    setEmail(v);
+    setSendError(null);
+    setSocialOnly(false);
+    if (step !== 'email') {
+      setStep('email');
+      setChallenge('');
+      setCode('');
+      setCodeError(null);
+    }
+  };
 
   const onSendCode = async () => {
     if (!emailValid || sending) return;
@@ -95,7 +110,18 @@ export default function ForgotPasswordScreen() {
       await authApi.resetPassword(resetToken, password);
       setStep('done');
     } catch (e) {
-      setSubmitError(authErrorMessage(e, t));
+      if (e instanceof ApiClientError && e.code === 'UNAUTHORIZED') {
+        // 토큰이 만료/위조됐다 - 이 화면에서는 재시도해도 절대 성공할 수 없으니, 막다른 길 대신 처음부터 다시 하게 한다.
+        setStep('email');
+        setChallenge('');
+        setCode('');
+        setResetToken('');
+        setPassword('');
+        setConfirm('');
+        setSendError(t('auth.resetSessionExpired'));
+      } else {
+        setSubmitError(authErrorMessage(e, t));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -129,11 +155,7 @@ export default function ForgotPasswordScreen() {
             label={t('auth.email')}
             leadingIcon={Mail}
             value={email}
-            onChangeText={(v) => {
-              setEmail(v);
-              setSendError(null);
-              setSocialOnly(false);
-            }}
+            onChangeText={onEmailChange}
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"
@@ -141,7 +163,8 @@ export default function ForgotPasswordScreen() {
             onSubmitEditing={onSendCode}
             error={step === 'email' ? sendError ?? undefined : undefined}
             trailing={
-              step !== 'email' ? undefined : sending ? (
+              // signup.tsx 처럼 코드 단계에서도 다시 보내기 링크를 남겨둔다 - password 단계(코드 확인 완료)에서만 숨긴다.
+              step === 'password' ? undefined : sending ? (
                 <ActivityIndicator size="small" color={colors.muted} />
               ) : (
                 <Pressable onPress={onSendCode} disabled={!emailValid} hitSlop={8}>

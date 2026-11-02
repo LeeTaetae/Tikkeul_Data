@@ -48,9 +48,12 @@ export default function RootLayout() {
         <Tabs.Screen name="navigate" options={{ title: t('tabs.navigate'), tabBarIcon: tabIcon(NavigationIcon) }} />
         <Tabs.Screen name="favorites" options={{ title: t('tabs.saved'), tabBarIcon: tabIcon(Star) }} />
         {/* 길안내 화면: 홈에서 안내를 시작할 때만 들어간다. 탭 항목은 숨기고(href: null 은 주소로 직접 열리지 않는다), 이 화면에서는 지도를 가리지 않게 탭 막대도 숨긴다. */}
+        {/* 아래 hiddenScreen 목록은 app/*.tsx 의 숨긴 화면들과 항상 같아야 한다 - Tabs 에 선언 안 된 라우트는
+            expo-router 가 focusedIndex=-1 로 보고 홈 탭으로 되돌려버린다(선언 누락 = 그 화면으로 못 들어감). */}
         <Tabs.Screen name="navigation" options={hiddenScreen} />
         <Tabs.Screen name="login" options={hiddenScreen} />
         <Tabs.Screen name="signup" options={hiddenScreen} />
+        <Tabs.Screen name="forgot-password" options={hiddenScreen} />
         <Tabs.Screen name="map" options={hiddenScreen} />
         <Tabs.Screen name="alerts" options={hiddenScreen} />
       </Tabs>

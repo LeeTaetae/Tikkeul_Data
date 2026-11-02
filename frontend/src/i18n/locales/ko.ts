@@ -353,6 +353,7 @@ const ko = {
     resetPasswordButton: '비밀번호 변경',
     resettingPassword: '변경하는 중...',
     resetPasswordDone: '비밀번호가 변경됐어요. 다시 로그인해 주세요',
+    resetSessionExpired: '시간이 지나 처음부터 다시 진행해 주세요',
   },
   favorites: {
     title: '즐겨찾기',
