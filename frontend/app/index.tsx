@@ -304,11 +304,17 @@ export default function HomeScreen() {
   // 즐겨찾기 화면의 카테고리 그룹 헤더를 탭해 들어오면(favoriteCategory 파라미터), 그 카테고리의 즐겨찾기들을 지도에 점으로 찍는다.
   useEffect(() => {
     if (!favoriteCategory || !authToken) return;
+    // 내 주변 카테고리 시트가 열려 있으면 먼저 닫아야 onPlaceClick 이 엉뚱한 nearbyPlaces 인덱스로 안내를 시작하지 않는다.
+    setNearbyCategory(null);
+    setNearbyPlaces(null);
+    setNearbyError(false);
     favoritesApi
       .list(authToken)
       .then((list) => {
         const filtered = list.filter((f) => f.category === favoriteCategory);
         mapRef.current?.showPlaces(filtered.map((f) => ({ point: { lat: f.lat, lng: f.lon }, label: f.label })), colors.brand);
+        // 같은 카테고리를 다시 탭해도 effect 가 재실행되도록 파라미터를 비운다.
+        router.setParams({ favoriteCategory: undefined });
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
