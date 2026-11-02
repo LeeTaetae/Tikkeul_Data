@@ -390,6 +390,7 @@ const zh: Resources = {
     pharmacy: '药店',
     mart: '超市',
     nearbyTitle: '附近{{category}}',
+    favoriteCategoryTitle: '{{category}} 收藏',
     empty: '附近没有结果',
     error: '无法加载附近场所',
     distanceM: '{{n}}米',

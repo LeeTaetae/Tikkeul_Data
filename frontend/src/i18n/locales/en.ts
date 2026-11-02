@@ -390,6 +390,7 @@ const en: Resources = {
     pharmacy: 'Pharmacy',
     mart: 'Mart',
     nearbyTitle: 'Nearby {{category}}',
+    favoriteCategoryTitle: '{{category}} favorites',
     empty: 'No nearby results',
     error: 'Could not load nearby places',
     distanceM: '{{n}}m',

@@ -388,6 +388,7 @@ const ko = {
     pharmacy: '약국',
     mart: '마트',
     nearbyTitle: '내 주변 {{category}}',
+    favoriteCategoryTitle: '{{category}} 즐겨찾기',
     empty: '주변에 결과가 없어요',
     error: '주변 장소를 불러오지 못했어요',
     distanceM: '{{n}}m',
