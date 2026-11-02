@@ -11,7 +11,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Bus,
   CalendarDays,
@@ -223,6 +223,7 @@ function SearchAction({ label, compact, onPress }: { label: string; compact: boo
 export default function HomeScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const { favoriteCategory } = useLocalSearchParams<{ favoriteCategory?: string }>();
   const { status: authStatus, token: authToken } = useAuth();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -299,6 +300,19 @@ export default function HomeScreen() {
       .then(setPopularPlaces)
       .catch(() => setPopularPlaces(null));
   }, []);
+
+  // 즐겨찾기 화면의 카테고리 그룹 헤더를 탭해 들어오면(favoriteCategory 파라미터), 그 카테고리의 즐겨찾기들을 지도에 점으로 찍는다.
+  useEffect(() => {
+    if (!favoriteCategory || !authToken) return;
+    favoritesApi
+      .list(authToken)
+      .then((list) => {
+        const filtered = list.filter((f) => f.category === favoriteCategory);
+        mapRef.current?.showPlaces(filtered.map((f) => ({ point: { lat: f.lat, lng: f.lon }, label: f.label })), colors.brand);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favoriteCategory, authToken]);
 
   // 도착지 입력창에 2글자 이상 치면 실제 장소 검색(자동완성)을 보여준다. 데모 목적지 4곳만 되던 한계를 없앤다.
   const [destinationSuggestions, setDestinationSuggestions] = useState<PlaceSearchResult[]>([]);

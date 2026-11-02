@@ -1,5 +1,5 @@
 import { Briefcase, Heart, House, MapPin, Trash2, X, type LucideIcon } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +52,18 @@ export default function FavoritesScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // custom + category 가 있는 항목만 카테고리별로 묶고, 나머지(home/work/카테고리 없는 custom)는 평평하게 보여준다.
+  const flatItems = useMemo(() => items?.filter((i) => !(i.kind === 'custom' && i.category)) ?? [], [items]);
+  const groupedByCategory = useMemo(() => {
+    const groups: Record<string, FavoritePlace[]> = {};
+    for (const item of items ?? []) {
+      if (item.kind === 'custom' && item.category) {
+        (groups[item.category] ??= []).push(item);
+      }
+    }
+    return groups;
+  }, [items]);
 
   const onDelete = async (id: number) => {
     if (!token) return;
@@ -106,8 +118,22 @@ export default function FavoritesScreen() {
         </View>
       ) : (
         <View style={styles.list}>
-          {items?.map((item) => (
+          {flatItems.map((item) => (
             <FavoriteRow key={item.id} item={item} loading={startingId === item.id} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
+          ))}
+          {Object.entries(groupedByCategory).map(([category, group]) => (
+            <View key={category} style={styles.group}>
+              <Pressable
+                onPress={() => router.push({ pathname: '/', params: { favoriteCategory: category } })}
+                style={({ pressed }) => [styles.groupHeader, pressed && styles.pressed]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.groupHeaderText}>{category}</Text>
+              </Pressable>
+              {group.map((item) => (
+                <FavoriteRow key={item.id} item={item} loading={startingId === item.id} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
+              ))}
+            </View>
           ))}
         </View>
       )}
@@ -176,6 +202,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<FavoriteKind>('custom');
   const [label, setLabel] = useState('');
+  const [category, setCategory] = useState('');
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([]);
   const [picked, setPicked] = useState<RoutePoint | null>(null);
@@ -237,8 +264,9 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
     setSaving(true);
     setError(null);
     try {
-      await favoritesApi.create({ kind, label: label.trim(), lat: picked.lat, lon: picked.lng }, token);
+      await favoritesApi.create({ kind, label: label.trim(), lat: picked.lat, lon: picked.lng, category: category.trim() || undefined }, token);
       setLabel('');
+      setCategory('');
       setQuery('');
       setPicked(null);
       setKind('custom');
@@ -293,6 +321,9 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
       </Pressable>
       {picked && !suggestions.length && <Text style={styles.pickedNotice}>{t('favorites.locationPicked')}</Text>}
       <TextField label={t('favorites.label')} placeholder={t('favorites.labelPlaceholder')} value={label} onChangeText={setLabel} error={error ?? undefined} />
+      {kind === 'custom' && (
+        <TextField label={t('favorites.category')} placeholder={t('favorites.categoryPlaceholder')} value={category} onChangeText={setCategory} />
+      )}
       <PrimaryButton label={t('favorites.save')} onPress={onSave} disabled={!label.trim() || !picked || saving} loading={saving} />
     </Card>
   );
@@ -307,6 +338,9 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
   emptyHint: { fontSize: 14, color: colors.muted, textAlign: 'center' },
   list: { gap: space.sm },
+  group: { gap: space.sm },
+  groupHeader: { paddingVertical: space.xs, paddingHorizontal: space.xs },
+  groupHeaderText: { fontSize: 14, fontWeight: '800', color: colors.brand },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minWidth: 0 },
   rowIcon: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },

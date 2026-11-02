@@ -369,6 +369,8 @@ const zh: Resources = {
     kindTaken: '家/公司只能各设置一个，请修改已有项目',
     label: '名称',
     labelPlaceholder: '例如：常去的咖啡店',
+    category: '分类',
+    categoryPlaceholder: '例如：咖啡厅（可选）',
     locationSearch: '搜索位置',
     locationSearchPlaceholder: '按地址或场所名称搜索',
     useCurrentLocation: '使用当前位置',

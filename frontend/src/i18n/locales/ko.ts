@@ -367,6 +367,8 @@ const ko = {
     kindTaken: '집/회사는 하나만 등록할 수 있어요. 기존 항목을 수정해 주세요',
     label: '이름',
     labelPlaceholder: '예: 단골 카페',
+    category: '카테고리',
+    categoryPlaceholder: '예: 카페 (선택)',
     locationSearch: '위치 검색',
     locationSearchPlaceholder: '주소나 장소 이름으로 검색',
     useCurrentLocation: '현재 위치 사용',

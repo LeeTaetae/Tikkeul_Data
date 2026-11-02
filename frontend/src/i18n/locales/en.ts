@@ -369,6 +369,8 @@ const en: Resources = {
     kindTaken: 'You can only have one Home/Work. Edit the existing one instead.',
     label: 'Name',
     labelPlaceholder: 'e.g. Favorite cafe',
+    category: 'Category',
+    categoryPlaceholder: 'e.g. Cafes (optional)',
     locationSearch: 'Search location',
     locationSearchPlaceholder: 'Search by address or place name',
     useCurrentLocation: 'Use current location',

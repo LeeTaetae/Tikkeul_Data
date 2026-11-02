@@ -169,3 +169,12 @@ test('patch: JSON 본문을 보낸다', async () => {
   assert.equal(seen.method, 'PATCH');
   assert.equal(seen.body, JSON.stringify({ label: '새이름' }));
 });
+
+// favoritesApi.create 는 category 를 바디에 포함해서 보낸다(client.ts 조립 결과만 확인, favoritesApi 자체는 react-native config 의존으로 미테스트).
+test('favorites create 요청 조립: POST /api/favorites 에 category 포함', async () => {
+  let seen = null;
+  const client = clientWith(async (url, init) => ((seen = init), json({ ok: true })));
+  await client.post('/api/favorites', { kind: 'custom', label: '단골 카페', lat: 37.5, lon: 127.0, category: '카페' });
+  assert.equal(seen.method, 'POST');
+  assert.equal(seen.body, JSON.stringify({ kind: 'custom', label: '단골 카페', lat: 37.5, lon: 127.0, category: '카페' }));
+});
