@@ -70,6 +70,10 @@ class SocialLoginRequest(SQLModel):
     id_token: str
 
 
+class KakaoLoginRequest(SQLModel):
+    access_token: str
+
+
 class UserPublic(SQLModel):
     id: int
     provider: str

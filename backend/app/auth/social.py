@@ -1,5 +1,6 @@
 from typing import Optional
 
+import httpx
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.id_token import verify_oauth2_token
 from sqlmodel import Session, select
@@ -15,6 +16,23 @@ def verify_google_id_token(id_token: str, settings: Settings) -> dict:
         return verify_oauth2_token(id_token, GoogleAuthRequest(), audience=settings.google_web_client_id)
     except ValueError:
         raise api_error("SOCIAL_LOGIN_FAILED")
+
+
+def verify_kakao_access_token(access_token: str, settings: Settings) -> dict:
+    """카카오 액세스 토큰으로 사용자 정보를 조회해 payload(id 등)를 돌려준다. id만 보장되고 email 스코프는 쓰지 않는다.
+
+    2xx가 아니거나 응답에 id가 없으면 SOCIAL_LOGIN_FAILED로 변환한다.
+    """
+    try:
+        resp = httpx.get("https://kapi.kakao.com/v2/user/me", headers={"Authorization": f"Bearer {access_token}"}, timeout=5.0)
+    except httpx.HTTPError:
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    if not (200 <= resp.status_code < 300):
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    data = resp.json()
+    if data.get("id") is None:
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    return data
 
 
 def find_or_create_social_user(session: Session, provider: str, provider_id: str, email: Optional[str], nickname: Optional[str]) -> User:

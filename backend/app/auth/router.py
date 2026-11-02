@@ -5,6 +5,7 @@ from app.auth.deps import get_current_user
 from app.auth.mailer import send_signup_code_email, send_verification_email
 from app.auth.models import (
     EmailAvailability,
+    KakaoLoginRequest,
     LoginRequest,
     SendVerificationResponse,
     SignupCodeRequest,
@@ -18,7 +19,7 @@ from app.auth.models import (
     UserPublic,
     normalize_email,
 )
-from app.auth.social import find_or_create_social_user, verify_google_id_token
+from app.auth.social import find_or_create_social_user, verify_google_id_token, verify_kakao_access_token
 from app.auth.security import (
     check_signup_verified,
     create_access_token,
@@ -108,6 +109,24 @@ def login_with_google(body: SocialLoginRequest, request: Request) -> TokenRespon
     with Session(request.app.state.db_engine) as session:
         user = find_or_create_social_user(
             session, provider="google", provider_id=payload["sub"], email=payload.get("email"), nickname=payload.get("name")
+        )
+        token = create_access_token(user.id, settings)
+        session.commit()
+        session.refresh(user)
+        return TokenResponse(
+            access_token=token,
+            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+        )
+
+
+@router.post("/social/kakao", response_model=TokenResponse)
+def login_with_kakao(body: KakaoLoginRequest, request: Request) -> TokenResponse:
+    settings = request.app.state.settings
+    payload = verify_kakao_access_token(body.access_token, settings)
+    profile = (payload.get("kakao_account") or {}).get("profile") or {}
+    with Session(request.app.state.db_engine) as session:
+        user = find_or_create_social_user(
+            session, provider="kakao", provider_id=str(payload["id"]), email=None, nickname=profile.get("nickname")
         )
         token = create_access_token(user.id, settings)
         session.commit()
