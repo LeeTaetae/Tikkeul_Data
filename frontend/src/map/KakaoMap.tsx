@@ -56,6 +56,7 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
   useImperativeHandle(ref, () => ({
     moveToMyLocation,
     showRoute: (path, options) => call('showRoute', path, options ?? {}),
+    showRouteSegments: (segments, options) => call('showRouteSegments', segments, options ?? {}),
     setRoutePath: (path) => call('setRoutePath', path),
     clearRoute: () => call('clearRoute'),
     setDestination: (point) => call('setDestination', point),

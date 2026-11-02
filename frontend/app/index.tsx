@@ -45,7 +45,7 @@ import { RoundButton } from '../src/components/ui/RoundButton';
 import { ScreenHeader } from '../src/components/ui/ScreenHeader';
 import { SearchBar } from '../src/components/ui/SearchBar';
 import { useHazardSimulation } from '../src/dev/HazardSimulator';
-import { guidanceTargetOf, setGuidanceRequest } from '../src/lib/navigation/guidanceSession';
+import { clearGuidanceRequest, clearRideRequest, guidanceTargetOf, setGuidanceRequest, setRideRequest } from '../src/lib/navigation/guidanceSession';
 import type { NavRoute } from '../src/lib/navigation/guidanceEngine';
 import { useRouteHazardWarning } from '../src/lib/navigation/useRouteHazardWarning';
 import { useRouteSpeedBumps } from '../src/lib/navigation/useRouteSpeedBumps';
@@ -58,6 +58,8 @@ import { useSpeedingWarning } from '../src/lib/useSpeedingWarning';
 import { useTurnInstructionSpeech } from '../src/lib/useTurnInstructionSpeech';
 import { pickUrgentWarning } from '../src/lib/urgentWarning';
 import { KakaoMap } from '../src/map/KakaoMap';
+import { busLegColor } from '../src/lib/navigation/transitColors';
+import { showTransitRoute } from '../src/map/showTransitRoute';
 import { findDemoDestination } from '../src/map/demoDestinations';
 import { getCurrentLocation } from '../src/lib/location/getCurrentLocation';
 import { NEARBY_CATEGORIES, fetchNearbyPlaces, fetchPlaceAt, type NearbyPlace, type PlaceAtPoint, type PlaceCategory } from '../src/lib/places/api';
@@ -160,12 +162,11 @@ function describePlace(name: string): string {
   return PLACE_DESCRIPTION_RULES.find((rule) => rule.pattern.test(name))?.text ?? '방문자들이 많이 찾는 곳';
 }
 
-// 구간 색 — 지하철은 파랑, 버스는 직행/급행이면 빨강 그 외엔 초록(카카오맵 배색과 맞춤), 도보는 회색.
+// 구간 색 — 지하철은 파랑, 도보는 회색. 버스는 지도 경로선과 같은 busLegColor 를 써서 카드와 지도의 색이 항상 같다.
 function legColor(step: TransitStep): string {
   if (step.type === 'WALKING') return colors.line;
   if (step.type === 'SUBWAY') return colors.info;
-  const vehicleType = step.vehicles[0]?.type ?? '';
-  return vehicleType.includes('직행') || vehicleType.includes('급행') ? colors.dangerStrong : colors.guide;
+  return busLegColor(step.vehicles).color;
 }
 
 function legIcon(step: TransitStep): LucideIcon {
@@ -382,6 +383,8 @@ export default function HomeScreen() {
     routeKey: schoolZoneRoute?.id ?? '',
     route: schoolZoneRoute,
     instructions: activeRoute?.instructions ?? [],
+    guides: activeRoute?.guides,
+    source: 'home',
     progressM: liveProgressM,
     language: i18n.language,
   });
@@ -469,7 +472,7 @@ export default function HomeScreen() {
       const destinationLabel = destinationAddressValue ?? label;
       if (transit && transit.routes.length > 0) {
         setTransitResult(transit);
-        mapRef.current?.showRoute(transit.routes[0].path);
+        showTransitRoute(mapRef.current, transit.routes[0]);
         setRecents(saveRecent({ label: destinationLabel, point: destinationPoint }));
         setRecentRoutes(saveRecentRoute({ originLabel, destinationLabel, destinationPoint, mode: travelMode }));
         logTrip(origin, destinationPoint, label, destinationAddressValue);
@@ -641,13 +644,30 @@ export default function HomeScreen() {
     await searchRoutes(point, place.label, mode);
   };
 
+  // 대중교통: 목록에서 고른 옵션(구간 정보 포함)을 그대로 길안내 화면에 넘긴다.
+  const onStartTransitGuidance = (option: TransitRouteOption) => {
+    const search = lastSearchRef.current;
+    if (!search) return;
+    setActiveRoute(null);
+    clearGuidanceRequest();
+    setRideRequest({ origin: search.origin, destination: search.destination, destinationLabel: search.label, mode: 'transit', transit: option });
+    router.push('/navigation');
+  };
+
   const onStartGuidance = (route: StyledRoute) => {
-    // 자동차·도보는 별도 길안내 화면이 GPS 를 맡는다. 홈의 안내 상태(위치 폴링·위험 경고)는 꺼서 위치 추적기가 둘이 되지 않게 한다.
-    // 자전거·대중교통은 실시간 길안내를 지원하지 않아 기존처럼 홈에서 안내 상태만 보여준다.
+    // 자동차·도보·자전거는 별도 길안내 화면이 GPS 를 맡는다. 홈의 안내 상태(위치 폴링·위험 경고)는 꺼서 위치 추적기가 둘이 되지 않게 한다.
     const target = guidanceTargetOf(route.style);
     const search = lastSearchRef.current;
+    if (route.style === 'cycling' && search) {
+      setActiveRoute(null);
+      clearGuidanceRequest();
+      setRideRequest({ origin: search.origin, destination: search.destination, destinationLabel: search.label, mode: 'cycling', cycling: route });
+      router.push('/navigation');
+      return;
+    }
     if (target && search) {
       setActiveRoute(null);
+      clearRideRequest();
       setGuidanceRequest({ origin: search.origin, destination: search.destination, mode: target.mode, style: target.style, destinationLabel: search.label });
       router.push('/navigation');
       return;
@@ -1091,8 +1111,8 @@ export default function HomeScreen() {
             result={transitResult}
             category={transitCategory}
             onChangeCategory={setTransitCategory}
-            onPreview={(option) => mapRef.current?.showRoute(option.path)}
-            onStart={(option) => onStartGuidance(toStyledRoute(option))}
+            onPreview={(option) => showTransitRoute(mapRef.current, option)}
+            onStart={onStartTransitGuidance}
             t={t}
           />
         </BottomSheet>

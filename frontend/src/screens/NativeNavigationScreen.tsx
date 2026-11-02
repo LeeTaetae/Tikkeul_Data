@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import * as Speech from 'expo-speech';
+import { speaker, ttsDebug } from '../lib/speech/speaker';
+import { SPEECH_LOCALES, speechLanguageOf } from '../lib/speech/speechLocale';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { LANGUAGES } from '../i18n';
 import { checkGuidanceFix } from '../lib/location/guidanceFix';
 import { clearGuidanceRequest, getGuidanceRequest } from '../lib/navigation/guidanceSession';
 import { nativeNavigationRequest } from '../lib/navigation/nativeNavigationRequest';
-import { getNativeNavigationStatus, openNativeNavigation } from '../native/kakaoNavigation';
+import { getNativeNavigationStatus, openNativeNavigation, onNativeNavigationLanguageChanged } from '../native/kakaoNavigation';
 import type { NativeNavigationResult } from '../native/navigationTypes';
 import { colors, radius, space } from '../theme';
 
@@ -31,6 +31,7 @@ const FIX_TIMEOUT_MS = 15_000;
 
 export function NativeNavigationScreen() {
   const { t, i18n } = useTranslation();
+  useEffect(() => onNativeNavigationLanguageChanged(language => { void i18n.changeLanguage(language); }), [i18n]);
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -73,13 +74,15 @@ export function NativeNavigationScreen() {
       // 개발 빌드 전용: 네이티브 TikkeulNavGps 로그(SDK gpsOrigin·gpsMatched)와 비교할 Expo 측정값.
       if (__DEV__) console.warn('[native-nav] expo fix', { lat: fix.lat.toFixed(5), lng: fix.lng.toFixed(5), accuracyM: fix.accuracy, ageMs: Date.now() - fix.timestamp, problem });
       if (problem) throw Object.assign(new Error(`Current position is ${problem}`), { code: problem === 'inaccurate' ? 'GPS_INACCURATE' : 'GPS_UNAVAILABLE' });
-      await Speech.stop();
+      await speaker.stop('native-navigation-open');
+      // The native activity owns car speech: SDK recordings for Korean, Android TTS for English/Chinese.
+      ttsDebug({ stage: 'language', navigationMode: 'car', appLanguage: speechLanguageOf(i18n.language), ttsLanguage: SPEECH_LOCALES[speechLanguageOf(i18n.language)], engineLanguage: speechLanguageOf(i18n.language) === 'ko' ? 'kakao-sdk:recorded-voice' : 'android-tts', reason: 'Native car activity owns speech; actual voice language is logged under TikkeulVoice' });
       if (__DEV__) console.warn('[native-nav] step speech ok, opening'); // 임시 진단 로그: 확인 후 제거
       return openNativeNavigation({
         ...options,
         originLatitude: fix.lat,
         originLongitude: fix.lng,
-        language: LANGUAGES.find(lng => lng === i18n.language) ?? 'ko',
+        language: speechLanguageOf(i18n.language),
       });
     };
     // Reuse the in-flight call through React development effect replays. A second

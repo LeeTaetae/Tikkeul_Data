@@ -7,6 +7,14 @@ interface KakaoNavigationModule {
   // Android 빌드에만 있다(iOS 모듈과 이전 APK 에는 없다).
   getCarIcon?(): string;
   setCarIcon?(id: CarIconId): void;
+  addListener?(event: 'onLanguageChanged', listener: (event: { language: string }) => void): { remove(): void };
+}
+
+export function onNativeNavigationLanguageChanged(listener: (language: string) => void): () => void {
+  const module = nativeModule();
+  if (module?.getStatus().platform !== 'android') return () => {};
+  const subscription = module.addListener?.('onLanguageChanged', event => listener(event.language));
+  return () => subscription?.remove();
 }
 
 const nativeModule = () => requireOptionalNativeModule<KakaoNavigationModule>('KakaoNavigation');

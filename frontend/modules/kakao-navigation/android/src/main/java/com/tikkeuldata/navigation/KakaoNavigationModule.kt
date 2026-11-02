@@ -36,6 +36,7 @@ internal fun nativeKey(context: Context): String = context.packageManager
 
 // One SDK instance owns navigation. Resolve the JS call only after its UI closes.
 internal object NavigationSession {
+  var languageChanged: ((String) -> Unit)? = null
   private var promise: Promise? = null
   private var activity: WeakReference<Activity>? = null
   @Synchronized fun begin(value: Promise): Boolean {
@@ -62,7 +63,9 @@ internal object NavigationSession {
 class KakaoNavigationModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("KakaoNavigation")
-    OnDestroy { NavigationSession.dispose() }
+    Events("onLanguageChanged")
+    OnCreate { NavigationSession.languageChanged = { sendEvent("onLanguageChanged", mapOf("language" to it)) } }
+    OnDestroy { NavigationSession.languageChanged = null; NavigationSession.dispose() }
 
     Function("getStatus") {
       val context = appContext.reactContext

@@ -9,6 +9,7 @@ from typing import Optional, Set
 import httpx
 import pytest
 
+from app.navigation import providers as nav_providers
 from app.navigation import routers as nav_routers
 from app.navigation.config import Settings as NavSettings
 from app.navigation.schemas import LatLng, NearbyPlace, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption
@@ -233,6 +234,36 @@ def test_transit_routes_response_shape(nav_client):
     data = nav_client.post("/navigation/transit-routes", json=BODY).json()
     assert (data["total"], data["bus"], data["subway"], data["bus_and_subway"]) == (1, 0, 1, 0)
     assert set(data["routes"][0]) >= {"type", "distance_km", "duration_min", "transfers", "fare", "path", "steps"}
+
+
+def _kakao_transit_payload():
+    """실제 카카오 publictraffic 응답과 같은 모양: 지하철 - 환승 도보 - 지하철. 마지막 도보 구간은 좌표가 없다."""
+    def step(kind, guidance, points):
+        props = {"type": kind, "guidance": guidance, "distance": 100, "time": 60}
+        return {"properties": props, "path": {"points": points}}
+
+    steps = [
+        step("SUBWAY", "2호선 (A > B)", [[127.0, 37.5], [127.001, 37.5], [127.002, 37.5]]),
+        step("WALKING", "B 환승", [[127.002, 37.5], [127.003, 37.5]]),
+        step("SUBWAY", "3호선 (B > C)", [[127.003, 37.5], [127.004, 37.5], [127.005, 37.5], [127.006, 37.5]]),
+        step("WALKING", "도착지까지 도보", []),
+    ]
+    properties = {"type": "SUBWAY", "totalDistance": 400, "totalTime": 240, "transfers": 1, "fare": {"value": 1650}}
+    return {"properties": {"total": 1, "subway": 1}, "routes": [{"properties": properties, "steps": steps}]}
+
+
+def test_transit_routes_path_start_index_points_at_each_step_in_merged_path(monkeypatch):
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=_kakao_transit_payload()))
+    monkeypatch.setattr(nav_providers.httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport, **kwargs))
+    options, _ = asyncio.run(nav_providers.KakaoRoutingProvider("key").get_transit_routes(SEOUL, NEARBY))
+    option = options[0]
+    assert [s.path_start_index for s in option.steps] == [0, 3, 5, None]  # 좌표가 없는 구간은 null
+    # 인덱스가 가리키는 path 좌표가 그 구간의 첫 좌표다
+    first_points = [[127.0, 37.5], [127.002, 37.5], [127.003, 37.5]]
+    for step, expected in zip(option.steps, first_points):
+        if step.path_start_index is not None:
+            assert [option.path[step.path_start_index].lng, option.path[step.path_start_index].lat] == expected
 
 
 def test_reverse_geocode_and_failure_returns_null_address(nav_client):

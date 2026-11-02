@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { X } from 'lucide-react-native';
-import * as Speech from 'expo-speech';
 import { useTranslation } from 'react-i18next';
 
 import { localizeAlert } from '../../lib/localizeAlert';
-import { resolveVoiceId } from '../../lib/speechVoice';
+import { speaker } from '../../lib/speech/speaker';
+import { hazardSpeech, type Translate } from '../../lib/speech/speechText';
 import { formatTimeKst } from '../../lib/time';
 import type { HazardStage, HazardWarning } from '../../lib/useHazardWarning';
 import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../../theme';
@@ -22,7 +22,6 @@ const STAGE_PILL: Record<Exclude<HazardStage, 'advance'>, { bg: string; fg: stri
 };
 
 // TTS 음성 언어. i18n 언어 코드(ko/en/zh) → Speech locale.
-const SPEECH_LOCALE: Record<string, string> = { ko: 'ko-KR', en: 'en-US', zh: 'zh-CN' };
 
 // 좁은 화면에서 마지막 두 단어를 붙여, 글자 하나만 다음 줄로 떨어지지 않게 한다.
 const keepTail = (s: string) => s.replace(/ (\S+) (\S+)$/, ' $1 $2');
@@ -82,25 +81,26 @@ export function NavigationHazardAlert({ warning, onClose, bottomOffset = 0, onHe
 
   // 부모가 위험구간·단계마다 key 를 줘서 이 컴포넌트는 새 경고마다 새로 마운트된다.
   // 그래서 마운트 시 한 번만 읽으면 경고 단계가 바뀔 때마다(500m → 300m → 100m) 다시 읽힌다.
-  // 정리할 때 Speech.stop() 은 웹에서 speechSynthesis.cancel() 이라 "모든" 음성을 취소한다(턴 안내·과속방지턱·과속 경고 포함).
+  // 정리할 때 엔진의 stop() 은 웹에서 speechSynthesis.cancel() 이라 "모든" 음성을 취소한다(턴 안내·과속방지턱·과속 경고 포함).
+  // 그래서 speaker.stop()(예약까지 모두 취소)이 아니라 지금 읽는 음성만 끊는 speaker.stopSpeaking() 을 쓴다.
   // 그래서 이 경고의 음성이 아직 읽히는 중일 때만 멈춘다. 이미 끝났다면(onDone) 멈출 것이 없고, 부르면 다른 안내만 끊긴다.
   // 취소된 음성은 onDone 이 아니라 onError 로 끝나므로, 세 경우(끝남·중단·오류) 모두 "끝난 것"으로 본다.
+  // 읽는 문장: 한국어는 화면과 같은 문장, 영어·중국어는 거리를 읽는 말("500 meters", "500米")로 바꾼 같은 경고 문구(speechText.hazardSpeech).
   useEffect(() => {
     let cancelled = false;
     let spoke = false;
     let settled = false;
-    const locale = SPEECH_LOCALE[i18n.language] ?? SPEECH_LOCALE.ko;
-    resolveVoiceId(locale).then((voice) => {
-      if (cancelled) return;
-      spoke = true;
-      const settle = () => {
-        settled = true;
-      };
-      Speech.speak(messageText, { language: locale, voice, onDone: settle, onStopped: settle, onError: settle });
+    const settle = () => {
+      settled = true;
+    };
+    const spoken = hazardSpeech(message.key, warning.distanceM, messageText, i18n.language, t as Translate);
+    void speaker.speak(spoken, i18n.language, { source: 'hazard', onDone: settle, onStopped: settle, onError: settle, isCancelled: () => cancelled }).then((result) => {
+      spoke = result === 'spoken';
+      if (!spoke) settled = true; // 읽지 않았으니 정리할 것이 없다
     });
     return () => {
       cancelled = true;
-      if (spoke && !settled) Speech.stop();
+      if (spoke && !settled) void speaker.stopSpeaking();
     };
   }, []);
 

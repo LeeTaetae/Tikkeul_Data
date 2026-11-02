@@ -3,12 +3,15 @@ package com.tikkeuldata.navigation
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.Toast
+import android.widget.Button
+import androidx.appcompat.app.AlertDialog
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -16,6 +19,7 @@ import com.kakaomobility.knsdk.KNLanguageType
 import com.kakaomobility.knsdk.KNRouteAvoidOption
 import com.kakaomobility.knsdk.KNRoutePriority
 import com.kakaomobility.knsdk.KNSDK
+import com.kakaomobility.knsdk.common.soundplayer.KNSoundPlayer
 import com.kakaomobility.knsdk.common.objects.KNError
 import com.kakaomobility.knsdk.common.objects.KNPOI
 import com.kakaomobility.knsdk.guidance.knguidance.*
@@ -24,6 +28,7 @@ import com.kakaomobility.knsdk.guidance.knguidance.common.KNLocation
 import com.kakaomobility.knsdk.guidance.knguidance.locationguide.KNGuide_Location
 import com.kakaomobility.knsdk.guidance.knguidance.routeguide.KNGuide_Route
 import com.kakaomobility.knsdk.guidance.knguidance.routeguide.objects.KNMultiRouteInfo
+import com.kakaomobility.knsdk.guidance.knguidance.routeguide.objects.KNDirection
 import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.KNGuide_Safety
 import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.objects.KNSafety
 import com.kakaomobility.knsdk.guidance.knguidance.voiceguide.KNGuide_Voice
@@ -42,12 +47,23 @@ class KakaoNavigationActivity : AppCompatActivity(),
   companion object {
     private var sdkInstalled = false
     private var authenticatedKey: String? = null
+    private var authenticatedLanguage: KNLanguageType? = null
+
+    // SDK UI/map language is independent of the recorded voice container.
+    private fun sdkLanguage(code: String?): KNLanguageType = when (code) {
+      "en" -> KNLanguageType.KNLanguageType_ENGLISH
+      "zh" -> KNLanguageType.KNLanguageType_CHINESE
+      else -> KNLanguageType.KNLanguageType_KOREAN
+    }
   }
 
   private var naviView: KNNaviView? = null
   private var guidance: KNGuidance? = null
   private var sessionFinished = false
   private var picker: CarIconPicker? = null
+  private var voiceSpeaker: CarVoiceSpeaker? = null
+  private var voiceLanguage = "ko"
+  private var voiceFailureShown = false
   private lateinit var container: FrameLayout
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +74,16 @@ class KakaoNavigationActivity : AppCompatActivity(),
     container = FrameLayout(this)
     container.addView(ProgressBar(this), FrameLayout.LayoutParams(80, 80, Gravity.CENTER))
     setContentView(container)
+    voiceLanguage = intent.getStringExtra("language") ?: "ko"
+    voiceSpeaker = CarVoiceSpeaker(this) {
+      runOnUiThread {
+        if (!isFinishing && !voiceFailureShown) {
+          voiceFailureShown = true
+          val message = if (voiceLanguage == "zh") "无法使用中文离线语音。请在系统文字转语音设置中安装中文语音。" else "Offline English voice is unavailable. Install it in Android text-to-speech settings."
+          AlertDialog.Builder(this).setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+        }
+      }
+    }.also { it.setLanguage(voiceLanguage) }
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
         if (picker?.isOpen == true) { picker?.close(); return }
@@ -74,7 +100,12 @@ class KakaoNavigationActivity : AppCompatActivity(),
         sdkInstalled = true
       }
       val appKey = nativeKey(this)
-      if (authenticatedKey == appKey) {
+      val appLanguage = intent.getStringExtra("language") ?: "ko"
+      val language = sdkLanguage(appLanguage)
+      // 진단 로그(키·좌표 없음): adb logcat -s TikkeulVoice
+      Log.i("TikkeulVoice", "navigationMode=car appLanguage=$appLanguage sdkLanguage=$language initializedLanguage=$authenticatedLanguage")
+      // 같은 키라도 언어가 바뀌었으면 SDK 를 새 언어로 다시 초기화한다.
+      if (authenticatedKey == appKey && authenticatedLanguage == language) {
         requestTrip()
         return
       }
@@ -84,11 +115,11 @@ class KakaoNavigationActivity : AppCompatActivity(),
       }
       val version = packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0"
       // Positional arguments match the pinned SDK binary (csId, appUserId, language).
-      KNSDK.initializeWithAppKey(appKey, version, null, userId, KNLanguageType.KNLanguageType_KOREAN) { error ->
+      KNSDK.initializeWithAppKey(appKey, version, null, userId, language) { error ->
         runOnUiThread {
           if (isFinishing || isDestroyed) return@runOnUiThread
           if (error != null) fail("SDK_AUTH_FAILED", "Kakao SDK authentication failed: ${error.code}")
-          else { authenticatedKey = appKey; requestTrip() }
+          else { authenticatedKey = appKey; authenticatedLanguage = language; requestTrip() }
         }
       }
     } catch (error: Exception) { fail("SDK_INIT_FAILED", error.localizedMessage ?: "SDK initialization failed") }
@@ -148,11 +179,42 @@ class KakaoNavigationActivity : AppCompatActivity(),
         // The car icon is cosmetic: any failure keeps the SDK marker and must never block guidance.
         runCatching { CarIcons.apply(view, CarIcons.get(this)) }
         view.initWithGuidance(active, trip, priority, avoid)
+        Log.i("TikkeulVoice", "stage=guidance-init build=car-tts-v1 appLanguage=$voiceLanguage recordedLanguage=${active.sndContainer?.langType} engine=${if (voiceLanguage == "ko") "sdk" else "android-tts"}")
+        attachVoiceLanguageButton()
         runCatching {
           picker = CarIconPicker(this, intent.getStringExtra("language") ?: "ko", ::changeCarIcon).also { it.attach(container) }
         }
       }
     }
+  }
+
+  private fun attachVoiceLanguageButton() {
+    val button = Button(this).apply {
+      text = "한국어 / EN / 中文"
+      contentDescription = "Voice language / 안내 언어 / 语音语言"
+      setOnClickListener {
+        AlertDialog.Builder(this@KakaoNavigationActivity)
+          .setTitle("안내 언어 / Voice language / 语音语言")
+          .setSingleChoiceItems(arrayOf("한국어", "English", "中文"), listOf("ko", "en", "zh").indexOf(voiceLanguage)) { dialog, index ->
+            changeVoiceLanguage(listOf("ko", "en", "zh")[index])
+            dialog.dismiss()
+          }.show()
+      }
+    }
+    container.addView(button, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, (48 * resources.displayMetrics.density).toInt(), Gravity.END or Gravity.CENTER_VERTICAL))
+  }
+
+  internal fun changeVoiceLanguage(language: String) {
+    if (language !in listOf("ko", "en", "zh") || language == voiceLanguage) return
+    runCatching { KNSoundPlayer.stopAllSound() }
+    voiceLanguage = language
+    intent.putExtra("language", language)
+    voiceFailureShown = false
+    voiceSpeaker?.setLanguage(language)
+    KNSDK.setLanguageType(sdkLanguage(language))
+    authenticatedLanguage = sdkLanguage(language)
+    NavigationSession.languageChanged?.invoke(language)
+    Log.i("TikkeulVoice", "stage=language-change appLanguage=$language recordedLanguage=${guidance?.sndContainer?.langType}")
   }
 
   // Changing the icon only swaps the marker images; the trip, guidance and route state are untouched.
@@ -188,6 +250,7 @@ class KakaoNavigationActivity : AppCompatActivity(),
   }
 
   override fun onDestroy() {
+    voiceSpeaker?.close()
     guidance?.apply {
       guideStateDelegate = null
       locationGuideDelegate = null
@@ -208,12 +271,12 @@ class KakaoNavigationActivity : AppCompatActivity(),
   override fun naviViewGuideEnded() = closeSession()
 
   // Forward all guidance delegates to the official UI; do not run the JS guidance engine in parallel.
-  override fun guidanceGuideStarted(g: KNGuidance) { naviView?.guidanceGuideStarted(g) }
+  override fun guidanceGuideStarted(g: KNGuidance) { Log.i("TikkeulVoice", "stage=guide-start language=$voiceLanguage"); naviView?.guidanceGuideStarted(g) }
   override fun guidanceCheckingRouteChange(g: KNGuidance) { naviView?.guidanceCheckingRouteChange(g) }
   override fun guidanceRouteUnchanged(g: KNGuidance) { naviView?.guidanceRouteUnchanged(g) }
   override fun guidanceRouteUnchangedWithError(g: KNGuidance, error: KNError) { naviView?.guidanceRouteUnchangedWithError(g, error) }
   override fun guidanceOutOfRoute(g: KNGuidance) { naviView?.guidanceOutOfRoute(g) }
-  override fun guidanceRouteChanged(g: KNGuidance, fromRoute: KNRoute, fromLocation: KNLocation, toRoute: KNRoute, toLocation: KNLocation, reason: KNGuideRouteChangeReason) { naviView?.guidanceRouteChanged(g) }
+  override fun guidanceRouteChanged(g: KNGuidance, fromRoute: KNRoute, fromLocation: KNLocation, toRoute: KNRoute, toLocation: KNLocation, reason: KNGuideRouteChangeReason) { voiceSpeaker?.stop(); Log.i("TikkeulVoice", "stage=reroute language=$voiceLanguage reason=$reason"); naviView?.guidanceRouteChanged(g) }
   override fun guidanceGuideEnded(g: KNGuidance) { naviView?.guidanceGuideEnded(g, true) }
   override fun guidanceDidUpdateRoutes(g: KNGuidance, routes: List<KNRoute>, info: KNMultiRouteInfo?) { naviView?.guidanceDidUpdateRoutes(g, routes, info) }
   override fun guidanceDidUpdateIndoorRoute(g: KNGuidance, route: KNRoute?) { naviView?.guidanceDidUpdateIndoorRoute(g, route) }
@@ -224,7 +287,16 @@ class KakaoNavigationActivity : AppCompatActivity(),
   override fun guidanceDidUpdateRouteGuide(g: KNGuidance, route: KNGuide_Route) { naviView?.guidanceDidUpdateRouteGuide(g, route) }
   override fun guidanceDidUpdateSafetyGuide(g: KNGuidance, safety: KNGuide_Safety?) { naviView?.guidanceDidUpdateSafetyGuide(g, safety) }
   override fun guidanceDidUpdateAroundSafeties(g: KNGuidance, safeties: List<KNSafety>?) { naviView?.guidanceDidUpdateAroundSafeties(g, safeties) }
-  override fun shouldPlayVoiceGuide(g: KNGuidance, voice: KNGuide_Voice, data: MutableList<ByteArray>): Boolean = naviView?.shouldPlayVoiceGuide(g, voice, data) ?: false
+  override fun shouldPlayVoiceGuide(g: KNGuidance, voice: KNGuide_Voice, data: MutableList<ByteArray>): Boolean {
+    val allowed = naviView?.shouldPlayVoiceGuide(g, voice, data) ?: false
+    if (voiceLanguage == "ko" || !allowed) return allowed
+    val event = voice.voiceCode.name
+    val text = CarVoiceText.text(voiceLanguage, event, (voice.guideObj as? KNDirection)?.rgCode?.name,
+      (voice.guideObj as? KNSafety)?.code?.name, voice.voiceDist.name == "KNVoiceDist_AtPos")
+    Log.i("TikkeulVoice", "stage=voice-event language=$voiceLanguage event=$event distance=${voice.voiceDist} translated=${text != null} sdkSpeech=false")
+    if (text != null) voiceSpeaker?.speak(text)
+    return event in listOf("KNVoiceCode_Alram", "KNVoiceCode_Alert", "KNVoiceCode_LinkSound")
+  }
   override fun willPlayVoiceGuide(g: KNGuidance, voice: KNGuide_Voice) { naviView?.willPlayVoiceGuide(g, voice) }
   override fun didFinishPlayVoiceGuide(g: KNGuidance, voice: KNGuide_Voice) { naviView?.didFinishPlayVoiceGuide(g, voice) }
   override fun didUpdateCitsGuide(g: KNGuidance, cits: KNGuide_Cits) { naviView?.didUpdateCitsGuide(g, cits) }
