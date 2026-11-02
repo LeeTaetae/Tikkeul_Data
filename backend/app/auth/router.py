@@ -81,7 +81,7 @@ def signup(body: SignupRequest, request: Request) -> TokenResponse:
         session.refresh(user)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
         )
 
 
@@ -95,7 +95,7 @@ def login(body: LoginRequest, request: Request) -> TokenResponse:
         token = create_access_token(user.id, settings)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
         )
 
 
@@ -113,7 +113,7 @@ def check_email(email: str, request: Request) -> EmailAvailability:
 
 @router.get("/me", response_model=UserPublic)
 def me(user: User = Depends(get_current_user)) -> UserPublic:
-    return UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+    return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
 
 
 @router.post("/send-verification", response_model=SendVerificationResponse)
@@ -145,4 +145,4 @@ def verify_email(token: str, request: Request) -> UserPublic:
         session.add(user)
         session.commit()
         session.refresh(user)
-        return UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+        return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)

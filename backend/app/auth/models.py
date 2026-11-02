@@ -11,8 +11,10 @@ def _utcnow() -> datetime:
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(index=True, unique=True)
-    password_hash: str
+    provider: str = Field(default="local")
+    provider_id: Optional[str] = Field(default=None, index=True)
+    email: Optional[str] = Field(default=None, index=True)
+    password_hash: Optional[str] = Field(default=None)
     email_verified: bool = Field(default=False)
     created_at: datetime = Field(default_factory=_utcnow)
 
@@ -66,7 +68,9 @@ class LoginRequest(SQLModel):
 
 class UserPublic(SQLModel):
     id: int
-    email: str
+    provider: str
+    email: Optional[str]
+    nickname: Optional[str] = None
     email_verified: bool
     created_at: datetime
 
