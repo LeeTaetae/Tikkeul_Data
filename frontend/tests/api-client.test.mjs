@@ -107,6 +107,37 @@ test('loginKakao 요청 조립: POST /api/auth/social/kakao 에 { access_token }
   assert.equal(seenInit.body, JSON.stringify({ access_token: 'fake-access-token' }));
 });
 
+// authApi.sendPasswordResetCode/verifyPasswordResetCode/resetPassword 도 동일한 제약(react-native 의존)으로 client.ts 조립 결과만 검증한다.
+test('sendPasswordResetCode 요청 조립: POST /api/auth/password-reset/send-code 에 { email } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ sent: true, challenge: null, social_only: false })));
+  await client.post('/api/auth/password-reset/send-code', { email: 'a@b.com' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/password-reset/send-code');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ email: 'a@b.com' }));
+});
+
+test('verifyPasswordResetCode 요청 조립: POST /api/auth/password-reset/verify-code 에 { email, code, challenge } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ verified: true, token: 'tok' })));
+  await client.post('/api/auth/password-reset/verify-code', { email: 'a@b.com', code: '123456', challenge: 'ch' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/password-reset/verify-code');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ email: 'a@b.com', code: '123456', challenge: 'ch' }));
+});
+
+test('resetPassword 요청 조립: POST /api/auth/password-reset 에 { token, new_password } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ id: 1 })));
+  await client.post('/api/auth/password-reset', { token: 'tok', new_password: 'newpassword1' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/password-reset');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ token: 'tok', new_password: 'newpassword1' }));
+});
+
 test('token 옵션을 주면 Authorization 헤더가 붙는다', async () => {
   let seen = null;
   const client = clientWith(async (url, init) => ((seen = init), json({ ok: true })));

@@ -37,4 +37,11 @@ export const authApi = {
     client.post<{ sent: boolean; challenge: string }>('/api/auth/signup/send-code', { email }, options),
   verifySignupCode: (email: string, code: string, challenge: string, options?: RequestOptions) =>
     client.post<{ verified: boolean; token: string }>('/api/auth/signup/verify-code', { email, code, challenge }, options),
+  // 비밀번호 재설정: 코드 발송(계정 존재 여부는 숨김) -> 코드 확인(token 발급) -> 재설정(token + 새 비밀번호).
+  sendPasswordResetCode: (email: string, options?: RequestOptions) =>
+    client.post<{ sent: boolean; challenge: string | null; social_only: boolean }>('/api/auth/password-reset/send-code', { email }, options),
+  verifyPasswordResetCode: (email: string, code: string, challenge: string, options?: RequestOptions) =>
+    client.post<{ verified: boolean; token: string }>('/api/auth/password-reset/verify-code', { email, code, challenge }, options),
+  resetPassword: (token: string, newPassword: string, options?: RequestOptions) =>
+    client.post<AuthUser>('/api/auth/password-reset', { token, new_password: newPassword }, options),
 };

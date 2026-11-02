@@ -116,6 +116,9 @@ export default function LoginScreen() {
           onSubmitEditing={onSubmit}
           error={error ?? undefined}
         />
+        <Text style={styles.forgotPassword} onPress={() => router.push('/forgot-password')}>
+          {t('auth.forgotPassword')}
+        </Text>
       </View>
 
       <PrimaryButton
@@ -177,4 +180,5 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', justifyContent: 'center', gap: space.xs, paddingTop: space.sm },
   footerText: { fontSize: 14, color: colors.muted },
   link: { fontSize: 14, fontWeight: '800', color: colors.brand },
+  forgotPassword: { fontSize: 13, fontWeight: '700', color: colors.brand, alignSelf: 'flex-end' },
 });
