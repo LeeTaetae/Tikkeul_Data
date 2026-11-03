@@ -52,7 +52,7 @@ export function VisionHazardAlert({ hazardClass, stage, onClose }: Props) {
 
 const styles = StyleSheet.create({
   layer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 3,
     justifyContent: 'flex-end',
     alignItems: 'center',
