@@ -503,8 +503,8 @@ export default function HomeScreen() {
     if (travelMode === 'transit') {
       const [transit, originAddressValue, destinationAddressValue] = await Promise.all([
         fetchTransitRoutes(origin, destinationPoint),
-        fetchAddress(origin),
-        fetchAddress(destinationPoint),
+        fetchAddress(origin, i18n.language),
+        fetchAddress(destinationPoint, i18n.language),
       ]);
       setOriginAddress(originAddressValue);
       setDestinationAddress(destinationAddressValue);
@@ -528,8 +528,8 @@ export default function HomeScreen() {
         ? // Tmap 5가지 스타일이 실패(한도 초과 429 → 503 등)하면 /navigation/route 의 추천 경로 하나로 대신한다.
           fetchRouteStyles(origin, destinationPoint).then((styles) => styles ?? fetchBestRoute(origin, destinationPoint))
         : fetchModeRoute(origin, destinationPoint, travelMode),
-      fetchAddress(origin),
-      fetchAddress(destinationPoint),
+      fetchAddress(origin, i18n.language),
+      fetchAddress(destinationPoint, i18n.language),
     ]);
     setOriginAddress(originAddressValue);
     setDestinationAddress(destinationAddressValue);
@@ -772,7 +772,7 @@ export default function HomeScreen() {
     setPickedPoint(null);
     setPlannerOpen(true);
     destinationInputRef.current?.focus();
-    fetchAddress(origin).then((address) => setOriginAddress(address));
+    fetchAddress(origin, i18n.language).then((address) => setOriginAddress(address));
   };
 
   // 지도에서 고른 위치를 도착지로 지정하고, 검색 결과(경로 스타일 선택지)를 보여준다.

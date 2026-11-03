@@ -67,6 +67,17 @@ async def translate_places_to_language(
     ]
 
 
+# 역지오코딩 주소(경로 선택 화면 상단 출발지/도착지 라벨)도 같은 이유로 화면 언어로 번역한다.
+async def translate_address_to_language(address: Optional[str], lang: Optional[str], client_id: str, client_secret: str) -> Optional[str]:
+    target = _RESULT_LANG_TO_PAPAGO_TARGET.get(lang or "")
+    if not target or not client_id or not client_secret or not address:
+        return address
+    try:
+        return await _papago_translate(address, "ko", target, client_id, client_secret)
+    except Exception:
+        return address
+
+
 logger = logging.getLogger(__name__)
 
 # 카카오 로컬의 전체 카테고리 그룹 코드(developers.kakao.com/docs/latest/ko/local/dev-guide#search-by-category).

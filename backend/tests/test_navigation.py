@@ -718,3 +718,22 @@ def test_translate_places_to_language_skips_korean_and_falls_back_on_line_mismat
     assert asyncio.run(translate_places_to_language(places, "ko", "id", "secret")) == places
     assert asyncio.run(translate_places_to_language(places, None, "id", "secret")) == places
     assert asyncio.run(translate_places_to_language(places, "en", "", "")) == places
+
+
+def test_translate_address_to_language_translates_only_for_en_or_zh(monkeypatch):
+    from app.navigation.providers import translate_address_to_language
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"result": {"translatedText": "Gangnam Station"}}})
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    assert asyncio.run(translate_address_to_language("강남역", "en", "id", "secret")) == "Gangnam Station"
+    assert asyncio.run(translate_address_to_language("강남역", "ko", "id", "secret")) == "강남역"
+    assert asyncio.run(translate_address_to_language("강남역", None, "id", "secret")) == "강남역"
+    assert asyncio.run(translate_address_to_language(None, "en", "id", "secret")) is None
+    assert asyncio.run(translate_address_to_language("강남역", "en", "", "")) == "강남역"

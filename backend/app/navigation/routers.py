@@ -8,6 +8,7 @@ from .providers import (
     KakaoRoutingProvider,
     NaverProvider,
     TmapProvider,
+    translate_address_to_language,
     translate_chinese_query_to_korean,
     translate_places_to_language,
 )
@@ -158,11 +159,12 @@ async def get_place_at_point(lat: float, lng: float, radius_m: int = 60) -> Plac
 
 
 @geocode_router.get("/reverse", response_model=ReverseGeocodeResponse)
-async def get_reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResponse:
+async def get_reverse_geocode(lat: float, lng: float, lang: Optional[str] = None) -> ReverseGeocodeResponse:
     settings = get_settings()
     kakao = KakaoRoutingProvider(settings.kakao_rest_api_key)
     try:
         address = await kakao.reverse_geocode(LatLng(lat=lat, lng=lng))
     except Exception:
         address = None
+    address = await translate_address_to_language(address, lang, settings.papago_client_id, settings.papago_client_secret)
     return ReverseGeocodeResponse(address=address)
