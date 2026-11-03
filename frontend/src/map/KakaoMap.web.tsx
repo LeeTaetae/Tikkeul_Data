@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { KAKAO_JS_KEY } from '../lib/config';
 import { carOffsetPx, headingUpOffsetPx, unwrapAngle } from '../lib/navigation/drivingCamera';
 import { colors, radius, space } from '../theme';
-import type { KakaoMapHandle, MapInsets, RoutePoint } from './types';
+import type { KakaoMapHandle, MapInsets, MapRouteSegment, RoutePoint } from './types';
 
 interface KakaoMapInstance {
   relayout: () => void;
@@ -179,6 +179,8 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
   const polylineRef = useRef<KakaoPolyline | null>(null);
   // 주행 스타일 경로의 흰 테두리 선(코어 선 polylineRef 아래에 깔린다). 둘은 항상 같은 좌표를 가진다.
   const casingRef = useRef<KakaoPolyline | null>(null);
+  // 구간별 색 경로선(showRouteSegments). clearRoute 가 함께 지운다.
+  const segmentLinesRef = useRef<KakaoPolyline[]>([]);
   const destinationRef = useRef<KakaoOverlay | null>(null);
   const placeOverlaysRef = useRef<KakaoOverlay[]>([]);
   const markerKindRef = useRef<'dot' | 'arrow'>('dot');
@@ -240,6 +242,8 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
     casingRef.current = null;
     polylineRef.current?.setMap(null);
     polylineRef.current = null;
+    segmentLinesRef.current.forEach((line) => line.setMap(null));
+    segmentLinesRef.current = [];
   };
 
   // 현재 위치 점을 만들거나 옮긴다.
@@ -409,6 +413,32 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
     map.setBounds(bounds);
   };
 
+  // 구간마다 색·선 모양이 다른 경로선. 도보·환승은 점선이다. 좌표는 받은 그대로 쓴다.
+  const showRouteSegments = (segments: MapRouteSegment[], options?: { fit?: boolean }) => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    if (!kakao || !map || segments.length === 0) return;
+
+    clearRoute();
+    const bounds = new kakao.maps.LatLngBounds();
+    segments.forEach((segment) => {
+      if (segment.path.length < 2) return;
+      const points = toLatLngs(segment.path);
+      // strokeStyle 은 카카오 SDK 옵션이지만 전역 타입 선언(같은 선언이 artifacts 사본에도 있다)에는 넣지 않았다. 변수로 넘기면 타입 검사를 통과한다.
+      const lineOptions = {
+        map,
+        path: points,
+        strokeWeight: segment.dashed ? 4 : 6,
+        strokeColor: segment.color,
+        strokeOpacity: segment.dashed ? 0.9 : 0.95,
+        strokeStyle: segment.dashed ? 'dash' : 'solid',
+      };
+      segmentLinesRef.current.push(new kakao.maps.Polyline(lineOptions));
+      points.forEach((point) => bounds.extend(point));
+    });
+    if (options?.fit !== false) map.setBounds(bounds);
+  };
+
   const setRoutePath = (path: RoutePoint[]) => {
     if (!window.kakao || !polylineRef.current || path.length === 0) return;
     const points = toLatLngs(path);
@@ -445,7 +475,7 @@ export function KakaoMap({ ref, onMapClick, autoLocate = true, onUserPan, onRead
     else map.panTo(next);
   };
 
-  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, setRoutePath, clearRoute, setDestination, setLocationMarker, panTo, followTo, showPlaces, clearPlaces }));
+  useImperativeHandle(ref, () => ({ moveToMyLocation: () => locate(true), showRoute, showRouteSegments, setRoutePath, clearRoute, setDestination, setLocationMarker, panTo, followTo, showPlaces, clearPlaces }));
 
   useEffect(() => {
     const viewport = viewportRef.current;

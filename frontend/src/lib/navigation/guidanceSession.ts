@@ -1,6 +1,6 @@
 // 홈에서 고른 안내 조건을 길안내 화면으로 넘기는 메모리 저장소. 다른 모듈을 런타임 import 하지 않는 순수 코드라 Node 로도 테스트한다.
 // 좌표는 위치정보라 URL 파라미터에 싣지 않는다. 새로고침하면 사라지고, 그때 길안내 화면은 "안내할 경로 없음"을 보여준다.
-import type { DrivingStyle, RouteStyle } from '../../map/navigationApi';
+import type { DrivingStyle, RouteStyle, StyledRoute, TransitRouteOption } from '../../map/navigationApi';
 import type { RoutePoint } from '../../map/types';
 import type { GuidanceMode } from './guidanceEngine';
 
@@ -36,4 +36,28 @@ export function getGuidanceRequest(): GuidanceRequest | null {
 
 export function clearGuidanceRequest(): void {
   current = null;
+}
+
+/**
+ * 자전거·대중교통 길안내 요청. 자동차·도보(GuidanceRequest)와 따로 둬서 그쪽 화면이 새 이동수단을 만나지 않게 한다.
+ * 사용자가 목록에서 고른, 이미 받은 경로를 그대로 넘긴다(다시 받으면 다른 옵션이 될 수 있다).
+ */
+export type RideRequest = {
+  origin: RoutePoint;
+  destination: RoutePoint;
+  destinationLabel: string;
+} & ({ mode: 'cycling'; cycling: StyledRoute } | { mode: 'transit'; transit: TransitRouteOption });
+
+let currentRide: RideRequest | null = null;
+
+export function setRideRequest(request: RideRequest): void {
+  currentRide = request;
+}
+
+export function getRideRequest(): RideRequest | null {
+  return currentRide;
+}
+
+export function clearRideRequest(): void {
+  currentRide = null;
 }

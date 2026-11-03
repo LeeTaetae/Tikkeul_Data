@@ -28,6 +28,7 @@ export function kakaoMapHtml(appKey: string): string {
     var destinationOverlay = null;
     var polyline = null;
     var casing = null;
+    var segmentLines = [];
     var placeOverlays = [];
 
     function toLatLngs(path) {
@@ -112,6 +113,23 @@ export function kakaoMapHtml(appKey: string): string {
         casing = null;
         if (polyline) polyline.setMap(null);
         polyline = null;
+        segmentLines.forEach(function (line) { line.setMap(null); });
+        segmentLines = [];
+      },
+      showRouteSegments: function (segments, options) {
+        if (!map || !segments || segments.length === 0) return;
+        window.KMAP.clearRoute();
+        var bounds = new kakao.maps.LatLngBounds();
+        segments.forEach(function (segment) {
+          if (!segment.path || segment.path.length < 2) return;
+          var points = toLatLngs(segment.path);
+          segmentLines.push(new kakao.maps.Polyline({
+            map: map, path: points, strokeWeight: segment.dashed ? 4 : 6, strokeColor: segment.color,
+            strokeOpacity: segment.dashed ? 0.9 : 0.95, strokeStyle: segment.dashed ? 'dash' : 'solid',
+          }));
+          points.forEach(function (p) { bounds.extend(p); });
+        });
+        if (!options || options.fit !== false) map.setBounds(bounds);
       },
       showRoute: function (path, options) {
         if (!map || !path || path.length === 0) return;

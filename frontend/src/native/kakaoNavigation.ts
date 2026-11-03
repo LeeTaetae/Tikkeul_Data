@@ -12,6 +12,10 @@ export function getCarIcon(): CarIconId | null {
 
 export function setCarIcon(_id: CarIconId): void {}
 
+export function onNativeNavigationLanguageChanged(_listener: (language: string) => void): () => void {
+  return () => {};
+}
+
 export async function openNativeNavigation(_options: NativeNavigationOptions): Promise<NativeNavigationResult> {
   throw Object.assign(new Error('Native navigation is available in an Android/iOS development build'), { code: 'NATIVE_BUILD_REQUIRED' });
 }

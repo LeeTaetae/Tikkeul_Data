@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -19,6 +20,9 @@ from app.db import create_db_and_tables, make_engine
 from app.errors import ApiError
 from app.favorites.router import router as favorites_router
 from app.navigation.routers import geocode_router, places_router, router as navigation_router
+from app.navigation.bus_seoul import seoul_matching_enabled
+from app.navigation.bus_tago import bus_matching_enabled, warm_up_bus_routes
+from app.navigation.stations import station_status
 from app.routers import geo, traffic
 from app.service import TrafficService
 from app.trips.router import router as trips_router
@@ -61,7 +65,9 @@ def create_app(
         app.state.signup_code_cooldown = ResendCooldown(cooldown_s=30.0)
         app.state.signup_code_attempts = AttemptLimiter(max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
         create_db_and_tables(app.state.db_engine)
+        warm_task = asyncio.ensure_future(warm_up_bus_routes())  # 키가 없으면 바로 끝난다
         yield
+        warm_task.cancel()
         if http_client is None:
             await client.aclose()
 
@@ -77,7 +83,8 @@ def create_app(
     @app.get("/api/health", tags=["health"])
     async def health():
         # 키 값이 아니라 설정 여부(true/false)만 알려준다.
-        return {"status": "ok", "configured": {name: settings.secret(name) is not None for name in _KEY_NAMES}}
+        # stations: 지하철 정거장 좌표 데이터의 건수와 로딩 실패 여부(배포 후 파일이 올라갔는지 확인용). 값이 0 이어도 status 는 ok 다.
+        return {"status": "ok", "configured": {name: settings.secret(name) is not None for name in _KEY_NAMES}, "stations": {**station_status(), "bus_matching_enabled": bus_matching_enabled(), "seoul_bus_matching_enabled": seoul_matching_enabled()}}
 
     # 내비게이션 PoC 와 같은 경로(/health). Render 상태 확인과 기존 PoC 호출자용.
     @app.get("/health", tags=["health"])

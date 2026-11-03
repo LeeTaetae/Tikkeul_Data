@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     naver_client_id: str = ""
     naver_client_secret: str = ""
     kakao_rest_api_key: str = ""
+    # 국토교통부 TAGO 버스노선정보 인증키(data.go.kr). 없으면 버스 노선 매칭을 끄고 모든 버스 필드가 null 이다. 코드·Git 에 넣지 않는다.
+    tago_service_key: str = ""
+    # 서울특별시 노선정보조회(data.go.kr 15000193) 인증키. 없으면 서울 버스 매칭을 끄고 TAGO 만 쓴다. 코드·Git 에 넣지 않는다.
+    seoul_bus_service_key: str = ""
 
 
 @lru_cache()

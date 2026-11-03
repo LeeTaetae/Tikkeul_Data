@@ -1,6 +1,7 @@
 import { fetchWithTimeout } from '../lib/api/fetchTimeout';
 import { API_BASE_URL } from '../lib/config';
 import { buildRouteBody, parseBestRoute, parseRoutes, type RouteGuide, type RouteRequestOptions } from './parseRoutes';
+import { parseTransitVehicle } from './parseTransitVehicle';
 import type { RoutePoint } from './types';
 
 export type { RouteGuide } from './parseRoutes';
@@ -132,10 +133,20 @@ export async function fetchGuidanceRoute(
 export interface TransitVehicle {
   name: string;
   type: string | null;
+  /** 버스만: 공식 노선 데이터(국토교통부 TAGO · 서울 노선정보조회)와 서버가 확정한 경우에만 값이 있다. 확정하지 못했거나 옛 서버면 null */
+  routeId: string | null;
+  /** 노선이 등록된 시·도 (seoul, incheon, gyeonggi ...) */
+  operatorRegion: string | null;
+  /** 공식 노선 유형 그대로 (TAGO: 간선버스, 일반버스 ... / 서울: 간선, 지선, 순환, 광역, 마을). 서울 API 로만 채운 경기·인천 노선은 유형을 몰라 null */
+  routeClass: string | null;
 }
 
 export interface TransitStop {
   name: string;
+  /** 공식 좌표 데이터와 매칭된 정거장만 값이 있다(지금은 지하철만). 매칭하지 못했거나 옛 서버면 null */
+  lat: number | null;
+  lng: number | null;
+  matchConfidence: 'high' | 'medium' | null;
 }
 
 // 구간 하나 — 도보 한 토막, 또는 버스/지하철 한 번 타는 구간. 몇 호선·몇 번 버스를 어디서 타고 내리는지
@@ -146,6 +157,8 @@ export interface TransitStep {
   timeSec: number;
   stops: TransitStop[];
   vehicles: TransitVehicle[];
+  /** 합쳐진 path 에서 이 구간의 첫 좌표 위치. 서버가 구간 좌표를 주지 않았거나 옛 서버면 없다(만들어내지 않는다) */
+  pathStartIndex?: number;
 }
 
 export interface TransitRouteOption {
@@ -165,6 +178,17 @@ export interface TransitRoutesResult {
   subway: number;
   busAndSubway: number;
   routes: TransitRouteOption[];
+}
+
+// 좌표는 숫자 두 개와 서버가 검증한 신뢰도(high/medium)가 모두 있을 때만 믿는다. 하나라도 빠지면 좌표를 버린다(채워 넣지 않는다).
+function parseTransitStop(raw: any): TransitStop {
+  const trusted = Number.isFinite(raw?.lat) && Number.isFinite(raw?.lng) && (raw.match_confidence === 'high' || raw.match_confidence === 'medium');
+  return {
+    name: typeof raw?.name === 'string' ? raw.name : '',
+    lat: trusted ? raw.lat : null,
+    lng: trusted ? raw.lng : null,
+    matchConfidence: trusted ? raw.match_confidence : null,
+  };
 }
 
 function parseTransitRoutes(data: unknown): TransitRoutesResult | null {
@@ -188,8 +212,9 @@ function parseTransitRoutes(data: unknown): TransitRoutesResult | null {
             type: s.type,
             distanceM: s.distance_m,
             timeSec: s.time_sec,
-            stops: Array.isArray(s.stops) ? s.stops : [],
-            vehicles: Array.isArray(s.vehicles) ? s.vehicles : [],
+            stops: Array.isArray(s.stops) ? s.stops.map(parseTransitStop) : [],
+            vehicles: Array.isArray(s.vehicles) ? s.vehicles.map(parseTransitVehicle) : [],
+            ...(Number.isInteger(s.path_start_index) && s.path_start_index >= 0 ? { pathStartIndex: s.path_start_index } : {}),
           }))
         : [],
     })),

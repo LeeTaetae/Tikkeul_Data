@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { withAndroidManifest, withDangerousMod, withInfoPlist, withProjectBuildGradle, createRunOncePlugin } = require('expo/config-plugins');
+const { withAndroidManifest, withDangerousMod, withInfoPlist, withProjectBuildGradle, withAppBuildGradle, createRunOncePlugin } = require('expo/config-plugins');
 
 const repositories = [
   'https://devrepo.kakaomobility.com/repository/kakao-mobility-android-knsdk-public/',
@@ -23,6 +23,13 @@ function withKakaoNavigation(config) {
   config = withProjectBuildGradle(config, mod => {
     if (!mod.modResults.contents.includes('// tikkeul-kakao-navigation repositories')) {
       mod.modResults.contents += `\n// tikkeul-kakao-navigation repositories\nallprojects {\n  repositories {\n${repositories.map(url => `    maven { url '${url}' }`).join('\n')}\n  }\n}\n`;
+    }
+    return mod;
+  });
+  config = withAppBuildGradle(config, mod => {
+    const marker = '// tikkeul-navigation: Windows CMake object paths';
+    if (!mod.modResults.contents.includes(marker)) {
+      mod.modResults.contents += `\n${marker}\nif (System.getProperty('os.name').toLowerCase().contains('windows')) {\n    android.defaultConfig.externalNativeBuild.cmake.arguments '-DCMAKE_UNITY_BUILD=ON', '-DCMAKE_UNITY_BUILD_BATCH_SIZE=1', '-DCMAKE_OBJECT_PATH_MAX=128'\n}\n`;
     }
     return mod;
   });

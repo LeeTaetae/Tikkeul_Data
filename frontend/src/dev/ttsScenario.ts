@@ -1,6 +1,7 @@
 // 개발 전용: 음성(TTS) 충돌 확인용 짧은 가상 경로. /navigation?test=tts 에서만 쓴다(__DEV__). 실제 위험·실제 안내가 아니다.
 // 시속 약 50km(초속 14m)로 실시간 재생한다. 경로 600m 지점에서 위험 경고(최종 단계), 턴 안내, 과속방지턱, 보호구역 과속 경고가
 // 같은 순간에 겹치도록 일부러 한곳에 모았다. 문구에 "(테스트)"를 붙여 구분한다.
+import type { RouteGuide } from '../map/parseRoutes';
 import type { RoadAlert } from '../types/alert';
 
 const M_PER_DEG = 111_320;
@@ -16,6 +17,22 @@ export const TTS_TEST_INSTRUCTIONS = [
   { text: '(테스트) 600m 지점 턴 안내입니다', point: at(600) },
   { text: '(테스트) 마지막 안내입니다', point: at(820) },
 ];
+
+/**
+ * 위 안내 문구에 대응하는 안내 지점(우회전·좌회전·도착). 영어·중국어 음성은 한국어 원문 대신 이 회전 종류로 문장을 만든다.
+ * 음성 훅에만 넘긴다: 경로(route.guides)에는 넣지 않아서 이 시나리오의 엔진·화면 동작은 그대로다.
+ */
+export const TTS_TEST_GUIDES: RouteGuide[] = TTS_TEST_INSTRUCTIONS.map((instruction, i) => ({
+  index: i,
+  lat: instruction.point.lat,
+  lng: instruction.point.lng,
+  pathIndex: 0,
+  turnType: [13, 12, 201][i],
+  pointType: i === 2 ? 'E' : 'N',
+  description: instruction.text,
+  name: '',
+  nextRoadName: '',
+}));
 
 export const TTS_TEST_SPEED_BUMPS = [{ lat: at(600).lat, lng: at(600).lng }];
 
