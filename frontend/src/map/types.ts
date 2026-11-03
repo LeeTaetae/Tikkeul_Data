@@ -8,6 +8,14 @@ export interface RoutePoint {
 
 export type MapInsets = ViewInsets;
 
+/** 색과 선 모양이 구간마다 다른 경로선의 한 토막. 대중교통 경로에 쓴다 */
+export interface MapRouteSegment {
+  path: RoutePoint[];
+  color: string;
+  /** true 면 점선 */
+  dashed: boolean;
+}
+
 export interface KakaoMapHandle {
   moveToMyLocation: () => void;
   /**
@@ -15,6 +23,11 @@ export interface KakaoMapHandle {
    * style 'driving' 은 차량 주행용으로 흰 테두리를 두른 굵은 선 하나로 그린다(기본 'overview' 는 얇은 선).
    */
   showRoute: (path: RoutePoint[], options?: { fit?: boolean; style?: 'overview' | 'driving' }) => void;
+  /**
+   * 구간마다 색·선 모양이 다른 경로선을 그린다(기존 경로선은 지운다). 대중교통 지도(KakaoMap)만 지원하므로 선택 메서드다.
+   * 없는 구현체에서는 호출한 쪽이 showRoute 로 한 가지 색 경로를 그린다.
+   */
+  showRouteSegments?: (segments: MapRouteSegment[], options?: { fit?: boolean }) => void;
   /** 지금 그려진 경로 선의 좌표만 바꾼다(지나온 구간을 지우는 데 쓴다). 그려진 선이 없으면 무시한다 */
   setRoutePath: (path: RoutePoint[]) => void;
   clearRoute: () => void;

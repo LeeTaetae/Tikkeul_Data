@@ -40,7 +40,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"tests/*.test.mjs\"",
+    "test": "node --import ./tests/register-ts-resolve.mjs --test \"tests/*.test.mjs\"",
     "build:web": "expo export --platform web",
     "native:prebuild": "expo prebuild --no-install",
     "native:android": "expo run:android",

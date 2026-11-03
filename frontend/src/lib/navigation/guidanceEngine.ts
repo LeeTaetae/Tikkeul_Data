@@ -34,6 +34,8 @@ export interface NavRoute {
   guides?: RouteGuide[];
   /** 턴바이턴 안내 문구와 안내 지점(point). 팀 TTS(useTurnInstructionSpeech)가 그 지점 근처에서 읽는다 */
   instructions?: RouteInstruction[];
+  /** 자전거·대중교통처럼 mode 로 정책을 고를 수 없는 경로가 직접 정한다. 있으면 GUIDANCE_POLICY[mode] 대신 쓴다(이때 mode 는 정책 선택에 쓰이지 않는다) */
+  policy?: GuidancePolicy;
 }
 
 export interface Fix {
@@ -103,6 +105,47 @@ export const GUIDANCE_POLICY: Record<GuidanceMode, GuidancePolicy> = {
     jumpAcceptAfter: 3,
     signalLostMs: 15_000,
     backToleranceM: 15,
+  },
+};
+
+/**
+ * 자전거·대중교통 정책. 이 둘은 mode(driving/walking)로 정책을 고를 수 없어서 NavRoute.policy 로 직접 넘긴다.
+ * 아래 숫자도 임시 기준이며 실제 주행·이동으로 검증하지 못했다.
+ */
+export const RIDE_POLICY: Record<'cycling' | 'transit', GuidancePolicy> = {
+  // 자전거: 도보보다 빠르고 자동차보다 느리다.
+  cycling: {
+    maxAccuracyM: 40,
+    offRouteBaseM: 35,
+    offRouteAccuracyFactor: 1.5,
+    offRouteConsecutive: 3,
+    offRouteMinDurationMs: 6000,
+    rerouteCooldownMs: 15_000,
+    arrivalRadiusM: 20,
+    arrivalAccuracyCapM: 20,
+    arrivalConsecutive: 2,
+    maxSpeedMps: 14,
+    jumpMinM: 60,
+    jumpAcceptAfter: 3,
+    signalLostMs: 12_000,
+    backToleranceM: 20,
+  },
+  // 대중교통: 버스·지하철 속도(시속 약 150km 까지)와 지하 GPS 끊김을 허용한다. 이탈 재탐색은 쓰지 않는다(화면이 onReroute 를 넘기지 않는다).
+  transit: {
+    maxAccuracyM: 60,
+    offRouteBaseM: 80,
+    offRouteAccuracyFactor: 1.5,
+    offRouteConsecutive: 5,
+    offRouteMinDurationMs: 15_000,
+    rerouteCooldownMs: 60_000,
+    arrivalRadiusM: 40,
+    arrivalAccuracyCapM: 30,
+    arrivalConsecutive: 2,
+    maxSpeedMps: 45,
+    jumpMinM: 300,
+    jumpAcceptAfter: 3,
+    signalLostMs: 60_000,
+    backToleranceM: 50,
   },
 };
 
@@ -320,7 +363,7 @@ export interface AdvanceResult {
  * 위치 하나를 반영해 다음 상태와 화면용 스냅샷을 돌려준다. state 를 직접 바꾸지 않는다.
  * state.routeId 가 route.id 와 다르면(재탐색·다른 경로) 이전 상태를 버리고 새로 시작한다.
  */
-export function advance(prev: GuidanceState | null, fix: Fix, route: NavRoute, policy: GuidancePolicy = GUIDANCE_POLICY[route.mode]): AdvanceResult {
+export function advance(prev: GuidanceState | null, fix: Fix, route: NavRoute, policy: GuidancePolicy = route.policy ?? GUIDANCE_POLICY[route.mode]): AdvanceResult {
   const index = routeIndex(route.path);
   let state = prev && prev.routeId === route.id ? prev : initialState(route.id);
 
@@ -605,7 +648,7 @@ export function createGuidanceTracker({ port, onChange, onReroute, now = Date.no
     },
     checkSignal() {
       const wasMoving = (state?.speedMps ?? 0) >= SIGNAL_LOST_MIN_SPEED_MPS;
-      if (route && view.phase === 'tracking' && wasMoving && isSignalLost(lastFixAt, now(), GUIDANCE_POLICY[route.mode])) {
+      if (route && view.phase === 'tracking' && wasMoving && isSignalLost(lastFixAt, now(), route.policy ?? GUIDANCE_POLICY[route.mode])) {
         emit({ phase: 'signalLost', snapshot: view.snapshot, position: view.position, failure: null });
       }
     },

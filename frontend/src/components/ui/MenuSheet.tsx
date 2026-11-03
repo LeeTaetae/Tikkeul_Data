@@ -1,6 +1,6 @@
-import { Check, Heart, House, LogOut, Map as MapIcon, TriangleAlert, User, X, type LucideIcon } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, Heart, House, Info, LogOut, Map as MapIcon, TriangleAlert, User, X, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,9 @@ const PAGES: { href: '/' | '/map' | '/alerts'; label: string; icon: LucideIcon }
   { href: '/alerts', label: 'tabs.alerts', icon: TriangleAlert },
 ];
 
+// 지하철 정거장 좌표의 출처(공공누리 제1유형). 문구는 menu.sources.* 번역에 있고, 공공기관이 후원·보증하는 것처럼 보이지 않게 그 사실을 함께 밝힌다.
+const SEOUL_STATION_DATA_URL = 'https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do';
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -37,6 +40,7 @@ export function MenuSheet({ visible, onClose }: Props) {
   const { status, user, token, logout } = useAuth();
   const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [resendError, setResendError] = useState<string | null>(null);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   const onResendVerification = async () => {
     if (!token) return;
@@ -175,6 +179,28 @@ export function MenuSheet({ visible, onClose }: Props) {
 
           <CarIconSetting />
 
+          <View>
+            <Pressable
+              onPress={() => setSourcesOpen((open) => !open)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: sourcesOpen }}
+              style={({ pressed }) => [styles.page, pressed && styles.pressed]}
+            >
+              <Icon icon={Info} size={22} color={colors.ink} />
+              <Text style={styles.pageText}>{t('menu.sources.title')}</Text>
+              <Icon icon={sourcesOpen ? ChevronUp : ChevronDown} size={20} color={colors.muted} />
+            </Pressable>
+            {sourcesOpen && (
+              // 작은 화면에서 시트가 화면을 넘지 않게 본문은 높이를 제한하고 안에서 스크롤한다.
+              <ScrollView style={styles.sourcesBody} nestedScrollEnabled>
+                <Text style={styles.sourcesText}>{t('menu.sources.body')}</Text>
+                <Pressable onPress={() => Linking.openURL(SEOUL_STATION_DATA_URL)} accessibilityRole="link" style={({ pressed }) => [styles.sourcesLink, pressed && styles.pressed]}>
+                  <Text style={styles.sourcesLinkText}>{t('menu.sources.link')}</Text>
+                </Pressable>
+              </ScrollView>
+            )}
+          </View>
+
           <View style={styles.languages}>
             <Text style={styles.sectionTitle}>{t('lang.label')}</Text>
             <View accessibilityRole="radiogroup" accessibilityLabel={t('lang.label')} style={styles.languageRow}>
@@ -253,4 +279,8 @@ const styles = StyleSheet.create({
   resendButton: { paddingVertical: space.xs, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.primarySoft },
   resendButtonText: { fontSize: 12, fontWeight: '800', color: colors.brand },
   resendErrorText: { fontSize: 12, color: colors.dangerInk, paddingHorizontal: space.md },
+  sourcesBody: { maxHeight: 130, paddingHorizontal: space.md },
+  sourcesText: { fontSize: 13, lineHeight: 19, color: colors.muted },
+  sourcesLink: { minHeight: 44, justifyContent: 'center' },
+  sourcesLinkText: { fontSize: 14, fontWeight: '700', color: colors.brand, textDecorationLine: 'underline' },
 });

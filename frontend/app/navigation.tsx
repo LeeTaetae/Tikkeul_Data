@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions, type 
 import { Crosshair } from 'lucide-react-native';
 import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Speech from 'expo-speech';
+import { speaker } from '../src/lib/speech/speaker';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
@@ -18,13 +18,13 @@ import { createReplayPort, replayFixes, replayRerouteFrom } from '../src/dev/gui
 import { MOCK_ROUTE_A } from '../src/dev/mockRoute';
 import { CITY_PREVIEW_ROUTE } from '../src/dev/cityPreviewRoute';
 import { RAIL_TEST_SAMPLES, TEST_ACCIDENT_PRONE_ZONES, TEST_INSTRUCTIONS, TEST_SCHOOL_ZONES, TEST_SPEED_BUMPS } from '../src/dev/railSamples';
-import { TTS_TEST_ALERTS, TTS_TEST_INSTRUCTIONS, TTS_TEST_PATH, TTS_TEST_SPEED_BUMPS, TTS_TEST_ZONES } from '../src/dev/ttsScenario';
+import { TTS_TEST_ALERTS, TTS_TEST_GUIDES, TTS_TEST_INSTRUCTIONS, TTS_TEST_PATH, TTS_TEST_SPEED_BUMPS, TTS_TEST_ZONES } from '../src/dev/ttsScenario';
 import { fitVisible, overflowFits, splitRail } from '../src/lib/hazardRail';
 import { nearSchoolZone, speedKmhOf } from '../src/lib/navigation/drivingDisplay';
 import { displayEta } from '../src/lib/navigation/guidanceDisplay';
 import type { LatLng, NavRoute, TrackingView } from '../src/lib/navigation/guidanceEngine';
 import { toNavRoute } from '../src/lib/navigation/guidanceEngine';
-import { clearGuidanceRequest, getGuidanceRequest, type GuidanceRequest } from '../src/lib/navigation/guidanceSession';
+import { clearGuidanceRequest, getGuidanceRequest, getRideRequest, type GuidanceRequest, type RideRequest } from '../src/lib/navigation/guidanceSession';
 import { useDrivingCamera } from '../src/lib/navigation/useDrivingCamera';
 import { useGuidanceTracking } from '../src/lib/navigation/useGuidanceTracking';
 import { useRouteHazardWarning } from '../src/lib/navigation/useRouteHazardWarning';
@@ -38,7 +38,9 @@ import { NavigationMap } from '../src/map/NavigationMap';
 import { fetchGuidanceRoute } from '../src/map/navigationApi';
 import type { KakaoMapHandle } from '../src/map/types';
 import { MAX_CONTENT_WIDTH, colors, radius, space } from '../src/theme';
+import { CyclingGuidanceScreen } from '../src/screens/CyclingGuidanceScreen';
 import { NativeNavigationScreen } from '../src/screens/NativeNavigationScreen';
+import { TransitGuidanceScreen } from '../src/screens/TransitGuidanceScreen';
 
 // 자동 재탐색이 연달아 이만큼 실패하면 더 부르지 않고 사용자가 직접 "다시 탐색"을 누르게 한다(무한 재시도 방지).
 const MAX_AUTO_REROUTE_FAILURES = 3;
@@ -255,6 +257,7 @@ function WebGuidanceScreen() {
   const speechRouteKey = route?.id ?? '';
   const apiSpeedBumps = useRouteSpeedBumps(route?.source === 'api' ? route.path : null);
   // 읽을 턴 안내: 같은 위치·같은 거리의 "도로명, 거리" 요약 줄(직전 턴 문구와 같은 뜻)만 뺀다. 문구는 원문 그대로다.
+  const speechSource = route?.mode === 'driving' ? 'car' : 'walk'; // 진단 로그용(자동차 길안내 JS 화면은 웹·개발 미리보기에서 쓰인다)
   const speechInstructions = useMemo(() => dedupeSpokenInstructions(route?.instructions ?? []), [route]);
 
   // 위험 경고 음성이 우선이다. 새 경고(위험·단계가 바뀔 때)가 뜨면 잠시 일반 안내를 보류해, 경고와 일반 안내가 같은 순간에 겹쳐 읽히거나
@@ -268,10 +271,10 @@ function WebGuidanceScreen() {
   }
   const generalSpeechActive = speechActive && Date.now() >= alertQuietUntil.current;
 
-  useTurnInstructionSpeech({ active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, instructions: speechInstructions, progressM: speechProgressM, language: i18n.language });
-  useSpeedBumpSpeech({ active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, bumps: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_SPEED_BUMPS : TEST_SPEED_BUMPS) : apiSpeedBumps, progressM: speechProgressM });
+  useTurnInstructionSpeech({ source: speechSource, active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, instructions: speechInstructions, guides: route?.guides ?? (scenario === 'tts' ? TTS_TEST_GUIDES : undefined), progressM: speechProgressM, language: i18n.language });
+  useSpeedBumpSpeech({ source: speechSource, active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, bumps: route?.source === 'mock' ? (scenario === 'tts' ? TTS_TEST_SPEED_BUMPS : TEST_SPEED_BUMPS) : apiSpeedBumps, progressM: speechProgressM });
   // 속도는 엔진이 최근 위치로 추정한 값(m/s → km/h). 모르면 null 이라 과속 경고를 내지 않는다(팀 정책과 같다).
-  useSpeedingWarning({ active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, zones: hazard.zoneOnRoute, progressM: speechProgressM, speedKmh: snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null });
+  useSpeedingWarning({ source: speechSource, active: generalSpeechActive, routeKey: speechRouteKey, route: hazard.hazardRoute, zones: hazard.zoneOnRoute, progressM: speechProgressM, speedKmh: snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null });
 
   // 재탐색으로 새 경로가 오면 이전 경로의 읽는 중·대기 중 음성을 모두 취소한다(새 경로의 안내만 읽도록). 처음 경로를 받을 때는 취소하지 않는다.
   const lastSpeechRouteId = useRef<string | null>(null);
@@ -280,15 +283,15 @@ function WebGuidanceScreen() {
     lastSpeechRouteId.current = route?.id ?? null;
     if (previous && route?.id && previous !== route.id) {
       alertQuietUntil.current = 0;
-      void Speech.stop();
+      void speaker.stop('reroute');
     }
   }, [route?.id]);
 
   // 화면을 떠나거나 닫히면 읽던 음성을 멈춘다(탭 화면은 마운트가 유지되므로 포커스를 잃을 때도).
   useEffect(() => {
-    if (!focused) void Speech.stop();
+    if (!focused) void speaker.stop('screen-blur');
   }, [focused]);
-  useEffect(() => () => void Speech.stop(), []);
+  useEffect(() => () => void speaker.stop('screen-unmount'), []);
 
   // 경로: 지도가 준비되면(또는 경로가 바뀌면) 그린다. 현재 위치를 이미 알면 지도를 옮기지 않는다(재탐색 중 자동 추적을 방해하지 않게).
   useEffect(() => {
@@ -310,7 +313,7 @@ function WebGuidanceScreen() {
   }, [mapReady, driving, position, following]);
 
   const onEnd = () => {
-    void Speech.stop(); // 안내를 끝내면 읽던 음성도 멈춘다
+    void speaker.stop('guidance-end'); // 안내를 끝내면 읽던 음성도 멈춘다
     clearGuidanceRequest();
     loadedRef.current = null;
     requestRef.current = null;
@@ -507,8 +510,23 @@ function WebGuidanceScreen() {
   );
 }
 
+// 자전거·대중교통 길안내 화면을 고른다. 이 화면은 탭이라 마운트가 유지되므로, 새 안내 요청이 들어올 때마다 key 를 바꿔 처음부터 다시 시작한다.
+// 안내를 끝내 요청이 지워져도(null) 마지막으로 고른 화면을 유지해서, 다른 길안내 화면이 뒤에서 만들어지지 않게 한다.
+// 자동차·도보 요청(GuidanceRequest)이 새로 들어오면 자전거·대중교통 화면을 내려놓는다.
+function useRideScreen(): { mode: 'cycling' | 'transit'; key: number } | null {
+  const ride = getRideRequest();
+  const driving = getGuidanceRequest();
+  const seen = useRef<{ ride: RideRequest | null; driving: GuidanceRequest | null; key: number; active: 'cycling' | 'transit' | null }>({ ride: null, driving: null, key: 0, active: null });
+  if (ride && ride !== seen.current.ride) seen.current = { ride, driving, key: seen.current.key + 1, active: ride.mode };
+  else if (driving && driving !== seen.current.driving) seen.current = { ...seen.current, driving, active: null };
+  return seen.current.active ? { mode: seen.current.active, key: seen.current.key } : null;
+}
+
 export default function NavigationScreen() {
   const params = useLocalSearchParams<{ test?: string }>();
+  useIsFocused(); // 포커스가 바뀔 때 다시 그려서 새 안내 요청을 읽는다
+  const ride = useRideScreen();
+  if (ride) return ride.mode === 'cycling' ? <CyclingGuidanceScreen key={ride.key} /> : <TransitGuidanceScreen key={ride.key} />;
   const preview = __DEV__ && ['city', 'replay', 'offroute', 'rerouteFail', 'tts', 'lowAccuracy'].includes(params.test ?? '');
   const officialNavigation = Platform.OS !== 'web' || (!preview && getGuidanceRequest()?.mode === 'driving');
   return officialNavigation ? <NativeNavigationScreen /> : <WebGuidanceScreen />;

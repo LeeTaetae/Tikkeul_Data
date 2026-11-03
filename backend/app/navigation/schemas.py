@@ -115,10 +115,27 @@ TransitStepType = Literal["WALKING", "BUS", "SUBWAY"]
 class TransitVehicle(BaseModel):
     name: str
     type: Optional[str] = None
+    # 버스만, 공식 노선 데이터(국토교통부 TAGO)와 확정한 경우에만 채워진다. 확정 못 하면 전부 null(노선 번호로 추정하지 않는다).
+    route_id: Optional[str] = None
+    operator_region: Optional[str] = Field(default=None, description="노선이 등록된 시·도 (incheon, gyeonggi, busan ...). 서울은 TAGO 에 없어 null")
+    route_class: Optional[str] = Field(default=None, description="공식 노선 유형 그대로 (예: 간선버스, 일반버스, 직행좌석버스)")
+    match_confidence: Optional[Literal["high"]] = None
+    data_source: Optional[str] = None
 
 
 class TransitStop(BaseModel):
     name: str
+    # 공식 좌표 데이터와 매칭된 정거장만 채워진다(지금은 지하철만). 매칭하지 못했거나 경로 검증에 실패하면 전부 null.
+    # 좌표를 만들어내지 않는다. 같은 이름이라도 노선이 다르면 매칭하지 않는다.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    match_confidence: Optional[Literal["high", "medium"]] = Field(
+        default=None, description="high: 이름 완전 일치 · medium: 부역명 괄호를 뺀 이름 일치 또는 중복 수록 행. 둘 다 경로 검증을 통과한 값"
+    )
+    station_id: Optional[str] = None
+    # 버스 정류장의 공식 정류소 ID(TAGO nodeid). 지하철은 station_id 를 쓴다.
+    stop_id: Optional[str] = None
+    data_source: Optional[str] = None
 
 
 # 구간 하나(도보 한 토막, 또는 버스/지하철 한 번 타는 구간). 카카오맵·네이버지도처럼 몇 호선·몇 번 버스를
@@ -129,6 +146,8 @@ class TransitStep(BaseModel):
     time_sec: int
     stops: list[TransitStop] = []
     vehicles: list[TransitVehicle] = []
+    # 이 구간의 첫 좌표가 TransitRouteOption.path 에서 놓인 위치. 카카오가 이 구간의 좌표를 주지 않았으면 null(만들어내지 않는다)
+    path_start_index: Optional[int] = None
 
 
 class TransitRouteOption(BaseModel):

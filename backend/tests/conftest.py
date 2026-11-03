@@ -10,6 +10,16 @@ from app.main import create_app
 from tests.fixtures import KEYS
 
 
+@pytest.fixture(autouse=True)
+def _tago_off_by_default(monkeypatch):
+    """backend/.env 에 실제 TAGO 키가 있어도 테스트는 TAGO 를 부르지 않는다. 버스 매칭 테스트는 자기 클라이언트를 직접 넘긴다."""
+    from app.navigation import bus_seoul, bus_tago
+
+    monkeypatch.setattr(bus_tago, "get_tago_client", lambda: None)
+    monkeypatch.setattr(bus_tago, "get_seoul_client", lambda: None)  # 서울 키도 같다
+    monkeypatch.setattr(bus_seoul, "get_seoul_client", lambda: None)
+
+
 class FakeClock:
     def __init__(self) -> None:
         self.now = 1000.0

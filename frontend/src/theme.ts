@@ -24,6 +24,10 @@ export const colors = {
   // 브랜드 퍼플. 활성 상태·주요 버튼·로고 강조에만 쓴다.
   brand: '#6C5CE7',
   primarySoft: '#F1EEFF',
+  // 대중교통 정거장 목록의 현재 정거장 강조(분홍). stopCurrent 는 흰 배경 위 글자 대비 4.5:1 이상.
+  stopCurrent: '#DB2777',
+  stopCurrentSoft: '#FDF2F8',
+  stopPassed: '#CBD5E1',
 } as const;
 
 // 위험 유형별 색. 유형은 아이콘·글자로도 구분하므로 색은 보조다.

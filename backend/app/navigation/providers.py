@@ -1,9 +1,12 @@
 import asyncio
+import logging
 import re
 from typing import Optional, Protocol
 
 import httpx
 
+from .bus_tago import attach_bus_matches
+from .stations import get_seoul_index
 from .schemas import LatLng, NearbyPlace, PlaceSearchResult, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption, TransitStep, TransitStop, TransitVehicle
 
 # Kakao 로컬 검색은 중국어 쿼리를 매칭하지 못한다(실호출로 확인, 2026-11-03: 한국어·영어는 결과가 나오지만 중국어는 항상 빈 배열).
@@ -62,6 +65,9 @@ async def translate_places_to_language(
         PlaceSearchResult(name=translated_lines[i * 2], address=translated_lines[i * 2 + 1], lat=p.lat, lng=p.lng)
         for i, p in enumerate(places)
     ]
+
+
+logger = logging.getLogger(__name__)
 
 # 카카오 로컬의 전체 카테고리 그룹 코드(developers.kakao.com/docs/latest/ko/local/dev-guide#search-by-category).
 # find_place_at 이 "좌표 하나 근처엔 뭐가 있나"를 알아보려고 이 전부를 훑는다(카카오는 좌표→장소명 역조회가 없다).
@@ -173,6 +179,25 @@ class NaverProvider:
         )
 
 
+def _transit_stops(step_properties: dict, points: list) -> list[TransitStop]:
+    """카카오가 준 정거장 이름에 공식 좌표를 붙인다. 지하철만 지원하고(버스는 방향을 구분할 데이터가 없다), 매칭하지 못한 정거장은 이름만 남긴다."""
+    names = [st.get("name", "") for st in step_properties.get("stops", [])]
+    matches: list = [None] * len(names)
+    line_names = {v.get("name", "") for v in step_properties.get("vehicles", []) if v.get("name")}
+    if step_properties.get("type") == "SUBWAY" and len(line_names) == 1:
+        path = [(p[1], p[0]) for p in points if len(p) >= 2]
+        try:
+            matches = get_seoul_index().match_stops(next(iter(line_names)), names, path)
+        except Exception:  # 좌표 매칭이 어떤 이유로든 실패해도 경로 응답은 막지 않는다(좌표만 비운다)
+            logger.warning("정거장 좌표 매칭 실패", exc_info=True)
+    return [
+        TransitStop(name=name)
+        if m is None
+        else TransitStop(name=name, lat=m.lat, lng=m.lng, match_confidence=m.confidence, station_id=m.station_id, data_source=m.data_source)
+        for name, m in zip(names, matches)
+    ]
+
+
 class KakaoRoutingProvider:
     """자전거·대중교통 경로. 카카오맵 REST API(developers.kakao.com/docs/ko/kakaomap/rest-api) 기준.
 
@@ -216,6 +241,7 @@ class KakaoRoutingProvider:
             data = resp.json()
         counts = data.get("properties") or {}
         options: list[TransitRouteOption] = []
+        bus_jobs: list[tuple[TransitStep, list[tuple[float, float]]]] = []
         for route in data.get("routes", []):
             properties = route["properties"]
             raw_steps = route["steps"]
@@ -225,20 +251,29 @@ class KakaoRoutingProvider:
                 for step in raw_steps
                 for point in step.get("path", {}).get("points", [])
             ]
-            steps = [
-                TransitStep(
-                    type=sp.get("type", "WALKING"),
-                    distance_m=sp.get("distance", 0),
-                    time_sec=sp.get("time", 0),
-                    stops=[TransitStop(name=st.get("name", "")) for st in sp.get("stops", [])],
-                    vehicles=[
-                        TransitVehicle(name=v.get("name", ""), type=v.get("type"))
-                        for v in sp.get("vehicles", [])
-                    ],
+            # path 는 위에서 step 마다 points 를 순서대로 이어 붙인 것이다. 같은 개수를 누적해 구간 시작 위치를 구한다.
+            steps = []
+            path_offset = 0
+            for s in raw_steps:
+                sp = s["properties"]
+                points = s.get("path", {}).get("points", [])
+                point_count = len(points)
+                steps.append(
+                    TransitStep(
+                        type=sp.get("type", "WALKING"),
+                        distance_m=sp.get("distance", 0),
+                        time_sec=sp.get("time", 0),
+                        stops=_transit_stops(sp, points),
+                        vehicles=[
+                            TransitVehicle(name=v.get("name", ""), type=v.get("type"))
+                            for v in sp.get("vehicles", [])
+                        ],
+                        path_start_index=path_offset if point_count else None,
+                    )
                 )
-                for s in raw_steps
-                for sp in [s["properties"]]
-            ]
+                path_offset += point_count
+                if sp.get("type") == "BUS":
+                    bus_jobs.append((steps[-1], [(p[1], p[0]) for p in points if len(p) >= 2]))
             fare = properties.get("fare") or {}
             options.append(
                 TransitRouteOption(
@@ -252,6 +287,8 @@ class KakaoRoutingProvider:
                     steps=steps,
                 )
             )
+        # 버스 구간에 공식 노선·정류장 정보를 붙인다. 실패·시간 초과는 값을 비워 둘 뿐 경로 응답을 막지 않는다.
+        await attach_bus_matches(bus_jobs)
         return options, {
             "total": counts.get("total", len(options)),
             "bus": counts.get("bus", 0),
