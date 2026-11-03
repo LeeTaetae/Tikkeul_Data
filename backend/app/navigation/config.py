@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     naver_client_id: str = ""
     naver_client_secret: str = ""
     kakao_rest_api_key: str = ""
+    papago_client_id: str = ""
+    papago_client_secret: str = ""
 
 
 @lru_cache()

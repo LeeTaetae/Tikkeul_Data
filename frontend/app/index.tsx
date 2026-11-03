@@ -350,7 +350,7 @@ export default function HomeScreen() {
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchPlaces(destination.trim())
+      searchPlaces(destination.trim(), undefined, i18n.language)
         .then((results) => {
           if (!cancelled) setDestinationSuggestions(results);
         })
@@ -362,7 +362,7 @@ export default function HomeScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [destination, destinationFocused]);
+  }, [destination, destinationFocused, i18n.language]);
 
   // 어린이보호구역: 실제 안내 경로에 실제 보호구역 데이터를 매칭해 접근 경고를 띄운다. 조회·매칭·단계 경고는
   // 길안내 화면과 같은 훅(useRouteHazardWarning)을 쓴다. 경로가 지나는 시군구를 표본 조회한다(경로 시작점 하나만 보지 않는다).

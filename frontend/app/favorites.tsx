@@ -180,7 +180,7 @@ function FavoriteRow({ item, onPress, onDelete }: { item: FavoritePlace; onPress
 }
 
 function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; existingKinds: Set<FavoriteKind> | undefined; onAdded: () => Promise<void> }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<FavoriteKind>('custom');
   const [label, setLabel] = useState('');
@@ -199,7 +199,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchPlaces(query.trim())
+      searchPlaces(query.trim(), undefined, i18n.language)
         .then((results) => {
           if (!cancelled) setSuggestions(results);
         })
@@ -211,7 +211,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, i18n.language]);
 
   if (!open) {
     return (
