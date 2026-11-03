@@ -1,10 +1,18 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
-import type { Detection } from '../lib/vision/visionTypes';
+import type { Box, Detection } from '../lib/vision/visionTypes';
 import type { SensitivityProfile } from '../lib/vision/sensitivityProfile';
+import { fromModelDetections, toModelLabelConfidence, type ModelLabel } from '../lib/vision/modelLabels';
+
+interface RawModelDetection {
+  class: string;
+  confidence: number;
+  box: Box;
+}
 
 interface VisionDetectorModule {
-  detect(frameRef: unknown, confidenceByClass: Record<string, number>): Promise<Detection[]>;
+  // confidenceByClass는 모델 라벨(ModelLabel) 기준이다 — 네이티브 쪽은 HazardClass를 모른다.
+  detect(frameRef: unknown, confidenceByClass: Record<ModelLabel, number>): Promise<RawModelDetection[]>;
 }
 
 const nativeModule = () => requireOptionalNativeModule<VisionDetectorModule>('VisionDetector');
@@ -17,5 +25,6 @@ export function isVisionDetectorAvailable(): boolean {
 export async function detectFrame(frameRef: unknown, profile: SensitivityProfile): Promise<Detection[]> {
   const module = nativeModule();
   if (!module) return [];
-  return module.detect(frameRef, profile.confidenceByClass);
+  const raw = await module.detect(frameRef, toModelLabelConfidence(profile.confidenceByClass));
+  return fromModelDetections(raw);
 }
