@@ -21,7 +21,7 @@
 
 - (void)setLanguage:(NSString *)language {
   [self.synthesizer stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-  self.language = language;
+  _language = [language copy]; // direct ivar: self.language = ... would re-enter this same setter
 }
 
 - (nullable NSString *)bcp47ForCurrentLanguage {
