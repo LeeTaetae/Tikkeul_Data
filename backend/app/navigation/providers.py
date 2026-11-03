@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import Optional, Protocol
 
 import httpx
@@ -7,6 +8,75 @@ import httpx
 from .bus_tago import attach_bus_matches
 from .stations import get_seoul_index
 from .schemas import LatLng, NearbyPlace, PlaceSearchResult, RouteGuide, RouteInstruction, RouteOption, TransitRouteOption, TransitStep, TransitStop, TransitVehicle
+
+# Kakao 로컬 검색은 중국어 쿼리를 매칭하지 못한다(실호출로 확인, 2026-11-03: 한국어·영어는 결과가 나오지만 중국어는 항상 빈 배열).
+# 한자(CJK 통합 한자) 쿼리이고 한글이 섞여 있지 않을 때만 파파고로 한국어로 번역해 검색어를 바꿔치기한다.
+_CJK_PATTERN = re.compile(r"[一-鿿]")
+_HANGUL_PATTERN = re.compile(r"[가-힣]")
+
+
+async def _papago_translate(text: str, source: str, target: str, client_id: str, client_secret: str) -> str:
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        resp = await client.post(
+            "https://papago.apigw.ntruss.com/nmt/v1/translation",
+            headers={
+                "X-NCP-APIGW-API-KEY-ID": client_id,
+                "X-NCP-APIGW-API-KEY": client_secret,
+            },
+            data={"source": source, "target": target, "text": text},
+        )
+        resp.raise_for_status()
+        return resp.json()["message"]["result"]["translatedText"]
+
+
+async def translate_chinese_query_to_korean(query: str, client_id: str, client_secret: str) -> str:
+    """중국어로만 된 검색어를 한국어로 번역한다. 번역 실패·키 미설정 시 원문을 그대로 돌려준다(검색 자체는 막지 않음)."""
+    if not client_id or not client_secret:
+        return query
+    if not _CJK_PATTERN.search(query) or _HANGUL_PATTERN.search(query):
+        return query
+    try:
+        return await _papago_translate(query, "zh-CN", "ko", client_id, client_secret)
+    except Exception:
+        return query
+
+
+# Kakao 검색 결과(장소명·주소)는 항상 한국어다. 영어/중국어 화면에서는 관련검색어도 그 언어로 보여야
+# 자연스러워서(사용자 확인, 2026-11-03), 화면 언어가 ko 가 아니면 결과를 그 언어로 번역해 돌려준다.
+# 결과 하나당 호출하면 느려지니 모든 장소명+주소를 줄바꿈으로 묶어 한 번에 번역한다(파파고는 줄바꿈 단위를 보존함).
+_RESULT_LANG_TO_PAPAGO_TARGET = {"en": "en", "zh": "zh-CN"}
+
+
+async def translate_places_to_language(
+    places: list[PlaceSearchResult], lang: Optional[str], client_id: str, client_secret: str
+) -> list[PlaceSearchResult]:
+    target = _RESULT_LANG_TO_PAPAGO_TARGET.get(lang or "")
+    if not target or not client_id or not client_secret or not places:
+        return places
+    lines = [field for p in places for field in (p.name, p.address)]
+    try:
+        translated_text = await _papago_translate("\n".join(lines), "ko", target, client_id, client_secret)
+    except Exception:
+        return places
+    translated_lines = translated_text.split("\n")
+    if len(translated_lines) != len(lines):
+        return places
+    return [
+        PlaceSearchResult(name=translated_lines[i * 2], address=translated_lines[i * 2 + 1], lat=p.lat, lng=p.lng)
+        for i, p in enumerate(places)
+    ]
+
+
+# 역지오코딩 주소(경로 선택 화면 상단 출발지/도착지 라벨)도 같은 이유로 화면 언어로 번역한다.
+async def translate_address_to_language(address: Optional[str], lang: Optional[str], client_id: str, client_secret: str) -> Optional[str]:
+    target = _RESULT_LANG_TO_PAPAGO_TARGET.get(lang or "")
+    if not target or not client_id or not client_secret or not address:
+        return address
+    try:
+        return await _papago_translate(address, "ko", target, client_id, client_secret)
+    except Exception:
+        return address
+
 
 logger = logging.getLogger(__name__)
 

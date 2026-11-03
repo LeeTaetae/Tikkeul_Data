@@ -1,4 +1,6 @@
 #import "KakaoNavigationController.h"
+#import "CarVoiceSpeaker.h"
+#import "CarVoiceText.h"
 #import <AVFoundation/AVFoundation.h>
 #import <KNSDK/KNSDK.h>
 #import <KNSDK/KNNaviView.h>
@@ -19,6 +21,9 @@
 @property(nonatomic, copy, nullable) NSString *previousAudioCategory;
 @property(nonatomic, copy, nullable) NSString *previousAudioMode;
 @property(nonatomic) AVAudioSessionCategoryOptions previousAudioOptions;
+@property(nonatomic, strong, nullable) CarVoiceSpeaker *voiceSpeaker;
+@property(nonatomic, copy) NSString *voiceLanguage;
+@property(nonatomic) BOOL voiceFailureShown;
 @end
 
 @implementation KakaoNavigationController
@@ -31,7 +36,27 @@
 
 - (instancetype)initWithOptions:(NSDictionary *)options completion:(void (^)(NSString *, NSString *))completion {
   self = [super initWithNibName:nil bundle:nil];
-  if (self) { _options = [options copy]; _completion = [completion copy]; }
+  if (self) {
+    _options = [options copy];
+    _completion = [completion copy];
+    NSString *language = [options[@"language"] isKindOfClass:NSString.class] ? options[@"language"] : @"ko";
+    _voiceLanguage = [@[@"ko", @"en", @"zh"] containsObject:language] ? language : @"ko";
+    __weak typeof(self) weakSelf = self;
+    _voiceSpeaker = [[CarVoiceSpeaker alloc] initWithFailureHandler:^{
+      dispatch_async(dispatch_get_main_queue(), ^{
+        typeof(self) self = weakSelf;
+        if (!self || self.closed || self.voiceFailureShown) return;
+        self.voiceFailureShown = YES;
+        NSString *message = [self.voiceLanguage isEqualToString:@"zh"]
+          ? @"无法使用中文语音。请检查系统语音设置。"
+          : @"English voice is unavailable. Check the system voice settings.";
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil message:message preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+      });
+    }];
+    [_voiceSpeaker setLanguage:_voiceLanguage];
+  }
   return self;
 }
 
@@ -193,6 +218,7 @@
 - (void)finishWithCode:(NSString *)code message:(NSString *)message {
   if (self.closed) return;
   self.closed = YES;
+  [self.voiceSpeaker stop];
   [NSNotificationCenter.defaultCenter removeObserver:self];
   self.naviView.guideStateDelegate = nil;
   self.guidance.guideStateDelegate = nil;
@@ -232,7 +258,7 @@
 - (void)guidanceOutOfRoute:(KNGuidance *)g { [self.naviView guidanceOutOfRoute:g]; }
 - (void)guidanceRouteUnchanged:(KNGuidance *)g { [self.naviView guidanceRouteUnchanged:g]; }
 - (void)guidance:(KNGuidance *)g routeUnchangedWithError:(KNError *)error { [self.naviView guidance:g routeUnchangedWithError:error]; }
-- (void)guidanceRouteChanged:(KNGuidance *)g fromRoute:(KNRoute *)fromRoute fromLocation:(KNLocation *)fromLocation toRoute:(KNRoute *)toRoute toLocation:(KNLocation *)toLocation reason:(KNGuideRouteChangeReason)reason { [self.naviView guidanceRouteChanged:g]; }
+- (void)guidanceRouteChanged:(KNGuidance *)g fromRoute:(KNRoute *)fromRoute fromLocation:(KNLocation *)fromLocation toRoute:(KNRoute *)toRoute toLocation:(KNLocation *)toLocation reason:(KNGuideRouteChangeReason)reason { [self.voiceSpeaker stop]; [self.naviView guidanceRouteChanged:g]; }
 - (void)guidanceGuideEnded:(KNGuidance *)g { [self.naviView guidanceGuideEnded:g isShowDriveResultDialog:YES]; }
 - (void)guidance:(KNGuidance *)g didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { [self.naviView guidance:g didUpdateRoutes:routes multiRouteInfo:info]; }
 - (void)guidance:(KNGuidance *)g didUpdateIndoorRoute:(KNRoute *)route { if (route) [self.naviView guidance:g didUpdateIndoorRoute:route]; }
@@ -240,7 +266,14 @@
 - (void)guidance:(KNGuidance *)g didUpdateRouteGuide:(KNGuide_Route *)route { [self.naviView guidance:g didUpdateRouteGuide:route]; }
 - (void)guidance:(KNGuidance *)g didUpdateSafetyGuide:(KNGuide_Safety *)safety { [self.naviView guidance:g didUpdateSafetyGuide:safety]; }
 - (void)guidance:(KNGuidance *)g didUpdateAroundSafeties:(NSArray<KNSafety *> *)safeties { [self.naviView guidance:g didUpdateAroundSafeties:safeties]; }
-- (BOOL)guidance:(KNGuidance *)g shouldPlayVoiceGuide:(KNGuide_Voice *)voice replaceSndData:(NSData **)data { return [self.naviView guidance:g shouldPlayVoiceGuide:voice replaceSndData:data]; }
+- (BOOL)guidance:(KNGuidance *)g shouldPlayVoiceGuide:(KNGuide_Voice *)voice replaceSndData:(NSData **)data {
+  BOOL allowed = [self.naviView guidance:g shouldPlayVoiceGuide:voice replaceSndData:data];
+  if ([self.voiceLanguage isEqualToString:@"ko"] || !allowed) return allowed;
+  NSString *text = KNCarVoiceText(self.voiceLanguage, voice);
+  if (text) [self.voiceSpeaker speak:text];
+  // Non-verbal tones (alarm/alert/link sound) stay on the SDK; every spoken voice event is replaced above.
+  return voice.voiceCode == KNVoiceCode_Alram || voice.voiceCode == KNVoiceCode_Alert || voice.voiceCode == KNVoiceCode_LinkSound;
+}
 - (void)guidance:(KNGuidance *)g willPlayVoiceGuide:(KNGuide_Voice *)voice { [self.naviView guidance:g willPlayVoiceGuide:voice]; }
 - (void)guidance:(KNGuidance *)g didFinishPlayVoiceGuide:(KNGuide_Voice *)voice { [self.naviView guidance:g didFinishPlayVoiceGuide:voice]; }
 - (void)guidance:(KNGuidance *)g didUpdateCitsGuide:(KNGuide_Cits *)cits { [self.naviView guidance:g didUpdateCitsGuide:cits]; }

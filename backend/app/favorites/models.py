@@ -26,6 +26,7 @@ class FavoritePlace(SQLModel, table=True):
     lat: float
     lon: float
     address_text: str = ""
+    category: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -35,6 +36,7 @@ class FavoritePlaceCreate(SQLModel):
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
     address_text: str = ""
+    category: Optional[str] = None
 
 
 class FavoritePlaceUpdate(SQLModel):
@@ -43,6 +45,7 @@ class FavoritePlaceUpdate(SQLModel):
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lon: Optional[float] = Field(default=None, ge=-180, le=180)
     address_text: Optional[str] = None
+    category: Optional[str] = None
 
 
 class FavoritePlacePublic(SQLModel):
@@ -52,3 +55,4 @@ class FavoritePlacePublic(SQLModel):
     lat: float
     lon: float
     address_text: str
+    category: Optional[str] = None

@@ -631,3 +631,109 @@ def test_find_place_at_returns_none_when_nothing_nearby(monkeypatch):
     _patch_kakao_category_http(monkeypatch, {})
     kakao = KakaoRoutingProvider("fake-key")
     assert asyncio.run(kakao.find_place_at(LatLng(lat=37.5665, lng=126.978))) is None
+
+
+def test_translate_chinese_query_to_korean_calls_papago_for_pure_chinese_text(monkeypatch):
+    from app.navigation.providers import translate_chinese_query_to_korean
+
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        return httpx.Response(200, json={"message": {"result": {"translatedText": "명동"}}})
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    result = asyncio.run(translate_chinese_query_to_korean("明洞", "id", "secret"))
+    assert result == "명동"
+    assert sent and "papago" in sent[0]
+
+
+def test_translate_chinese_query_to_korean_skips_korean_english_and_missing_keys(monkeypatch):
+    from app.navigation.providers import translate_chinese_query_to_korean
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("파파고를 호출하면 안 되는 쿼리")
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    assert asyncio.run(translate_chinese_query_to_korean("강남역", "id", "secret")) == "강남역"
+    assert asyncio.run(translate_chinese_query_to_korean("Starbucks", "id", "secret")) == "Starbucks"
+    assert asyncio.run(translate_chinese_query_to_korean("明洞역", "id", "secret")) == "明洞역"
+    assert asyncio.run(translate_chinese_query_to_korean("明洞", "", "")) == "明洞"
+
+
+def test_translate_places_to_language_translates_name_and_address_in_one_call(monkeypatch):
+    from app.navigation.providers import translate_places_to_language
+    from app.navigation.schemas import PlaceSearchResult
+
+    places = [
+        PlaceSearchResult(name="강남역", lat=37.0, lng=127.0, address="서울 강남구"),
+        PlaceSearchResult(name="명동거리", lat=37.1, lng=127.1, address="서울 중구"),
+    ]
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request.read())
+        return httpx.Response(
+            200, json={"message": {"result": {"translatedText": "Gangnam Station\nGangnam-gu, Seoul\nMyeongdong Street\nJung-gu, Seoul"}}}
+        )
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    result = asyncio.run(translate_places_to_language(places, "en", "id", "secret"))
+    assert [p.name for p in result] == ["Gangnam Station", "Myeongdong Street"]
+    assert [p.address for p in result] == ["Gangnam-gu, Seoul", "Jung-gu, Seoul"]
+    assert result[0].lat == 37.0 and result[0].lng == 127.0
+    assert b"target=en" in sent[0]
+
+
+def test_translate_places_to_language_skips_korean_and_falls_back_on_line_mismatch(monkeypatch):
+    from app.navigation.providers import translate_places_to_language
+    from app.navigation.schemas import PlaceSearchResult
+
+    places = [PlaceSearchResult(name="강남역", lat=37.0, lng=127.0, address="서울 강남구")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("ko(기본 언어)는 파파고를 호출하면 안 됨")
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    assert asyncio.run(translate_places_to_language(places, "ko", "id", "secret")) == places
+    assert asyncio.run(translate_places_to_language(places, None, "id", "secret")) == places
+    assert asyncio.run(translate_places_to_language(places, "en", "", "")) == places
+
+
+def test_translate_address_to_language_translates_only_for_en_or_zh(monkeypatch):
+    from app.navigation.providers import translate_address_to_language
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"result": {"translatedText": "Gangnam Station"}}})
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    assert asyncio.run(translate_address_to_language("강남역", "en", "id", "secret")) == "Gangnam Station"
+    assert asyncio.run(translate_address_to_language("강남역", "ko", "id", "secret")) == "강남역"
+    assert asyncio.run(translate_address_to_language("강남역", None, "id", "secret")) == "강남역"
+    assert asyncio.run(translate_address_to_language(None, "en", "id", "secret")) is None
+    assert asyncio.run(translate_address_to_language("강남역", "en", "", "")) == "강남역"

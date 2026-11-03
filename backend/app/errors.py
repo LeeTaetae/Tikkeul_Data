@@ -32,6 +32,7 @@ _ERRORS: Dict[str, Tuple[int, str]] = {
     "FAVORITE_NOT_FOUND": (404, "즐겨찾기를 찾을 수 없습니다."),
     "FAVORITE_KIND_TAKEN": (409, "집/회사는 하나만 등록할 수 있습니다. 기존 항목을 수정해 주세요."),
     "CHAT_UNAVAILABLE": (503, "챗봇 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    "SOCIAL_LOGIN_FAILED": (502, "소셜 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요."),
 }
 
 

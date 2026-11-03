@@ -242,10 +242,11 @@ export async function fetchTransitRoutes(origin: RoutePoint, destination: RouteP
 
 // 좌표를 실제 주소 문자열로 바꾼다(카카오 역지오코딩). REST 키가 없으면 서버가 null을 주고,
 // 호출 쪽에서 "내 위치"/"지도에서 선택한 위치" 같은 라벨로 대체한다.
-export async function fetchAddress(point: RoutePoint): Promise<string | null> {
+export async function fetchAddress(point: RoutePoint, lang?: string): Promise<string | null> {
   if (!API_BASE_URL) return null;
   try {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/geocode/reverse?lat=${point.lat}&lng=${point.lng}`, {}, ADDRESS_TIMEOUT_MS);
+    const langParam = lang ? `&lang=${lang}` : '';
+    const res = await fetchWithTimeout(`${API_BASE_URL}/geocode/reverse?lat=${point.lat}&lng=${point.lng}${langParam}`, {}, ADDRESS_TIMEOUT_MS);
     if (!res.ok) return null;
     const data = await res.json();
     return typeof data.address === 'string' ? data.address : null;

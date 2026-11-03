@@ -47,10 +47,17 @@
       "expo-secure-store",
       "./plugins/withKakaoNavigation.cjs",
       [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.505159273471-9umva6fveibq6387ggt2oksu2grbrabs"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "dynamic"
+            "useFrameworks": "dynamic",
+            "networkInspector": false
           },
           "android": {
             "minSdkVersion": 26

@@ -1,32 +1,45 @@
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.auth.deps import get_current_user
-from app.auth.mailer import send_signup_code_email, send_verification_email
+from app.auth.mailer import send_reset_code_email, send_signup_code_email, send_verification_email
 from app.auth.models import (
     EmailAvailability,
+    KakaoLoginRequest,
     LoginRequest,
+    PasswordResetRequest,
+    PasswordResetSendCodeRequest,
+    PasswordResetSendCodeResponse,
+    PasswordResetVerifyRequest,
+    PasswordResetVerifyResponse,
     SendVerificationResponse,
     SignupCodeRequest,
     SignupCodeSentResponse,
     SignupCodeVerifyRequest,
     SignupCodeVerifyResponse,
     SignupRequest,
+    SocialLoginRequest,
     TokenResponse,
     User,
     UserPublic,
     normalize_email,
 )
+from app.auth.social import find_or_create_social_user, verify_google_id_token, verify_kakao_access_token
 from app.auth.security import (
+    check_reset_verified,
     check_signup_verified,
     create_access_token,
     create_email_verify_token,
+    create_reset_code_token,
+    create_reset_verified_token,
     create_signup_code_token,
     create_signup_verified_token,
     decode_email_verify_token,
     generate_signup_code,
     hash_password,
     verify_password,
+    verify_reset_code,
     verify_signup_code,
 )
 from app.errors import api_error
@@ -81,7 +94,7 @@ def signup(body: SignupRequest, request: Request) -> TokenResponse:
         session.refresh(user)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
         )
 
 
@@ -90,12 +103,52 @@ def login(body: LoginRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
     with Session(request.app.state.db_engine) as session:
         user = session.exec(select(User).where(User.email == body.email)).first()
-        if user is None or not verify_password(body.password, user.password_hash):
+        if user is None or user.password_hash is None or not verify_password(body.password, user.password_hash):
             raise api_error("INVALID_CREDENTIALS")
         token = create_access_token(user.id, settings)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+        )
+
+
+@router.post("/social/google", response_model=TokenResponse)
+def login_with_google(body: SocialLoginRequest, request: Request) -> TokenResponse:
+    settings = request.app.state.settings
+    payload = verify_google_id_token(body.id_token, settings)
+    with Session(request.app.state.db_engine) as session:
+        nickname = payload.get("name")
+        # 구글이 이메일을 아직 확인하지 않았다고 보고하면(email_verified=False, 드물지만 공식 문서에 명시된 가능성) 그
+        # 이메일을 신뢰하지 않는다 - 안 그러면 남의 이메일을 주장해 EMAIL_TAKEN으로 그 이메일의 실제 소유자를 막을 수 있다.
+        email = payload.get("email") if payload.get("email_verified") else None
+        user = find_or_create_social_user(session, provider="google", provider_id=payload["sub"], email=email, nickname=nickname)
+        token = create_access_token(user.id, settings)
+        session.commit()
+        session.refresh(user)
+        return TokenResponse(
+            access_token=token,
+            user=UserPublic(
+                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, created_at=user.created_at
+            ),
+        )
+
+
+@router.post("/social/kakao", response_model=TokenResponse)
+def login_with_kakao(body: KakaoLoginRequest, request: Request) -> TokenResponse:
+    settings = request.app.state.settings
+    payload = verify_kakao_access_token(body.access_token, settings)
+    profile = (payload.get("kakao_account") or {}).get("profile") or {}
+    nickname = profile.get("nickname")
+    with Session(request.app.state.db_engine) as session:
+        user = find_or_create_social_user(session, provider="kakao", provider_id=str(payload["id"]), email=None, nickname=nickname)
+        token = create_access_token(user.id, settings)
+        session.commit()
+        session.refresh(user)
+        return TokenResponse(
+            access_token=token,
+            user=UserPublic(
+                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, created_at=user.created_at
+            ),
         )
 
 
@@ -113,7 +166,7 @@ def check_email(email: str, request: Request) -> EmailAvailability:
 
 @router.get("/me", response_model=UserPublic)
 def me(user: User = Depends(get_current_user)) -> UserPublic:
-    return UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+    return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
 
 
 @router.post("/send-verification", response_model=SendVerificationResponse)
@@ -145,4 +198,61 @@ def verify_email(token: str, request: Request) -> UserPublic:
         session.add(user)
         session.commit()
         session.refresh(user)
-        return UserPublic(id=user.id, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+        return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+
+
+# ── 비밀번호 재설정 ──────────────────────────────────────────────────────────
+
+
+@router.post("/password-reset/send-code", response_model=PasswordResetSendCodeResponse)
+def send_reset_code(body: PasswordResetSendCodeRequest, request: Request) -> PasswordResetSendCodeResponse:
+    settings = request.app.state.settings
+    with Session(request.app.state.db_engine) as session:
+        user = session.exec(select(User).where(User.email == body.email)).first()
+    if user is None:
+        # 계정 존재 여부를 숨긴다 - 실제로는 메일을 안 보내지만, 응답 모양(challenge 포함)은
+        # 실제 계정 분기와 동일하게 만든다. 가짜 challenge 는 verify-code 에서 INVALID_CODE 로
+        # 자연스럽게 실패한다. (쿨다운/메일 설정 체크는 일부러 안 거친다 - 실제 계정에만 있는 분기)
+        dummy_code = generate_signup_code()
+        return PasswordResetSendCodeResponse(sent=True, challenge=create_reset_code_token(body.email, dummy_code, settings), social_only=False)
+    if user.password_hash is None:
+        return PasswordResetSendCodeResponse(sent=False, challenge=None, social_only=True)
+    if settings.secret("resend_api_key") is None:
+        raise api_error("NOT_CONFIGURED")
+    if not request.app.state.reset_code_cooldown.try_mark(body.email):
+        raise api_error("TOO_MANY_REQUESTS")
+    code = generate_signup_code()
+    if not send_reset_code_email(body.email, code, settings):
+        raise api_error("EMAIL_SEND_FAILED")
+    request.app.state.reset_code_attempts.reset(body.email)  # 새 코드를 받았으니 이전 실패 횟수는 지운다
+    return PasswordResetSendCodeResponse(sent=True, challenge=create_reset_code_token(body.email, code, settings), social_only=False)
+
+
+@router.post("/password-reset/verify-code", response_model=PasswordResetVerifyResponse)
+def verify_reset_code_endpoint(body: PasswordResetVerifyRequest, request: Request) -> PasswordResetVerifyResponse:
+    settings = request.app.state.settings
+    if not request.app.state.reset_code_attempts.try_attempt(body.email):
+        raise api_error("TOO_MANY_REQUESTS")
+    verify_reset_code(body.challenge, body.email, body.code, settings)
+    return PasswordResetVerifyResponse(verified=True, token=create_reset_verified_token(body.email, settings))
+
+
+@router.post("/password-reset", response_model=UserPublic)
+def reset_password(body: PasswordResetRequest, request: Request) -> UserPublic:
+    settings = request.app.state.settings
+    try:
+        # 서명 검증 전에 email 클레임만 먼저 들여다본다 - 실제 검증(서명·만료·purpose·email 일치)은
+        # 바로 뒤 check_reset_verified 가 한다.
+        email = jwt.decode(body.token, options={"verify_signature": False}).get("email")
+    except jwt.PyJWTError:
+        raise api_error("UNAUTHORIZED")
+    check_reset_verified(body.token, email, settings)
+    with Session(request.app.state.db_engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if user is None:
+            raise api_error("UNAUTHORIZED")
+        user.password_hash = hash_password(body.new_password)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)

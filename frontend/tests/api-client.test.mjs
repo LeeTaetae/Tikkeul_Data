@@ -84,6 +84,60 @@ test('post: JSON 본문을 보내고 Content-Type 을 붙인다', async () => {
   assert.equal(seen.body, JSON.stringify({ email: 'a@b.com' }));
 });
 
+// authApi.loginGoogle 은 이 경로/바디 모양으로 요청을 조립한다(client.ts 가 실제로 보내는 것을 확인한다).
+// src/lib/auth/api.ts 는 config.ts 를 거쳐 react-native 를 import 해서 plain Node 에선 직접 import 할 수 없다(기존 authApi 함수들도 동일한 제약으로 미테스트).
+test('loginGoogle 요청 조립: POST /api/auth/social/google 에 { id_token } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ ok: true })));
+  await client.post('/api/auth/social/google', { id_token: 'fake-id-token' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/social/google');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ id_token: 'fake-id-token' }));
+});
+
+// authApi.loginKakao 도 동일한 제약(react-native 의존)으로 client.ts 조립 결과만 검증한다.
+test('loginKakao 요청 조립: POST /api/auth/social/kakao 에 { access_token } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ ok: true })));
+  await client.post('/api/auth/social/kakao', { access_token: 'fake-access-token' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/social/kakao');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ access_token: 'fake-access-token' }));
+});
+
+// authApi.sendPasswordResetCode/verifyPasswordResetCode/resetPassword 도 동일한 제약(react-native 의존)으로 client.ts 조립 결과만 검증한다.
+test('sendPasswordResetCode 요청 조립: POST /api/auth/password-reset/send-code 에 { email } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ sent: true, challenge: null, social_only: false })));
+  await client.post('/api/auth/password-reset/send-code', { email: 'a@b.com' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/password-reset/send-code');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ email: 'a@b.com' }));
+});
+
+test('verifyPasswordResetCode 요청 조립: POST /api/auth/password-reset/verify-code 에 { email, code, challenge } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ verified: true, token: 'tok' })));
+  await client.post('/api/auth/password-reset/verify-code', { email: 'a@b.com', code: '123456', challenge: 'ch' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/password-reset/verify-code');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ email: 'a@b.com', code: '123456', challenge: 'ch' }));
+});
+
+test('resetPassword 요청 조립: POST /api/auth/password-reset 에 { token, new_password } 바디', async () => {
+  let seenUrl = null;
+  let seenInit = null;
+  const client = clientWith(async (url, init) => ((seenUrl = url), (seenInit = init), json({ id: 1 })));
+  await client.post('/api/auth/password-reset', { token: 'tok', new_password: 'newpassword1' });
+  assert.equal(seenUrl, 'http://api.test/api/auth/password-reset');
+  assert.equal(seenInit.method, 'POST');
+  assert.equal(seenInit.body, JSON.stringify({ token: 'tok', new_password: 'newpassword1' }));
+});
+
 test('token 옵션을 주면 Authorization 헤더가 붙는다', async () => {
   let seen = null;
   const client = clientWith(async (url, init) => ((seen = init), json({ ok: true })));
@@ -114,4 +168,13 @@ test('patch: JSON 본문을 보낸다', async () => {
   await client.patch('/api/favorites/1', { label: '새이름' });
   assert.equal(seen.method, 'PATCH');
   assert.equal(seen.body, JSON.stringify({ label: '새이름' }));
+});
+
+// favoritesApi.create 는 category 를 바디에 포함해서 보낸다(client.ts 조립 결과만 확인, favoritesApi 자체는 react-native config 의존으로 미테스트).
+test('favorites create 요청 조립: POST /api/favorites 에 category 포함', async () => {
+  let seen = null;
+  const client = clientWith(async (url, init) => ((seen = init), json({ ok: true })));
+  await client.post('/api/favorites', { kind: 'custom', label: '단골 카페', lat: 37.5, lon: 127.0, category: '카페' });
+  assert.equal(seen.method, 'POST');
+  assert.equal(seen.body, JSON.stringify({ kind: 'custom', label: '단골 카페', lat: 37.5, lon: 127.0, category: '카페' }));
 });

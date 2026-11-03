@@ -11,7 +11,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Bus,
   CalendarDays,
@@ -63,7 +63,7 @@ import { showTransitRoute } from '../src/map/showTransitRoute';
 import { findDemoDestination } from '../src/map/demoDestinations';
 import { getCurrentLocation } from '../src/lib/location/getCurrentLocation';
 import { NEARBY_CATEGORIES, fetchNearbyPlaces, fetchPlaceAt, type NearbyPlace, type PlaceAtPoint, type PlaceCategory } from '../src/lib/places/api';
-import { favoritesApi } from '../src/lib/favorites/api';
+import { favoritesApi, type FavoritePlace } from '../src/lib/favorites/api';
 import { searchPlaces, type PlaceSearchResult } from '../src/lib/places/search';
 import { loadRecentRoutes, loadRecents, saveRecent, saveRecentRoute, type RecentDestination, type RecentRoute } from '../src/lib/recents';
 import { useAuth } from '../src/lib/auth/AuthContext';
@@ -224,6 +224,12 @@ function SearchAction({ label, compact, onPress }: { label: string; compact: boo
 export default function HomeScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const { favoriteCategory, favLat, favLng, favLabel } = useLocalSearchParams<{
+    favoriteCategory?: string;
+    favLat?: string;
+    favLng?: string;
+    favLabel?: string;
+  }>();
   const { status: authStatus, token: authToken } = useAuth();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -282,6 +288,10 @@ export default function HomeScreen() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState(false);
 
+  // 즐겨찾기 카테고리 바텀시트(홈화면). nearbyCategory 와 서로 배타적이어야 한다(한쪽을 열 때 다른 쪽을 닫는다).
+  const [favoriteCategoryView, setFavoriteCategoryView] = useState<string | null>(null);
+  const [favoriteCategoryPlaces, setFavoriteCategoryPlaces] = useState<FavoritePlace[] | null>(null);
+
   // 홈 화면 기본 패널: 내 주변에서 전체 유저가 많이 간 곳(로그인 불필요, 집계만). 다른 시트가 없을 때만 보인다.
   const [popularPlaces, setPopularPlaces] = useState<FrequentDestination[] | null>(null);
   const [popularTab, setPopularTab] = useState<'nearby' | 'trending'>('nearby');
@@ -301,6 +311,37 @@ export default function HomeScreen() {
       .catch(() => setPopularPlaces(null));
   }, []);
 
+  // 즐겨찾기 화면의 카테고리 그룹 헤더를 탭해 들어오면(favoriteCategory 파라미터), 그 카테고리의 즐겨찾기들을 지도에 점으로 찍는다.
+  useEffect(() => {
+    if (!favoriteCategory || !authToken) return;
+    // 내 주변 카테고리 시트가 열려 있으면 먼저 닫아야 onPlaceClick 이 엉뚱한 nearbyPlaces 인덱스로 안내를 시작하지 않는다.
+    closeNearby();
+    favoritesApi
+      .list(authToken)
+      .then((list) => {
+        const filtered = list.filter((f) => f.category === favoriteCategory);
+        setFavoriteCategoryPlaces(filtered);
+        setFavoriteCategoryView(favoriteCategory);
+        mapRef.current?.showPlaces(filtered.map((f) => ({ point: { lat: f.lat, lng: f.lon }, label: f.label })), colors.brand);
+        // 같은 카테고리를 다시 탭해도 effect 가 재실행되도록 파라미터를 비운다.
+        router.setParams({ favoriteCategory: undefined });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favoriteCategory, authToken]);
+
+  // 즐겨찾기 화면에서 집/회사/카테고리 안 즐겨찾기 하나를 눌러 들어오면(favLat/favLng/favLabel 파라미터),
+  // 바로 턴바이턴으로 들어가지 않고 기존 "주변 장소 선택" 과 동일하게 경로 선택 단계(searchRoutes → routeStyles)를 거친다.
+  useEffect(() => {
+    if (!favLat || !favLng || !favLabel) return;
+    closeNearby();
+    closeFavoriteCategoryView();
+    searchRoutes({ lat: Number(favLat), lng: Number(favLng) }, favLabel, mode);
+    // 같은 즐겨찾기를 다시 눌러도 effect 가 재실행되도록 파라미터를 비운다.
+    router.setParams({ favLat: undefined, favLng: undefined, favLabel: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favLat, favLng, favLabel]);
+
   // 도착지 입력창에 2글자 이상 치면 실제 장소 검색(자동완성)을 보여준다. 데모 목적지 4곳만 되던 한계를 없앤다.
   const [destinationSuggestions, setDestinationSuggestions] = useState<PlaceSearchResult[]>([]);
   useEffect(() => {
@@ -310,7 +351,7 @@ export default function HomeScreen() {
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchPlaces(destination.trim())
+      searchPlaces(destination.trim(), undefined, i18n.language)
         .then((results) => {
           if (!cancelled) setDestinationSuggestions(results);
         })
@@ -322,7 +363,7 @@ export default function HomeScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [destination, destinationFocused]);
+  }, [destination, destinationFocused, i18n.language]);
 
   // 어린이보호구역: 실제 안내 경로에 실제 보호구역 데이터를 매칭해 접근 경고를 띄운다. 조회·매칭·단계 경고는
   // 길안내 화면과 같은 훅(useRouteHazardWarning)을 쓴다. 경로가 지나는 시군구를 표본 조회한다(경로 시작점 하나만 보지 않는다).
@@ -415,6 +456,7 @@ export default function HomeScreen() {
 
   const onChangeDestination = (text: string) => {
     closeNearby();
+    closeFavoriteCategoryView();
     setPlannerOpen(true);
     setDestination(text);
     setManualDestination(null);
@@ -461,8 +503,8 @@ export default function HomeScreen() {
     if (travelMode === 'transit') {
       const [transit, originAddressValue, destinationAddressValue] = await Promise.all([
         fetchTransitRoutes(origin, destinationPoint),
-        fetchAddress(origin),
-        fetchAddress(destinationPoint),
+        fetchAddress(origin, i18n.language),
+        fetchAddress(destinationPoint, i18n.language),
       ]);
       setOriginAddress(originAddressValue);
       setDestinationAddress(destinationAddressValue);
@@ -486,8 +528,8 @@ export default function HomeScreen() {
         ? // Tmap 5가지 스타일이 실패(한도 초과 429 → 503 등)하면 /navigation/route 의 추천 경로 하나로 대신한다.
           fetchRouteStyles(origin, destinationPoint).then((styles) => styles ?? fetchBestRoute(origin, destinationPoint))
         : fetchModeRoute(origin, destinationPoint, travelMode),
-      fetchAddress(origin),
-      fetchAddress(destinationPoint),
+      fetchAddress(origin, i18n.language),
+      fetchAddress(destinationPoint, i18n.language),
     ]);
     setOriginAddress(originAddressValue);
     setDestinationAddress(destinationAddressValue);
@@ -606,8 +648,16 @@ export default function HomeScreen() {
     mapRef.current?.clearPlaces();
   };
 
+  // 즐겨찾기 카테고리 시트를 닫는다. nearbyCategory 시트와 배타적이라 둘 다 있을 땐 서로 닫아줘야 한다.
+  const closeFavoriteCategoryView = () => {
+    setFavoriteCategoryView(null);
+    setFavoriteCategoryPlaces(null);
+    mapRef.current?.clearPlaces();
+  };
+
   // 카테고리 버튼: 같은 카테고리를 다시 누르면 닫고, 다른 카테고리면 현재 위치 기준으로 다시 찾아 지도에 점을 찍는다.
   const onPressCategory = async (category: PlaceCategory) => {
+    closeFavoriteCategoryView();
     if (nearbyCategory === category) {
       closeNearby();
       return;
@@ -635,6 +685,13 @@ export default function HomeScreen() {
     setDestination(place.name);
     setManualDestination(place.point);
     await searchRoutes(place.point, place.name, mode);
+  };
+
+  const onPickFavoritePlace = async (place: FavoritePlace) => {
+    closeFavoriteCategoryView();
+    setDestination(place.label);
+    setManualDestination({ lat: place.lat, lng: place.lon });
+    await searchRoutes({ lat: place.lat, lng: place.lon }, place.label, mode);
   };
 
   const onPickPopularPlace = async (place: FrequentDestination) => {
@@ -715,7 +772,7 @@ export default function HomeScreen() {
     setPickedPoint(null);
     setPlannerOpen(true);
     destinationInputRef.current?.focus();
-    fetchAddress(origin).then((address) => setOriginAddress(address));
+    fetchAddress(origin, i18n.language).then((address) => setOriginAddress(address));
   };
 
   // 지도에서 고른 위치를 도착지로 지정하고, 검색 결과(경로 스타일 선택지)를 보여준다.
@@ -768,8 +825,19 @@ export default function HomeScreen() {
   // 경고가 떠 있을 때 그 카드(+위아래 여백)가 차지하는 높이. 시트·최근 검색 패널은 이만큼을 비워 둔다.
   const alertReserve = urgent ? alertHeight + space.lg + space.sm : 0;
   const maxSheetHeightWithAlert = Math.max(0, windowHeight - TAB_BAR_ALLOWANCE - alertReserve - insets.top);
-  const hasPopularSheet = !nearbyCategory && !pickedPoint && !activeRoute && !liveLoading && !routeStyles && !transitResult && !searched;
-  const hasSheet = !!(nearbyCategory || pickedPoint || activeRoute || liveLoading || routeStyles || transitResult || searched || hasPopularSheet);
+  const hasPopularSheet =
+    !nearbyCategory && !favoriteCategoryView && !pickedPoint && !activeRoute && !liveLoading && !routeStyles && !transitResult && !searched;
+  const hasSheet = !!(
+    nearbyCategory ||
+    favoriteCategoryView ||
+    pickedPoint ||
+    activeRoute ||
+    liveLoading ||
+    routeStyles ||
+    transitResult ||
+    searched ||
+    hasPopularSheet
+  );
   const hazardOffset = hasSheet
     ? Math.min(sheetHeight, maxSheetHeightWithAlert)
     : 0;
@@ -789,7 +857,18 @@ export default function HomeScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.mapLayer}>
-        <KakaoMap ref={mapRef} onMapClick={onMapClick} onUserPan={onMapPan} onPlaceClick={(i) => nearbyPlaces?.[i] && onPickNearbyPlace(nearbyPlaces[i])} />
+        <KakaoMap
+          ref={mapRef}
+          onMapClick={onMapClick}
+          onUserPan={onMapPan}
+          onPlaceClick={(i) => {
+            if (favoriteCategoryPlaces) {
+              favoriteCategoryPlaces[i] && onPickFavoritePlace(favoriteCategoryPlaces[i]);
+              return;
+            }
+            nearbyPlaces?.[i] && onPickNearbyPlace(nearbyPlaces[i]);
+          }}
+        />
       </View>
 
       {/* 위험 경고는 상단 오버레이(메뉴·시뮬레이터)보다 먼저 그려 그 아래에 깔린다. */}
@@ -852,7 +931,7 @@ export default function HomeScreen() {
                       style={[styles.plannerText, styles.plannerInput]}
                       value={destination}
                       onChangeText={onChangeDestination}
-                      onFocus={() => { closeNearby(); setDestinationFocused(true); }}
+                      onFocus={() => { closeNearby(); closeFavoriteCategoryView(); setDestinationFocused(true); }}
                       onBlur={() => setTimeout(() => setDestinationFocused(false), 150)}
                       accessibilityLabel={t('map.to')}
                       placeholder={t('map.toPlaceholder')}
@@ -889,7 +968,7 @@ export default function HomeScreen() {
               value={destination}
               onChangeText={onChangeDestination}
               returnKeyType="search"
-              onFocus={() => { closeNearby(); setPlannerOpen(true); }}
+              onFocus={() => { closeNearby(); closeFavoriteCategoryView(); setPlannerOpen(true); }}
               onSubmitEditing={() => setPlannerOpen(true)}
               trailing={<SearchAction label={t('map.search')} compact={compactSearch} onPress={() => setPlannerOpen(true)} />}
             />
@@ -1119,6 +1198,35 @@ export default function HomeScreen() {
       ) : searched ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t(liveError ? 'map.liveError' : 'map.demoHint')}</Text>
+        </BottomSheet>
+      ) : favoriteCategoryView ? (
+        <BottomSheet key="favorite-category" {...sheetProps}>
+          <View style={styles.pickTopRow}>
+            <Text style={[styles.recentsTitle, styles.favoriteCategoryTitle]} numberOfLines={1}>
+              {t('places.favoriteCategoryTitle', { category: favoriteCategoryView })}
+            </Text>
+            <RoundButton icon={X} label={t('map.cancel')} variant="soft" size={44} onPress={closeFavoriteCategoryView} />
+          </View>
+          {favoriteCategoryPlaces && favoriteCategoryPlaces.length === 0 ? (
+            <Text style={styles.notice}>{t('places.empty')}</Text>
+          ) : (
+            <ScrollView style={styles.nearbyList}>
+              {favoriteCategoryPlaces?.map((place) => (
+                <Pressable key={place.id} style={styles.nearbyRow} onPress={() => onPickFavoritePlace(place)} accessibilityRole="button">
+                  <View style={styles.nearbyItemMain}>
+                    <Text style={styles.recentItemText} numberOfLines={1}>
+                      {place.label}
+                    </Text>
+                    {!!place.address_text && (
+                      <Text style={styles.nearbyAddress} numberOfLines={1}>
+                        {place.address_text}
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </BottomSheet>
       ) : hasPopularSheet ? (
         <BottomSheet key="popular" {...sheetProps}>
@@ -1524,6 +1632,7 @@ const styles = StyleSheet.create({
   recentsPanel: { backgroundColor: colors.surface, borderRadius: radius.lg, boxShadow: shadow.float },
   recentsPanelContent: { padding: space.md, gap: space.xs },
   recentsTitle: { fontSize: 13, fontWeight: '700', color: colors.muted, marginTop: space.xs },
+  favoriteCategoryTitle: { flex: 1 },
   recentItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.xs },
   recentItemText: { fontSize: 15, color: colors.ink },
   nearbyList: { maxHeight: 360 },

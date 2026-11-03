@@ -1,5 +1,5 @@
 import { Briefcase, Heart, House, MapPin, Trash2, X, type LucideIcon } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,6 @@ import { ApiClientError } from '../src/lib/api/client';
 import { useAuth } from '../src/lib/auth/AuthContext';
 import { favoritesApi, type FavoriteKind, type FavoritePlace } from '../src/lib/favorites/api';
 import { getCurrentLocation } from '../src/lib/location/getCurrentLocation';
-import { setGuidanceRequest } from '../src/lib/navigation/guidanceSession';
 import { searchPlaces, type PlaceSearchResult } from '../src/lib/places/search';
 import type { RoutePoint } from '../src/map/types';
 import { colors, radius, shadow, space } from '../src/theme';
@@ -31,7 +30,6 @@ export default function FavoritesScreen() {
 
   const [items, setItems] = useState<FavoritePlace[] | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [startingId, setStartingId] = useState<number | null>(null);
 
   // 비로그인 상태로 들어오면(메뉴에서 직접 주소 입력 등) 로그인 화면으로 보내고, 성공하면 여기로 돌아온다.
   useEffect(() => {
@@ -53,6 +51,18 @@ export default function FavoritesScreen() {
     load();
   }, [load]);
 
+  // custom + category 가 있는 항목만 카테고리별로 묶고, 나머지(home/work/카테고리 없는 custom)는 평평하게 보여준다.
+  const flatItems = useMemo(() => items?.filter((i) => !(i.kind === 'custom' && i.category)) ?? [], [items]);
+  const groupedByCategory = useMemo(() => {
+    const groups: Record<string, FavoritePlace[]> = {};
+    for (const item of items ?? []) {
+      if (item.kind === 'custom' && item.category) {
+        (groups[item.category] ??= []).push(item);
+      }
+    }
+    return groups;
+  }, [items]);
+
   const onDelete = async (id: number) => {
     if (!token) return;
     setItems((prev) => prev?.filter((p) => p.id !== id) ?? prev);
@@ -63,21 +73,9 @@ export default function FavoritesScreen() {
     }
   };
 
-  const onStart = async (item: FavoritePlace) => {
-    setStartingId(item.id);
-    try {
-      const origin = await getCurrentLocation();
-      setGuidanceRequest({
-        origin,
-        destination: { lat: item.lat, lng: item.lon },
-        mode: 'driving',
-        style: 'recommended',
-        destinationLabel: item.label,
-      });
-      router.push('/navigation');
-    } finally {
-      setStartingId(null);
-    }
+  // 바로 턴바이턴으로 들어가지 않고, 홈 화면(지도)으로 이동해 기존 "주변 장소 선택"처럼 경로 선택 단계를 먼저 거치게 한다.
+  const onStart = (item: FavoritePlace) => {
+    router.push({ pathname: '/', params: { favLat: String(item.lat), favLng: String(item.lon), favLabel: item.label } });
   };
 
   if (status !== 'authenticated' || !token) return null; // guest 는 위 effect 가 로그인으로 보낸다
@@ -106,8 +104,22 @@ export default function FavoritesScreen() {
         </View>
       ) : (
         <View style={styles.list}>
-          {items?.map((item) => (
-            <FavoriteRow key={item.id} item={item} loading={startingId === item.id} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
+          {flatItems.map((item) => (
+            <FavoriteRow key={item.id} item={item} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
+          ))}
+          {Object.entries(groupedByCategory).map(([category, group]) => (
+            <View key={category} style={styles.group}>
+              <Pressable
+                onPress={() => router.push({ pathname: '/', params: { favoriteCategory: category } })}
+                style={({ pressed }) => [styles.groupHeader, pressed && styles.pressed]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.groupHeaderText}>{category}</Text>
+              </Pressable>
+              {group.map((item) => (
+                <FavoriteRow key={item.id} item={item} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
+              ))}
+            </View>
           ))}
         </View>
       )}
@@ -117,7 +129,7 @@ export default function FavoritesScreen() {
   );
 }
 
-function FavoriteRow({ item, loading, onPress, onDelete }: { item: FavoritePlace; loading: boolean; onPress: () => void; onDelete: () => void }) {
+function FavoriteRow({ item, onPress, onDelete }: { item: FavoritePlace; onPress: () => void; onDelete: () => void }) {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
 
@@ -154,28 +166,25 @@ function FavoriteRow({ item, loading, onPress, onDelete }: { item: FavoritePlace
           )}
         </View>
       </Pressable>
-      {loading ? (
-        <ActivityIndicator color={colors.brand} />
-      ) : (
-        <Pressable
-          onPress={() => setConfirming(true)}
-          accessibilityRole="button"
-          accessibilityLabel={t('favorites.delete')}
-          hitSlop={8}
-          style={styles.rowDelete}
-        >
-          <Icon icon={Trash2} size={18} color={colors.muted} />
-        </Pressable>
-      )}
+      <Pressable
+        onPress={() => setConfirming(true)}
+        accessibilityRole="button"
+        accessibilityLabel={t('favorites.delete')}
+        hitSlop={8}
+        style={styles.rowDelete}
+      >
+        <Icon icon={Trash2} size={18} color={colors.muted} />
+      </Pressable>
     </Card>
   );
 }
 
 function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; existingKinds: Set<FavoriteKind> | undefined; onAdded: () => Promise<void> }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<FavoriteKind>('custom');
   const [label, setLabel] = useState('');
+  const [category, setCategory] = useState('');
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([]);
   const [picked, setPicked] = useState<RoutePoint | null>(null);
@@ -190,7 +199,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchPlaces(query.trim())
+      searchPlaces(query.trim(), undefined, i18n.language)
         .then((results) => {
           if (!cancelled) setSuggestions(results);
         })
@@ -202,7 +211,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, i18n.language]);
 
   if (!open) {
     return (
@@ -237,8 +246,9 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
     setSaving(true);
     setError(null);
     try {
-      await favoritesApi.create({ kind, label: label.trim(), lat: picked.lat, lon: picked.lng }, token);
+      await favoritesApi.create({ kind, label: label.trim(), lat: picked.lat, lon: picked.lng, category: category.trim() || undefined }, token);
       setLabel('');
+      setCategory('');
       setQuery('');
       setPicked(null);
       setKind('custom');
@@ -293,6 +303,9 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
       </Pressable>
       {picked && !suggestions.length && <Text style={styles.pickedNotice}>{t('favorites.locationPicked')}</Text>}
       <TextField label={t('favorites.label')} placeholder={t('favorites.labelPlaceholder')} value={label} onChangeText={setLabel} error={error ?? undefined} />
+      {kind === 'custom' && (
+        <TextField label={t('favorites.category')} placeholder={t('favorites.categoryPlaceholder')} value={category} onChangeText={setCategory} />
+      )}
       <PrimaryButton label={t('favorites.save')} onPress={onSave} disabled={!label.trim() || !picked || saving} loading={saving} />
     </Card>
   );
@@ -307,6 +320,9 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
   emptyHint: { fontSize: 14, color: colors.muted, textAlign: 'center' },
   list: { gap: space.sm },
+  group: { gap: space.sm },
+  groupHeader: { paddingVertical: space.xs, paddingHorizontal: space.xs },
+  groupHeaderText: { fontSize: 14, fontWeight: '800', color: colors.brand },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minWidth: 0 },
   rowIcon: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },

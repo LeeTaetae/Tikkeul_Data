@@ -12,6 +12,7 @@ export interface FavoritePlace {
   lat: number;
   lon: number;
   address_text: string;
+  category: string | null;
 }
 
 export interface FavoritePlaceInput {
@@ -20,6 +21,7 @@ export interface FavoritePlaceInput {
   lat: number;
   lon: number;
   address_text?: string;
+  category?: string | null;
 }
 
 export const favoritesApi = {

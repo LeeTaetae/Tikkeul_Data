@@ -1,0 +1,65 @@
+from typing import Optional
+
+import httpx
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.id_token import verify_oauth2_token
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
+
+from app.auth.models import User, normalize_email
+from app.config import Settings
+from app.errors import api_error
+
+
+def verify_google_id_token(id_token: str, settings: Settings) -> dict:
+    """구글 ID 토큰을 검증하고 payload(sub, email 등)를 돌려준다. 서명/만료/audience 불일치는 SOCIAL_LOGIN_FAILED로 변환한다."""
+    try:
+        return verify_oauth2_token(id_token, GoogleAuthRequest(), audience=settings.google_web_client_id)
+    except ValueError:
+        raise api_error("SOCIAL_LOGIN_FAILED")
+
+
+def verify_kakao_access_token(access_token: str, settings: Settings) -> dict:
+    """카카오 액세스 토큰으로 사용자 정보를 조회해 payload(id 등)를 돌려준다. id만 보장되고 email 스코프는 쓰지 않는다.
+
+    2xx가 아니거나 응답에 id가 없으면 SOCIAL_LOGIN_FAILED로 변환한다.
+    """
+    try:
+        resp = httpx.get("https://kapi.kakao.com/v2/user/me", headers={"Authorization": f"Bearer {access_token}"}, timeout=5.0)
+    except httpx.HTTPError:
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    if not (200 <= resp.status_code < 300):
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    try:
+        data = resp.json()
+    except ValueError:
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    if data.get("id") is None:
+        raise api_error("SOCIAL_LOGIN_FAILED")
+    return data
+
+
+def find_or_create_social_user(session: Session, provider: str, provider_id: str, email: Optional[str], nickname: Optional[str]) -> User:
+    """provider+provider_id로 기존 유저를 찾거나, 없으면 새로 만든다.
+
+    nickname은 이번 스키마에 저장 컬럼이 없어 DB에는 쓰지 않는다(호출부에서 응답 조립 시에만 사용).
+    """
+    existing = session.exec(select(User).where(User.provider == provider, User.provider_id == provider_id)).first()
+    if existing is not None:
+        return existing
+    if email is not None:
+        email = normalize_email(email)
+        email_collision = session.exec(select(User).where(User.email == email)).first()
+        if email_collision is not None:
+            raise api_error("EMAIL_TAKEN")
+    # 소셜 로그인은 공급자가 이미 이메일을 확인했다고 간주한다.
+    user = User(provider=provider, provider_id=provider_id, email=email, password_hash=None, email_verified=True)
+    session.add(user)
+    try:
+        session.flush()
+    except IntegrityError:
+        # "확인 후 삽입" 사이의 동시 요청 레이스 - 같은 provider+provider_id(동시 첫 로그인)거나,
+        # 같은 email(동시 가입)로 그 사이 다른 트랜잭션이 먼저 커밋한 경우. 둘 다 raw 500 대신 깨끗한 오류로 바꾼다.
+        session.rollback()
+        raise api_error("EMAIL_TAKEN" if email is not None else "SOCIAL_LOGIN_FAILED")
+    return user

@@ -98,6 +98,41 @@ def test_patch_with_empty_body_changes_nothing(make_client):
     assert res.status_code == 200 and res.json() == created
 
 
+def test_custom_favorite_keeps_category(make_client):
+    client = make_client(lambda r: None)
+    token = _signup_and_token(client)
+    res = client.post(
+        "/api/favorites",
+        json={"kind": "custom", "label": "카페", "lat": 37.5, "lon": 127.0, "category": "카페"},
+        headers=_auth(token),
+    )
+    assert res.status_code == 201 and res.json()["category"] == "카페"
+
+
+def test_home_favorite_ignores_category(make_client):
+    client = make_client(lambda r: None)
+    token = _signup_and_token(client)
+    res = client.post(
+        "/api/favorites",
+        json={"kind": "home", "label": "집", "lat": 37.5, "lon": 127.0, "category": "뭔가"},
+        headers=_auth(token),
+    )
+    assert res.status_code == 201 and res.json()["category"] is None
+
+
+def test_patching_custom_to_home_clears_category(make_client):
+    client = make_client(lambda r: None)
+    token = _signup_and_token(client)
+    custom = client.post(
+        "/api/favorites",
+        json={"kind": "custom", "label": "어딘가", "lat": 37.5, "lon": 127.0, "category": "카페"},
+        headers=_auth(token),
+    ).json()
+
+    res = client.patch(f"/api/favorites/{custom['id']}", json={"kind": "home"}, headers=_auth(token))
+    assert res.status_code == 200 and res.json()["category"] is None
+
+
 def test_all_endpoints_require_a_token(make_client):
     client = make_client(lambda r: None)
     assert client.get("/api/favorites").status_code == 401

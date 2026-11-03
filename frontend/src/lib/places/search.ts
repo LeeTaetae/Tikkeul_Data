@@ -7,9 +7,12 @@ export interface PlaceSearchResult {
   point: RoutePoint;
 }
 
-export async function searchPlaces(query: string, near?: RoutePoint): Promise<PlaceSearchResult[]> {
+export async function searchPlaces(query: string, near?: RoutePoint, lang?: string): Promise<PlaceSearchResult[]> {
   if (!query.trim()) return [];
   const params = new URLSearchParams({ query });
+  if (lang) {
+    params.set('lang', lang);
+  }
   if (near) {
     params.set('lat', String(near.lat));
     params.set('lng', String(near.lng));

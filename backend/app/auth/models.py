@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import field_validator
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 
 def _utcnow() -> datetime:
@@ -10,9 +10,13 @@ def _utcnow() -> datetime:
 
 
 class User(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("provider", "provider_id", name="uq_user_provider_provider_id"),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(index=True, unique=True)
-    password_hash: str
+    provider: str = Field(default="local")
+    provider_id: Optional[str] = Field(default=None, index=True)
+    email: Optional[str] = Field(default=None, index=True, unique=True)
+    password_hash: Optional[str] = Field(default=None)
     email_verified: bool = Field(default=False)
     created_at: datetime = Field(default_factory=_utcnow)
 
@@ -64,9 +68,19 @@ class LoginRequest(SQLModel):
         return normalize_email(v)
 
 
+class SocialLoginRequest(SQLModel):
+    id_token: str
+
+
+class KakaoLoginRequest(SQLModel):
+    access_token: str
+
+
 class UserPublic(SQLModel):
     id: int
-    email: str
+    provider: str
+    email: Optional[str]
+    nickname: Optional[str] = None
     email_verified: bool
     created_at: datetime
 
@@ -115,3 +129,48 @@ class SignupCodeVerifyResponse(SQLModel):
     verified: bool
     # 가입 요청(SignupRequest.verify_token)에 그대로 실어 보내는, "이 이메일은 확인됨" 토큰.
     token: str
+
+
+# ── 비밀번호 재설정 ──────────────────────────────────────────────────────────
+
+
+class PasswordResetSendCodeRequest(SQLModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v: str) -> str:
+        return normalize_email(v)
+
+
+class PasswordResetSendCodeResponse(SQLModel):
+    sent: bool
+    challenge: Optional[str] = None
+    # 소셜 전용 계정(비밀번호 없음)이었는지 - 이 경우만 명시적으로 알려준다(계정 존재 여부는 숨기지만, 이건 제품 결정).
+    social_only: bool = False
+
+
+class PasswordResetVerifyRequest(SQLModel):
+    email: str
+    code: str
+    challenge: str
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v: str) -> str:
+        return normalize_email(v)
+
+
+class PasswordResetVerifyResponse(SQLModel):
+    verified: bool
+    token: str
+
+
+class PasswordResetRequest(SQLModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _check_new_password(cls, v: str) -> str:
+        return _validate_password(v)

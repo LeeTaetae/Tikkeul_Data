@@ -4,7 +4,14 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from .config import get_settings
-from .providers import KakaoRoutingProvider, NaverProvider, TmapProvider
+from .providers import (
+    KakaoRoutingProvider,
+    NaverProvider,
+    TmapProvider,
+    translate_address_to_language,
+    translate_chinese_query_to_korean,
+    translate_places_to_language,
+)
 from .schemas import (
     LatLng,
     ModeRouteRequest,
@@ -106,16 +113,20 @@ async def get_nearby_places(category: str, lat: float, lng: float, radius_m: int
 
 
 @places_router.get("/search", response_model=PlaceSearchResponse)
-async def get_place_search(query: str, lat: Optional[float] = None, lng: Optional[float] = None) -> PlaceSearchResponse:
+async def get_place_search(
+    query: str, lat: Optional[float] = None, lng: Optional[float] = None, lang: Optional[str] = None
+) -> PlaceSearchResponse:
     if not query.strip():
         return PlaceSearchResponse(places=[])
     settings = get_settings()
     kakao = KakaoRoutingProvider(settings.kakao_rest_api_key)
     point = LatLng(lat=lat, lng=lng) if lat is not None and lng is not None else None
+    search_query = await translate_chinese_query_to_korean(query, settings.papago_client_id, settings.papago_client_secret)
     try:
-        places = await kakao.search_keyword(query, point)
+        places = await kakao.search_keyword(search_query, point)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="장소를 검색할 수 없습니다") from exc
+    places = await translate_places_to_language(places, lang, settings.papago_client_id, settings.papago_client_secret)
     return PlaceSearchResponse(places=places)
 
 
@@ -148,11 +159,12 @@ async def get_place_at_point(lat: float, lng: float, radius_m: int = 60) -> Plac
 
 
 @geocode_router.get("/reverse", response_model=ReverseGeocodeResponse)
-async def get_reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResponse:
+async def get_reverse_geocode(lat: float, lng: float, lang: Optional[str] = None) -> ReverseGeocodeResponse:
     settings = get_settings()
     kakao = KakaoRoutingProvider(settings.kakao_rest_api_key)
     try:
         address = await kakao.reverse_geocode(LatLng(lat=lat, lng=lng))
     except Exception:
         address = None
+    address = await translate_address_to_language(address, lang, settings.papago_client_id, settings.papago_client_secret)
     return ReverseGeocodeResponse(address=address)
