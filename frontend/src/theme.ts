@@ -42,6 +42,17 @@ export const hazardTone = {
   caution: { tint: '#EFF6FF', accent: '#2A5BD7', strong: '#1D4ED8' },
 } as const;
 
+// 전방 비전 탐지 클래스별 색. 공용 hazardTone(교통·ITS 경로 경고 전용)과는 별도 체계다 — 섞으면 AlertFilter 같은
+// 무관한 교통 알림 목록 UI까지 비전 클래스를 떠안게 된다. 차량류(kickboard/motorcycle/vehicle)는 accident와 같은
+// 계열, 보행자·동물(person/animal)은 construction과 같은 계열을 재사용해 색 수를 늘리지 않는다.
+export const visionHazardTone = {
+  kickboard: { tint: '#FEF2F2', accent: '#DC2626', strong: '#DC2626' },
+  motorcycle: { tint: '#FEF2F2', accent: '#DC2626', strong: '#DC2626' },
+  vehicle: { tint: '#FEF2F2', accent: '#DC2626', strong: '#DC2626' },
+  person: { tint: '#FFFBEB', accent: '#D97706', strong: '#B45309' },
+  animal: { tint: '#FFFBEB', accent: '#D97706', strong: '#B45309' },
+} as const;
+
 // 데이터 종류 배지 색(실시간·예측·등록 현황). 글자로도 구분한다.
 export const dataKindTone = {
   realtime: { bg: '#ECFDF5', fg: '#047857' },

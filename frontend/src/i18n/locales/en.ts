@@ -211,6 +211,16 @@ const en: Resources = {
     unknownPlace: 'Location unknown',
     empty: 'No alerts to show.',
   },
+  visionHazard: {
+    label: { kickboard: 'Kickboard', motorcycle: 'Motorcycle', vehicle: 'Vehicle', person: 'Pedestrian', animal: 'Animal' },
+    message: {
+      kickboard: 'Kickboard ahead',
+      motorcycle: 'Motorcycle ahead',
+      vehicle: 'Vehicle ahead',
+      person: 'Pedestrian ahead',
+      animal: 'Animal ahead',
+    },
+  },
   traffic: {
     area: 'Within about 5 km of your location',
     region: 'Current area: {{name}}',

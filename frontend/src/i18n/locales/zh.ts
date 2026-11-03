@@ -211,6 +211,16 @@ const zh: Resources = {
     unknownPlace: '位置未知',
     empty: '没有可显示的提醒。',
   },
+  visionHazard: {
+    label: { kickboard: '电动滑板车', motorcycle: '摩托车', vehicle: '车辆', person: '行人', animal: '动物' },
+    message: {
+      kickboard: '前方有电动滑板车',
+      motorcycle: '前方有摩托车',
+      vehicle: '前方有车辆',
+      person: '前方有行人',
+      animal: '前方有动物',
+    },
+  },
   traffic: {
     area: '您所在位置周边约5公里',
     region: '当前区域：{{name}}',

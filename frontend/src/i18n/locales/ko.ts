@@ -209,6 +209,16 @@ const ko = {
     unknownPlace: '위치 정보 없음',
     empty: '표시할 알림이 없습니다.',
   },
+  visionHazard: {
+    label: { kickboard: '전동킥보드', motorcycle: '오토바이', vehicle: '차량', person: '보행자', animal: '동물' },
+    message: {
+      kickboard: '전방에 전동킥보드가 있어요',
+      motorcycle: '전방에 오토바이가 있어요',
+      vehicle: '전방에 차량이 있어요',
+      person: '전방에 보행자가 있어요',
+      animal: '전방에 동물이 있어요',
+    },
+  },
   traffic: {
     area: '내 위치 주변 약 5km',
     region: '현재 지역: {{name}}',
