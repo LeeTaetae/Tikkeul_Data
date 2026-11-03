@@ -20,8 +20,10 @@ const RANK: Record<HazardStage, number> = { advance: 0, caution: 1, approach: 2,
 
 export function isInRoi(box: Box, roi: RoiTrapezoid = DEFAULT_ROI): boolean {
   const cx = box.x + box.width / 2;
-  const cy = box.y + box.height;
-  if (cy < roi.topY || cy > roi.bottomY) return false;
+  // 범퍼 바로 앞 객체는 화면 바닥을 넘어설 수 있다(부동소수점 오차·클리핑 안 된 박스) — 가장 가까운 경우가
+  // ROI 밖으로 취급돼 경고를 놓치지 않도록 bottomY로 clamp한다.
+  const cy = Math.min(box.y + box.height, roi.bottomY);
+  if (cy < roi.topY) return false;
   const t = (cy - roi.topY) / (roi.bottomY - roi.topY);
   const halfWidth = roi.topHalfWidth + t * (roi.bottomHalfWidth - roi.topHalfWidth);
   return cx >= 0.5 - halfWidth && cx <= 0.5 + halfWidth;

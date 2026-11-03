@@ -41,3 +41,10 @@ test('final과 caution이 섞이면 final', () => {
 test('빈 배열은 advance', () => {
   assert.equal(mostSevereStage([]), 'advance');
 });
+
+test('박스가 화면 바닥을 넘어서도(가장 가까운 경우) ROI 밖으로 취급하지 않는다', () => {
+  // 범퍼 바로 앞 객체는 y+height > 1.0이 될 수 있다(부동소수점 오차·클리핑 안 된 박스) — 리뷰 finding 4.
+  const d = { class: 'person', confidence: 0.9, box: { x: 0.45, y: 0.9, width: 0.1, height: 0.5 } };
+  assert.equal(isInRoi(d.box, DEFAULT_ROI), true);
+  assert.equal(stageOfDetection(d), 'final');
+});
