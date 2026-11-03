@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { ApiClientError, isAbortError } from './client';
+import { pollWhileActive } from './pollWhileActive';
 
 // 로딩/성공/오류를 구분한다. "빈 데이터"는 성공 응답의 items 가 비어 있는 경우라 화면에서 판단한다.
 // 같은 조회 조건에서 새로고침 중이거나 새로고침이 실패해도 마지막 성공 데이터는 남겨 둔다(화면이 깜빡이지 않게).
@@ -60,8 +62,7 @@ export function useApi<T>(
 
   useEffect(() => {
     if (!refreshMs || !enabled) return;
-    const id = setInterval(() => setTick((n) => n + 1), refreshMs);
-    return () => clearInterval(id);
+    return pollWhileActive(() => setTick((n) => n + 1), refreshMs, AppState);
   }, [refreshMs, enabled]);
 
   const reload = useCallback(() => setTick((n) => n + 1), []);

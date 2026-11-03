@@ -1,5 +1,7 @@
 """공공 API 호출. 키가 담긴 URL·파라미터를 로그나 예외 메시지로 내보내지 않는다."""
+import asyncio
 import logging
+import random
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -7,8 +9,17 @@ import httpx
 
 from app.config import Settings
 from app.errors import ApiError, api_error
+from app.ratelimit import UpstreamGuard, retry_after_seconds
 
 logger = logging.getLogger(__name__)
+
+# 429·일시적 서버 오류만 다시 시도한다. 재시도는 최대 MAX_RETRIES 번이고, 기다리는 시간은 지수 백오프(+지터)다.
+# Retry-After 가 MAX_RETRY_WAIT_S 보다 길면 사용자 요청을 붙잡고 기다리지 않고 그 시간만큼 쿨다운에 들어간다.
+RETRY_STATUSES = (429, 502, 503, 504)
+MAX_RETRIES = 2
+BACKOFF_BASE_S = 0.5
+MAX_RETRY_WAIT_S = 5.0
+MAX_COOLDOWN_S = 600.0
 
 # Kakao 게이트웨이는 dapi.kakao.com 호출마다 KA 헤더(os + origin)를 요구한다. 없으면 키가 유효해도 401 로 거절한다.
 # navigation/providers.py 의 KakaoRoutingProvider 와 같은 값이다(그쪽은 실호출로 확인했다). origin 값 자체는 검증되지 않는다.
@@ -57,21 +68,51 @@ def _as_list(value: Any) -> List[Dict[str, Any]]:
 
 
 class Upstream:
-    def __init__(self, client: httpx.AsyncClient, settings: Settings):
+    def __init__(self, client: httpx.AsyncClient, settings: Settings, guard: Optional[UpstreamGuard] = None):
         self._client = client
         self._settings = settings
+        self.guard = guard or UpstreamGuard(
+            {"its": settings.its_rate_per_min, "protection": settings.protection_rate_per_min, "kakao": settings.kakao_rate_per_min},
+            settings.upstream_max_concurrent,
+        )
+
+    async def _request(self, name: str, url: str, params: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> httpx.Response:
+        """가드(속도·동시 호출·쿨다운)를 거쳐 GET 한다. 실패하면 name 업스트림을 쿨다운에 넣어 같은 실패를 반복해 부르지 않는다."""
+        failure_s = self._settings.upstream_failure_cooldown_s
+        for attempt in range(MAX_RETRIES + 1):
+            self.guard.check(name)
+            try:
+                async with self.guard.slot(name):
+                    response = await self._client.get(url, params=params, headers=headers)
+            except httpx.TimeoutException as exc:
+                _log_failure(url, exc)
+                self.guard.cool_down(name, failure_s, "UPSTREAM_TIMEOUT")
+                raise api_error("UPSTREAM_TIMEOUT") from None  # 원인 예외에는 키가 든 URL 이 있어 연결하지 않는다
+            except httpx.HTTPError as exc:
+                _log_failure(url, exc)
+                self.guard.cool_down(name, failure_s, "UPSTREAM_UNAVAILABLE")
+                raise api_error("UPSTREAM_UNAVAILABLE") from None
+            status = response.status_code
+            if status not in RETRY_STATUSES:
+                return response
+
+            retry_after = retry_after_seconds(response.headers.get("Retry-After"))
+            wait = retry_after if retry_after is not None else BACKOFF_BASE_S * 2**attempt + random.uniform(0, BACKOFF_BASE_S / 2)
+            if attempt == MAX_RETRIES or wait > MAX_RETRY_WAIT_S:
+                if status == 429:
+                    logger.warning("공공 API 호출 한도 초과 host=%s status=429", httpx.URL(url).host)
+                    cooldown_s = retry_after if retry_after is not None else self._settings.upstream_rate_limit_cooldown_s
+                    self.guard.cool_down(name, min(cooldown_s, MAX_COOLDOWN_S), "UPSTREAM_RATE_LIMIT")
+                    raise api_error("UPSTREAM_RATE_LIMIT")
+                self.guard.cool_down(name, failure_s, "UPSTREAM_TIMEOUT" if status == 504 else "UPSTREAM_UNAVAILABLE")
+                return response  # 호출자가 기존 방식대로 본문·상태를 해석해 오류로 바꾼다
+            await asyncio.sleep(wait)
+        raise AssertionError("unreachable")  # 마지막 시도는 위에서 반환하거나 예외를 낸다
 
     async def _get_json(
-        self, url: str, params: Dict[str, Any], headers: Optional[Dict[str, str]] = None, relay: bool = False
+        self, name: str, url: str, params: Dict[str, Any], headers: Optional[Dict[str, str]] = None, relay: bool = False
     ) -> Tuple[int, Any]:
-        try:
-            response = await self._client.get(url, params=params, headers=headers)
-        except httpx.TimeoutException as exc:
-            _log_failure(url, exc)
-            raise api_error("UPSTREAM_TIMEOUT") from None  # 원인 예외에는 키가 든 URL 이 있어 연결하지 않는다
-        except httpx.HTTPError as exc:
-            _log_failure(url, exc)
-            raise api_error("UPSTREAM_UNAVAILABLE") from None
+        response = await self._request(name, url, params, headers)
         try:
             return response.status_code, response.json()
         except ValueError:
@@ -97,7 +138,7 @@ class Upstream:
             url, query, headers = relay_url.rstrip("/") + "/" + path, dict(params, getType="json"), {"X-Relay-Token": token}
         else:
             url, query, headers = self._settings.its_base_url + "/" + path, dict(params, apiKey=self._key(key_name), getType="json"), None
-        status, data = await self._get_json(url, query, headers, relay=bool(relay_url))
+        status, data = await self._get_json("its", url, query, headers, relay=bool(relay_url))
         header = data.get("header") if isinstance(data, dict) else None
         code = _as_int(header.get("resultCode")) if isinstance(header, dict) else None
         if code is None:
@@ -106,7 +147,10 @@ class Upstream:
                 raise api_error(_relay_status_error(status))
             raise api_error("UPSTREAM_BAD_RESPONSE")
         if code != 0 or not 200 <= status < 300:
-            raise api_error(_ITS_CODE_MAP.get(code, "UPSTREAM_ERROR"))
+            error = _ITS_CODE_MAP.get(code, "UPSTREAM_ERROR")
+            if error == "UPSTREAM_RATE_LIMIT":
+                self.guard.cool_down("its", self._settings.upstream_rate_limit_cooldown_s, error)
+            raise api_error(error)
         body = data.get("body")
         items = body.get("items") if isinstance(body, dict) else None
         return _as_list(items.get("item") if isinstance(items, dict) else items)
@@ -114,24 +158,16 @@ class Upstream:
     async def kakao_region(self, lat: float, lon: float) -> List[Dict[str, Any]]:
         """Kakao Local coord2regioncode. 키는 헤더로만 보내고, 좌표는 로그·예외에 남기지 않는다."""
         key = self._key("kakao_rest_api_key")
-        try:
-            response = await self._client.get(
-                self._settings.kakao_region_url,
-                params={"x": "%.6f" % lon, "y": "%.6f" % lat},
-                headers={"Authorization": "KakaoAK " + key, "KA": KAKAO_KA_HEADER},
-            )
-        except httpx.TimeoutException as exc:
-            _log_failure(self._settings.kakao_region_url, exc)
-            raise api_error("UPSTREAM_TIMEOUT") from None
-        except httpx.HTTPError as exc:
-            _log_failure(self._settings.kakao_region_url, exc)
-            raise api_error("UPSTREAM_UNAVAILABLE") from None
+        response = await self._request(
+            "kakao",
+            self._settings.kakao_region_url,
+            {"x": "%.6f" % lon, "y": "%.6f" % lat},
+            {"Authorization": "KakaoAK " + key, "KA": KAKAO_KA_HEADER},
+        )
         status = response.status_code
         if status in (401, 403):
             logger.warning("Kakao 인증 거절 status=%d", status)
             raise api_error("UPSTREAM_AUTH")
-        if status == 429:
-            raise api_error("UPSTREAM_RATE_LIMIT")
         if status == 400:
             raise api_error("UPSTREAM_BAD_REQUEST")
         if not 200 <= status < 300:
@@ -148,7 +184,7 @@ class Upstream:
     async def protection_zone_page(self, sgg_cd: str, page: int, rows: int) -> Tuple[List[Dict[str, Any]], int]:
         """경찰청 보호구역 한 페이지. (항목, 전체 페이지 수)를 돌려준다."""
         params = {"serviceKey": self._key("protection_zone_service_key"), "sggCd": sgg_cd, "numOfRows": rows, "pageNo": page}
-        _, data = await self._get_json(self._settings.protection_zone_url, params)
+        _, data = await self._get_json("protection", self._settings.protection_zone_url, params)
         if not isinstance(data, dict):
             raise api_error("UPSTREAM_BAD_RESPONSE")
 
@@ -158,6 +194,7 @@ class Upstream:
             if "SERVICE_KEY" in message or "KEY" in message:
                 raise api_error("UPSTREAM_AUTH")
             if "LIMIT" in message or "EXCEED" in message:
+                self.guard.cool_down("protection", self._settings.upstream_rate_limit_cooldown_s, "UPSTREAM_RATE_LIMIT")
                 raise api_error("UPSTREAM_RATE_LIMIT")
             raise api_error("UPSTREAM_ERROR")
 

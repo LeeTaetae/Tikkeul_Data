@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     # 업스트림이 실패했을 때 마지막 성공 결과를 stale=true 로 계속 내주는 최대 시간
     max_stale_s: int = 1800
 
+    # 업스트림별 호출 보호(app/ratelimit.py). 아래 분당 한도는 제공기관이 공표한 공식 한도가 아니라 임시 설정값이다(안전한 운영 한도라는 뜻이 아니다)
+    # (ITS 는 공식 일일 제한이 없다고 안내돼 있고, 나머지는 수치를 확인하지 못했다). 공식 한도를 확인하면 환경변수로 조정해야 한다.
+    # 버스트는 분당 한도와 같다. 보호구역은 시군구 하나를 받는 데 최대 ZONE_MAX_PAGES(30)번 호출하므로 그보다 커야 한다.
+    its_rate_per_min: int = 120
+    protection_rate_per_min: int = 60
+    kakao_rate_per_min: int = 120
+    upstream_max_concurrent: int = 4
+    # 타임아웃·연결 실패·5xx 뒤에 같은 업스트림을 부르지 않는 시간. 429 는 Retry-After 를, 없으면 아래 값을 쓴다.
+    upstream_failure_cooldown_s: int = 30
+    upstream_rate_limit_cooldown_s: int = 60
+
     # 쉼표로 구분한 허용 출처. 비우면 DEFAULT_CORS_ORIGINS
     cors_allow_origins: str = ""
 
