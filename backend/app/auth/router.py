@@ -101,10 +101,14 @@ def signup(body: SignupRequest, request: Request) -> TokenResponse:
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
+    # 이메일당 시도 횟수를 제한해 비밀번호 무차별 대입을 막는다(가입 인증번호·비밀번호 재설정과 같은 패턴).
+    if not request.app.state.login_attempts.try_attempt(body.email):
+        raise api_error("TOO_MANY_REQUESTS")
     with Session(request.app.state.db_engine) as session:
         user = session.exec(select(User).where(User.email == body.email)).first()
         if user is None or user.password_hash is None or not verify_password(body.password, user.password_hash):
             raise api_error("INVALID_CREDENTIALS")
+        request.app.state.login_attempts.reset(body.email)
         token = create_access_token(user.id, settings)
         return TokenResponse(
             access_token=token,

@@ -53,11 +53,27 @@ _FALLBACK_REPLY = "답변을 만들지 못했어요. 다시 물어봐 주세요.
 _NO_LOCATION = "위치 정보가 없어 확인할 수 없습니다."
 
 
+# Gemini 가 간헐적으로 504(DEADLINE_EXCEEDED)·503 을 내는 일시 장애라(2026-11-05 실제 호출로 확인, 3번 중 1번꼴),
+# 백오프 없이 바로 한 번만 재시도한다 - 유저가 기다리는 채팅 응답이라 길게 끌면 체감이 더 나쁘다.
+_RETRYABLE_STATUS_CODES = {503, 504}
+
+
 class ChatService:
     def __init__(self, client: genai.Client, service: TrafficService, model: str = "gemini-flash-lite-latest"):
         self._client = client
         self._service = service
         self._model = model
+
+    async def _generate(self, contents: list, config) -> types.GenerateContentResponse:
+        try:
+            return await self._client.aio.models.generate_content(model=self._model, contents=contents, config=config)
+        except errors.APIError as exc:
+            if getattr(exc, "code", None) not in _RETRYABLE_STATUS_CODES:
+                raise api_error("CHAT_UNAVAILABLE") from exc
+        try:
+            return await self._client.aio.models.generate_content(model=self._model, contents=contents, config=config)
+        except errors.APIError as exc:
+            raise api_error("CHAT_UNAVAILABLE") from exc
 
     async def reply(
         self, message: str, history: List[ChatMessage], lat: Optional[float], lon: Optional[float], language: str = "ko"
@@ -74,10 +90,7 @@ class ChatService:
         )
         response = None
         for _ in range(_MAX_TOOL_ITERATIONS):
-            try:
-                response = await self._client.aio.models.generate_content(model=self._model, contents=contents, config=config)
-            except errors.APIError as exc:
-                raise api_error("CHAT_UNAVAILABLE") from exc
+            response = await self._generate(contents, config)
             calls = response.function_calls or []
             if not calls:
                 return (response.text or "").strip() or _FALLBACK_REPLY
