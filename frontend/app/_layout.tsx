@@ -52,6 +52,7 @@ export default function RootLayout() {
             expo-router 가 focusedIndex=-1 로 보고 홈 탭으로 되돌려버린다(선언 누락 = 그 화면으로 못 들어감). */}
         <Tabs.Screen name="navigation" options={hiddenScreen} />
         <Tabs.Screen name="login" options={hiddenScreen} />
+        <Tabs.Screen name="admin" options={hiddenScreen} />
         <Tabs.Screen name="signup" options={hiddenScreen} />
         <Tabs.Screen name="forgot-password" options={hiddenScreen} />
         <Tabs.Screen name="map" options={hiddenScreen} />

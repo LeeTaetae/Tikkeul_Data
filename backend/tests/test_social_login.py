@@ -86,7 +86,7 @@ def test_google_login_unverified_email_is_not_trusted_even_if_it_collides(make_c
 
 
 def test_google_login_invalid_token_is_502_social_login_failed(make_client, monkeypatch):
-    settings = make_settings()
+    settings = make_settings(google_web_client_id="test-client-id")
     client = make_client(lambda r: None, settings=settings)
 
     # verify_google_id_token 자체는 실제 함수를 그대로 실행시키고, 그 함수가 감싸는

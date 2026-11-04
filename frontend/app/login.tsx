@@ -22,7 +22,8 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login, loginWithGoogle, loginWithKakao } = useAuth();
   // 비로그인 상태에서 로그인 전용 기능을 누르면 이 화면으로 오는데, 성공하면 원래 가려던 곳으로 돌려보낸다.
-  const { redirect } = useLocalSearchParams<{ redirect?: string }>();
+  const { redirect, mode } = useLocalSearchParams<{ redirect?: string; mode?: string }>();
+  const [adminMode, setAdminMode] = useState(mode === 'admin');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,9 +40,10 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
-      if (redirect) router.replace(redirect as never);
-      else router.back();
+      const user = await login(email.trim(), password, adminMode);
+      if (user.role === 'admin') router.replace('/admin' as never);
+      else if (redirect) router.replace(redirect as never);
+      else router.replace('/');
     } catch (e) {
       setError(authErrorMessage(e, t));
     } finally {
@@ -89,7 +91,10 @@ export default function LoginScreen() {
 
       <View style={styles.header}>
         <Logo />
-        <Text style={styles.subtitle}>{t('auth.loginSubtitle')}</Text>
+        <Text style={styles.subtitle}>{adminMode ? t('auth.adminLoginTitle') : t('auth.loginSubtitle')}</Text>
+        <Text style={styles.link} onPress={() => { setAdminMode(!adminMode); setError(null); }}>
+          {adminMode ? t('auth.userLoginTitle') : t('auth.adminLoginTitle')}
+        </Text>
       </View>
 
       <View style={styles.form}>
@@ -128,13 +133,13 @@ export default function LoginScreen() {
         loading={submitting}
       />
 
-      <View style={styles.dividerRow}>
+      {!adminMode && <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
         <Text style={styles.dividerText}>{t('auth.orDivider')}</Text>
         <View style={styles.dividerLine} />
-      </View>
+      </View>}
 
-      {Platform.OS !== 'web' && (
+      {!adminMode && Platform.OS !== 'web' && (
         <SocialButton
           icon={<GoogleIcon />}
           label={googleSubmitting ? t('auth.loggingInGoogle') : t('auth.loginWithGoogle')}
@@ -147,7 +152,7 @@ export default function LoginScreen() {
         />
       )}
 
-      {isKakaoLoginAvailable() && (
+      {!adminMode && isKakaoLoginAvailable() && (
         <SocialButton
           icon={<KakaoIcon />}
           label={kakaoSubmitting ? t('auth.loggingInKakao') : t('auth.loginWithKakao')}
@@ -159,12 +164,12 @@ export default function LoginScreen() {
         />
       )}
 
-      <View style={styles.footer}>
+      {!adminMode && <View style={styles.footer}>
         <Text style={styles.footerText}>{t('auth.noAccount')}</Text>
         <Text style={styles.link} onPress={() => router.replace(redirect ? { pathname: '/signup', params: { redirect } } : '/signup')}>
           {t('auth.goSignup')}
         </Text>
-      </View>
+      </View>}
     </Screen>
   );
 }

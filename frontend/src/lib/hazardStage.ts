@@ -6,6 +6,9 @@ export type HazardStage = 'advance' | 'caution' | 'approach' | 'final';
 
 // MVP 임시 기준. 실제 안내 연동 후 설정값으로 옮길 수 있다.
 export const HAZARD_STAGE_DISTANCE_M = { caution: 500, approach: 300, final: 100 } as const;
+// 사전 알림(advance)은 위험까지 이 거리 이내로 들어왔을 때 시작한다. 그보다 먼 위험은 사전 알림도 하지 않는다.
+export const ADVANCE_NOTICE_M = 2000;
+export const isWithinAdvanceNotice = (distanceM: number): boolean => distanceM > 0 && distanceM <= ADVANCE_NOTICE_M;
 // 등교·하교 시간대엔 어린이보호구역만 더 일찍(caution 단계를 더 먼 거리에서) 경고한다. F-03의
 // "GPS·시간·보호구역 결합" 중 시간 축 - 등하교 시간대엔 아이들이 많아 더 먼저 주의를 주는 게 맞다.
 const SCHOOL_ZONE_COMMUTE_CAUTION_M = 700;

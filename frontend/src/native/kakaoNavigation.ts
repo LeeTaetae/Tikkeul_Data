@@ -19,3 +19,11 @@ export function onNativeNavigationLanguageChanged(_listener: (language: string) 
 export async function openNativeNavigation(_options: NativeNavigationOptions): Promise<NativeNavigationResult> {
   throw Object.assign(new Error('Native navigation is available in an Android/iOS development build'), { code: 'NATIVE_BUILD_REQUIRED' });
 }
+
+export function setNativeHazardRail(_json: string): void {}
+
+export function clearNativeHazardRail(): void {}
+
+export function onNativeGuidanceFeed(_listener: (event: Record<string, unknown>) => void): () => void {
+  return () => {};
+}

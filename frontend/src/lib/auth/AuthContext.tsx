@@ -13,7 +13,7 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, adminOnly?: boolean) => Promise<AuthUser>;
   loginWithGoogle: () => Promise<void>;
   loginWithKakao: () => Promise<void>;
   signup: (email: string, password: string, verifyToken: string) => Promise<void>;
@@ -47,10 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
+  const login = async (email: string, password: string, adminOnly = false) => {
+    const res = await (adminOnly ? authApi.adminLogin(email, password) : authApi.login(email, password));
     await setToken(res.access_token);
     setState({ status: 'authenticated', user: res.user, token: res.access_token });
+    return res.user;
   };
 
   // 구글 네이티브 로그인: 구글 SDK 로 idToken 을 받아 백엔드로 교환한다. 사용자가 취소하면 조용히 돌아간다(오류 아님).

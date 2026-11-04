@@ -7,7 +7,11 @@ interface KakaoNavigationModule {
   // Android 빌드에만 있다(iOS 모듈과 이전 APK 에는 없다).
   getCarIcon?(): string;
   setCarIcon?(id: CarIconId): void;
+  // Android/iOS hazard rail; absent in older native builds.
+  setHazardRail?(json: string): void;
+  clearHazardRail?(): void;
   addListener?(event: 'onLanguageChanged', listener: (event: { language: string }) => void): { remove(): void };
+  addListener?(event: 'onGuidance', listener: (event: Record<string, unknown>) => void): { remove(): void };
 }
 
 export function onNativeNavigationLanguageChanged(listener: (language: string) => void): () => void {
@@ -40,4 +44,22 @@ export async function openNativeNavigation(options: NativeNavigationOptions): Pr
   if (!module) throw Object.assign(new Error('The Kakao navigation module is not in this build'), { code: 'NATIVE_BUILD_REQUIRED' });
   if (!module.getStatus().configured) throw Object.assign(new Error('Native application key is not configured'), { code: 'NOT_CONFIGURED' });
   return module.openNavigation(options);
+}
+
+/** 위험 레일 스냅샷(JSON)을 주행 화면 오버레이로 보낸다. 지원하지 않는 빌드이면 아무 일도 하지 않는다 */
+export function setNativeHazardRail(json: string): void {
+  nativeModule()?.setHazardRail?.(json);
+}
+
+export function clearNativeHazardRail(): void {
+  nativeModule()?.clearHazardRail?.();
+}
+
+/**
+ * SDK position/route events on the product channel, in Debug and Release.
+ * SDK 화면이 앞에 있으면 RN 호스트가 일시정지되어 setInterval 이 멈추지만 이 이벤트는 계속 온다(실기기 로그로 확인).
+ */
+export function onNativeGuidanceFeed(listener: (event: Record<string, unknown>) => void): () => void {
+  const subscription = nativeModule()?.addListener?.('onGuidance', listener);
+  return () => subscription?.remove();
 }

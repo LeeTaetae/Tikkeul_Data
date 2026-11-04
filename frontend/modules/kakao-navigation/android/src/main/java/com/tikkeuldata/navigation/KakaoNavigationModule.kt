@@ -37,6 +37,8 @@ internal fun nativeKey(context: Context): String = context.packageManager
 // One SDK instance owns navigation. Resolve the JS call only after its UI closes.
 internal object NavigationSession {
   var languageChanged: ((String) -> Unit)? = null
+  var guidance: ((Map<String, Any?>) -> Unit)? = null
+  var spike: ((Map<String, Any?>) -> Unit)? = null // SPIKE(임시): 위치·경로 이벤트 검증용
   private var promise: Promise? = null
   private var activity: WeakReference<Activity>? = null
   @Synchronized fun begin(value: Promise): Boolean {
@@ -63,9 +65,19 @@ internal object NavigationSession {
 class KakaoNavigationModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("KakaoNavigation")
-    Events("onLanguageChanged")
-    OnCreate { NavigationSession.languageChanged = { sendEvent("onLanguageChanged", mapOf("language" to it)) } }
-    OnDestroy { NavigationSession.languageChanged = null; NavigationSession.dispose() }
+    Events("onLanguageChanged", "onGuidance", "onSpike") // SPIKE(임시): onSpike
+    OnCreate {
+      NavigationSession.languageChanged = { sendEvent("onLanguageChanged", mapOf("language" to it)) }
+      // Product events are always delivered. Only the secondary diagnostics are Debug-only.
+      NavigationSession.guidance = { event ->
+        sendEvent("onGuidance", event)
+        // Diagnostics observe a copy; failures cannot interrupt the product feed.
+        runCatching { NavigationDiagnostics.observe(event) }
+      }
+      appContext.reactContext?.let { NavigationDiagnostics.init(it) }
+      if (NavigationDiagnostics.enabled) NavigationSession.spike = { sendEvent("onSpike", it) }
+    }
+    OnDestroy { NavigationSession.languageChanged = null; NavigationSession.spike = null; NavigationSession.guidance = null; NavigationDiagnostics.dispose(); NavigationSession.dispose() }
 
     Function("getStatus") {
       val context = appContext.reactContext
@@ -77,6 +89,14 @@ class KakaoNavigationModule : Module() {
     Function("getCarIcon") {
       appContext.reactContext?.let { CarIcons.get(it) } ?: CarIcons.DEFAULT
     }
+
+    // 위험 레일 스냅샷(JSON). 판단은 JS 가 하고 네이티브는 그리기만 한다. 너무 큰 입력은 무시한다.
+    Function("setHazardRail") { json: String -> HazardRail.set(json) }
+    Function("clearHazardRail") { HazardRail.clear() }
+
+    // SPIKE(임시): JS 가 위치 이벤트를 받았다는 확인(ACK)과 주행 종료 후 요약. 디버그 빌드가 아니면 "disabled"/null.
+    Function("spikeAck") { session: Int, id: Int -> NavigationDiagnostics.ack(session, id) }
+    Function("getSpikeSummary") { NavigationDiagnostics.summary() }
 
     Function("setCarIcon") { id: String ->
       val context = appContext.reactContext ?: throw IllegalStateException("No React context")
