@@ -1212,7 +1212,7 @@ export default function HomeScreen() {
         </BottomSheet>
       ) : searched && !liveError ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
-          <Text style={styles.notice}>{t('map.demoHint')}</Text>
+          <Text style={styles.notice}>{t('map.noDestination')}</Text>
         </BottomSheet>
       ) : favoriteCategoryView ? (
         <BottomSheet key="favorite-category" {...sheetProps}>

@@ -76,7 +76,7 @@ const ko = {
     km: '{{n}}km',
     liveLoading: '경로를 불러오는 중입니다...',
     liveError: '경로를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
-    demoHint: '데모용 목적지: 강남역, 서울역, 홍대입구역, 부산역 중 입력해보세요.',
+    noDestination: '목적지가 존재하지 않습니다. 다른 이름으로 검색해 주세요.',
     styleRecommended: '실시간 추천',
     styleTollFree: '무료 경로 추천',
     styleMajorRoad: '큰길 우선',

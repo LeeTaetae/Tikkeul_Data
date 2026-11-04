@@ -78,7 +78,7 @@ const zh: Resources = {
     km: '{{n}} 公里',
     liveLoading: '正在加载路线…',
     liveError: '无法加载路线，请稍后重试。',
-    demoHint: '演示目的地：请输入 강남역、서울역、홍대입구역 或 부산역。',
+    noDestination: '目的地不存在，请换个名称搜索。',
     styleRecommended: '实时推荐',
     styleTollFree: '优先免费道路',
     styleMajorRoad: '优先大路',

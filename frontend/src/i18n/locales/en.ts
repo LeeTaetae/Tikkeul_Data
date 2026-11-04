@@ -78,7 +78,7 @@ const en: Resources = {
     km: '{{n}} km',
     liveLoading: 'Loading route…',
     liveError: 'Could not load the route. Please try again.',
-    demoHint: 'Demo destinations: try 강남역, 서울역, 홍대입구역, or 부산역.',
+    noDestination: 'Destination not found. Try searching with a different name.',
     styleRecommended: 'Real-time recommended',
     styleTollFree: 'Toll-free priority',
     styleMajorRoad: 'Major roads first',
