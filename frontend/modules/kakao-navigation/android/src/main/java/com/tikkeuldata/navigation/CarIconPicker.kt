@@ -35,6 +35,8 @@ internal class CarIconPicker(private val activity: Activity, language: String, p
 
   fun label(key: String): String = strings.getValue(key)
   val isOpen: Boolean get() = panel.visibility == View.VISIBLE
+  /** 읽기 전용: 위험 레일이 충돌할 때 버튼을 밀어내려고 위치를 읽는다(HazardRailOverlay). 버튼 동작은 바뀌지 않는다 */
+  val anchorView: View get() = button
 
   fun attach(container: FrameLayout) {
     button.apply {

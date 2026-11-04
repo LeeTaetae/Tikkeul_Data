@@ -15,6 +15,11 @@ import { getNativeNavigationStatus, openNativeNavigation, onNativeNavigationLang
 import type { NativeNavigationResult } from '../native/navigationTypes';
 import { VisionHazardController } from '../components/vision/VisionHazardController';
 import { colors, radius, space } from '../theme';
+import { NativeHazardRailBridge } from '../components/navigation/NativeHazardRailBridge';
+import type { SpikeReport } from '../dev/spikeProbe';
+
+// Metro eliminates this branch in production; diagnostics never drive the product rail.
+const diagnostics: typeof import('../dev/spikeProbe') | null = __DEV__ ? require('../dev/spikeProbe') : null;
 
 const FAILURE_KEYS: Record<string, string> = {
   NATIVE_BUILD_REQUIRED: 'nav.nativeBuildRequired',
@@ -42,6 +47,7 @@ export function NativeNavigationScreen() {
   const [navigating, setNavigating] = useState(false);
   // 경로를 안 들고 있어 useRouteZones(경로 기반)를 못 쓰니, 현재 위치만으로 보호구역 여부를 따로 추적한다.
   const inProtectionZone = useNearbyProtectionZoneStatus(navigating);
+  const [spikeReport, setSpikeReport] = useState<SpikeReport | null>(null); // SPIKE(임시)
   const pending = useRef<Promise<NativeNavigationResult> | null>(null);
   // navigation 은 탭 화면이라 홈으로 돌아가도 이 화면이 남는다. 다시 들어올 때마다(포커스) 새 안내 요청으로 처음부터 시작한다.
   const [session, setSession] = useState(0);
@@ -102,6 +108,9 @@ export function NativeNavigationScreen() {
       if (pending.current === current) pending.current = null;
       if (!active) return;
       setNavigating(false);
+      // SPIKE(임시): 개발 빌드에서는 주행이 끝난 뒤 JS 이벤트 전달 진단 요약을 보여 주고, 버튼으로 홈에 돌아간다.
+      const report = diagnostics?.collectSpikeReport();
+      if (report) { setSpikeReport(report); return; }
       clearGuidanceRequest();
       router.replace('/');
     }).catch((failure: { code?: string }) => {
@@ -120,10 +129,20 @@ export function NativeNavigationScreen() {
     setAttempt(value => value + 1);
   };
 
+  const leaveSpikeReport = () => { setSpikeReport(null); clearGuidanceRequest(); router.replace('/'); }; // SPIKE(임시)
+  if (spikeReport && diagnostics) {
+    return <SafeAreaView style={styles.root}>
+      <diagnostics.SpikeReportCard report={spikeReport} />
+      <Pressable accessibilityRole="button" onPress={leaveSpikeReport} style={[styles.button, { marginTop: space.md }]}><Text style={styles.buttonText}>{t('nav.goHome')}</Text></Pressable>
+    </SafeAreaView>;
+  }
+
   return <SafeAreaView style={styles.root}>
     {/* 전방 비전 경고(ADR 0002). 카카오 내비 SDK 화면이 이 화면을 모달로 덮는 동안에도 진동은 울린다 - 배너는
         SDK 화면 아래 깔려 안 보인다(네이티브 오버레이 작업이 따로 필요, 지금은 범위 밖). */}
     <VisionHazardController enabled={navigating} inProtectionZone={inProtectionZone} />
+    {Platform.OS !== 'web' && <NativeHazardRailBridge />}
+    {diagnostics && <diagnostics.SpikeProbe />}{/* Debug only */}
     <View style={styles.card}>
       {!error && <ActivityIndicator color={colors.brand} size="large" />}
       <Text style={styles.title}>{t(error ?? (locating ? 'nav.locating' : 'nav.nativeOpening'))}</Text>

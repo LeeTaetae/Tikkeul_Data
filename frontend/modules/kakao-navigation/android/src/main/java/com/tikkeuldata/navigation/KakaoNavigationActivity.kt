@@ -65,9 +65,11 @@ class KakaoNavigationActivity : AppCompatActivity(),
   private var voiceLanguage = "ko"
   private var voiceFailureShown = false
   private lateinit var container: FrameLayout
+  private var railOverlay: HazardRailOverlay? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    GuidanceEventFeed.begin()
     if (!NavigationSession.active()) { finish(); return }
     NavigationSession.attach(this)
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -162,9 +164,13 @@ class KakaoNavigationActivity : AppCompatActivity(),
       runOnUiThread {
         if (isFinishing || isDestroyed) return@runOnUiThread
         if (error != null) { fail("ROUTE_FAILED", "Kakao route request failed"); return@runOnUiThread }
-        val active = KNSDK.sharedGuidance()
+        // 디버그 빌드에서 시뮬레이션을 켰으면(SpikeProbe, adb) SDK 공식 시뮬레이션 안내로 시작한다. 평소(Release 포함)는 기존 그대로다.
+        val simulated = NavigationDiagnostics.simulationRequested()
+        val active: KNGuidance? = if (simulated) KNSDK.sharedSimulGuidance() else KNSDK.sharedGuidance()
+        if (simulated) Log.i("TikkeulSpike", "guidance=simulation")
         if (active == null) { fail("GUIDANCE_UNAVAILABLE", "Kakao guidance is unavailable"); return@runOnUiThread }
         guidance = active
+        NavigationDiagnostics.simGuidance = active as? KNSimulGuidance // SPIKE(임시): 디버그 시뮬레이션 제어
         val view = KNNaviView(this)
         naviView = view
         view.guideStateDelegate = this
@@ -181,8 +187,14 @@ class KakaoNavigationActivity : AppCompatActivity(),
         view.initWithGuidance(active, trip, priority, avoid)
         Log.i("TikkeulVoice", "stage=guidance-init build=car-tts-v1 appLanguage=$voiceLanguage recordedLanguage=${active.sndContainer?.langType} engine=${if (voiceLanguage == "ko") "sdk" else "android-tts"}")
         attachVoiceLanguageButton()
+        // 위험 레일: JS 가 보낸 스냅샷을 왼쪽 위에 그린다. 실패해도 길안내를 막지 않는다.
+        runCatching { railOverlay = HazardRailOverlay(this, intent.getStringExtra("language") ?: "ko").also { it.attach(container) } }
+        runCatching { NavigationDiagnostics.attachDiag(this, container) } // SPIKE(임시): 디버그 빌드 전용 JS 전달 진단 오버레이
         runCatching {
-          picker = CarIconPicker(this, intent.getStringExtra("language") ?: "ko", ::changeCarIcon).also { it.attach(container) }
+          picker = CarIconPicker(this, intent.getStringExtra("language") ?: "ko", ::changeCarIcon).also {
+            it.attach(container)
+            railOverlay?.setCarButton(it.anchorView) // 위험 레일이 닿을 때만 버튼을 아래로 민다
+          }
         }
       }
     }
@@ -260,7 +272,12 @@ class KakaoNavigationActivity : AppCompatActivity(),
       citsGuideDelegate = null
       stop()
     }
+    // 시뮬레이션 안내였다면 SDK 가 들고 있는 시뮬레이션 안내 객체를 비워, 다음 실제 안내가 영향받지 않게 한다.
+    NavigationDiagnostics.simGuidance = null
+    if (guidance is KNSimulGuidance) runCatching { KNSDK.removeSharedSimulGuidance() }
     naviView?.guideStateDelegate = null
+    railOverlay?.detach()
+    railOverlay = null
     if (::container.isInitialized) container.removeAllViews()
     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     if (!isChangingConfigurations && !sessionFinished) NavigationSession.close()
@@ -271,17 +288,18 @@ class KakaoNavigationActivity : AppCompatActivity(),
   override fun naviViewGuideEnded() = closeSession()
 
   // Forward all guidance delegates to the official UI; do not run the JS guidance engine in parallel.
-  override fun guidanceGuideStarted(g: KNGuidance) { Log.i("TikkeulVoice", "stage=guide-start language=$voiceLanguage"); naviView?.guidanceGuideStarted(g) }
+  override fun guidanceGuideStarted(g: KNGuidance) { Log.i("TikkeulVoice", "stage=guide-start language=$voiceLanguage"); naviView?.guidanceGuideStarted(g); GuidanceEventFeed.emitRoute("started", g.routesOnGuide?.firstOrNull()) /* SPIKE(임시) */ }
   override fun guidanceCheckingRouteChange(g: KNGuidance) { naviView?.guidanceCheckingRouteChange(g) }
   override fun guidanceRouteUnchanged(g: KNGuidance) { naviView?.guidanceRouteUnchanged(g) }
   override fun guidanceRouteUnchangedWithError(g: KNGuidance, error: KNError) { naviView?.guidanceRouteUnchangedWithError(g, error) }
   override fun guidanceOutOfRoute(g: KNGuidance) { naviView?.guidanceOutOfRoute(g) }
-  override fun guidanceRouteChanged(g: KNGuidance, fromRoute: KNRoute, fromLocation: KNLocation, toRoute: KNRoute, toLocation: KNLocation, reason: KNGuideRouteChangeReason) { voiceSpeaker?.stop(); Log.i("TikkeulVoice", "stage=reroute language=$voiceLanguage reason=$reason"); naviView?.guidanceRouteChanged(g) }
+  override fun guidanceRouteChanged(g: KNGuidance, fromRoute: KNRoute, fromLocation: KNLocation, toRoute: KNRoute, toLocation: KNLocation, reason: KNGuideRouteChangeReason) { voiceSpeaker?.stop(); Log.i("TikkeulVoice", "stage=reroute language=$voiceLanguage reason=$reason"); naviView?.guidanceRouteChanged(g); GuidanceEventFeed.emitRoute("changed:$reason", toRoute) /* SPIKE(임시) */ }
   override fun guidanceGuideEnded(g: KNGuidance) { naviView?.guidanceGuideEnded(g, true) }
   override fun guidanceDidUpdateRoutes(g: KNGuidance, routes: List<KNRoute>, info: KNMultiRouteInfo?) { naviView?.guidanceDidUpdateRoutes(g, routes, info) }
   override fun guidanceDidUpdateIndoorRoute(g: KNGuidance, route: KNRoute?) { naviView?.guidanceDidUpdateIndoorRoute(g, route) }
   override fun guidanceDidUpdateLocation(g: KNGuidance, location: KNGuide_Location) {
     naviView?.guidanceDidUpdateLocation(g, location)
+    GuidanceEventFeed.emitLocation(location) // SPIKE(임시)
     LocationDebug.log(this, location, intent.getDoubleExtra("originLatitude", Double.NaN), intent.getDoubleExtra("originLongitude", Double.NaN))
   }
   override fun guidanceDidUpdateRouteGuide(g: KNGuidance, route: KNGuide_Route) { naviView?.guidanceDidUpdateRouteGuide(g, route) }

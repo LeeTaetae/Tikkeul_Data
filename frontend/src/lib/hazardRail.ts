@@ -68,6 +68,28 @@ export function buildHazardRail(prioritized: PrioritizedHazard[]): RailItem[] {
   return items;
 }
 
+const PRIORITY_ORDER: Record<Priority, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+/**
+ * 네이티브 주행 화면 레일의 표시 순서. P등급(P0→P3) → confirmed 먼저 → 가까운 거리.
+ * 엔진의 P등급·점수 계산은 바꾸지 않고, 같은 등급 안의 표시 순서만 정한다(엔진은 점수순이라 probable 이 confirmed 보다 앞설 수 있다).
+ */
+export function orderRailItems(items: RailItem[]): RailItem[] {
+  return [...items].sort(
+    (a, b) =>
+      PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+      Number(b.matchClass === 'confirmed') - Number(a.matchClass === 'confirmed') ||
+      a.distanceM - b.distanceM ||
+      a.key.localeCompare(b.key),
+  );
+}
+
+/** 같은 유형은 대표 하나만 남긴다: orderRailItems 순서에서 유형별 첫 항목. 결과도 그 순서다 */
+export function pickTypeRepresentatives(items: RailItem[]): RailItem[] {
+  const seen = new Set<AlertType>();
+  return orderRailItems(items).filter((item) => (seen.has(item.type) ? false : (seen.add(item.type), true)));
+}
+
 /** 보이는 만큼 자르고, 남은 수를 +N 으로 돌려준다 */
 export function splitRail(items: RailItem[], visibleCount: number): { visible: RailItem[]; overflow: number } {
   const n = Math.max(0, Math.min(visibleCount, items.length));
