@@ -9,6 +9,8 @@ export interface AuthUser {
   email: string | null;
   nickname: string | null;
   email_verified: boolean;
+  role: 'user' | 'admin';
+  status: 'active' | 'disabled';
   created_at: string;
 }
 
@@ -23,6 +25,10 @@ export const authApi = {
     client.post<TokenResponse>('/api/auth/signup', { email, password, verify_token: verifyToken }, options),
   login: (email: string, password: string, options?: RequestOptions) =>
     client.post<TokenResponse>('/api/auth/login', { email, password }, options),
+  adminLogin: (email: string, password: string, options?: RequestOptions) =>
+    client.post<TokenResponse>('/api/auth/admin/login', { email, password }, options),
+  adminMe: (token: string, options?: RequestOptions) =>
+    client.get<AuthUser>('/api/auth/admin/me', {}, { ...options, token }),
   loginGoogle: (idToken: string, options?: RequestOptions) =>
     client.post<TokenResponse>('/api/auth/social/google', { id_token: idToken }, options),
   loginKakao: (accessToken: string, options?: RequestOptions) =>

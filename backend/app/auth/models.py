@@ -18,6 +18,9 @@ class User(SQLModel, table=True):
     email: Optional[str] = Field(default=None, index=True, unique=True)
     password_hash: Optional[str] = Field(default=None)
     email_verified: bool = Field(default=False)
+    role: str = Field(default="user")
+    status: str = Field(default="active")
+    nickname: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -82,6 +85,8 @@ class UserPublic(SQLModel):
     email: Optional[str]
     nickname: Optional[str] = None
     email_verified: bool
+    role: str = "user"
+    status: str = "active"
     created_at: datetime
 
 

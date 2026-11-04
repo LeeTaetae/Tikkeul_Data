@@ -13,6 +13,8 @@ from app.errors import api_error
 
 def verify_google_id_token(id_token: str, settings: Settings) -> dict:
     """구글 ID 토큰을 검증하고 payload(sub, email 등)를 돌려준다. 서명/만료/audience 불일치는 SOCIAL_LOGIN_FAILED로 변환한다."""
+    if not settings.google_web_client_id.strip():
+        raise api_error("NOT_CONFIGURED")
     try:
         return verify_oauth2_token(id_token, GoogleAuthRequest(), audience=settings.google_web_client_id)
     except ValueError:
@@ -42,18 +44,20 @@ def verify_kakao_access_token(access_token: str, settings: Settings) -> dict:
 def find_or_create_social_user(session: Session, provider: str, provider_id: str, email: Optional[str], nickname: Optional[str]) -> User:
     """provider+provider_id로 기존 유저를 찾거나, 없으면 새로 만든다.
 
-    nickname은 이번 스키마에 저장 컬럼이 없어 DB에는 쓰지 않는다(호출부에서 응답 조립 시에만 사용).
+    닉네임도 저장해 다음 로그인과 내 정보 조회에서 유지한다.
     """
-    existing = session.exec(select(User).where(User.provider == provider, User.provider_id == provider_id)).first()
+    existing = (session.by_social(provider, provider_id) if hasattr(session, "by_social") else
+                session.exec(select(User).where(User.provider == provider, User.provider_id == provider_id)).first())
     if existing is not None:
         return existing
     if email is not None:
         email = normalize_email(email)
-        email_collision = session.exec(select(User).where(User.email == email)).first()
+        email_collision = (session.by_email(email) if hasattr(session, "by_email") else
+                           session.exec(select(User).where(User.email == email)).first())
         if email_collision is not None:
             raise api_error("EMAIL_TAKEN")
     # 소셜 로그인은 공급자가 이미 이메일을 확인했다고 간주한다.
-    user = User(provider=provider, provider_id=provider_id, email=email, password_hash=None, email_verified=True)
+    user = User(provider=provider, provider_id=provider_id, email=email, password_hash=None, email_verified=True, nickname=nickname)
     session.add(user)
     try:
         session.flush()

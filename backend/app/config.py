@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     jwt_secret: Optional[SecretStr] = None
     jwt_algorithm: str = "HS256"
     jwt_expires_days: int = 14
+    mongodb_uri: Optional[SecretStr] = None
+    mongodb_database: str = "tikkeul"
     # 로그인·즐겨찾기·최근목적지용 SQLite 파일. backend/data/ 는 .gitignore 대상이고 speed_bumps.db 는 같은 디렉터리다.
     database_url: str = f"sqlite:///{BACKEND_DIR / 'data' / 'tikkeul.db'}"
 

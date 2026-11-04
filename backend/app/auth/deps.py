@@ -1,7 +1,7 @@
 from typing import Optional
 
-from fastapi import Header, Request
-from sqlmodel import Session
+from fastapi import Depends, Header, Request
+from app.auth.store import user_session
 
 from app.auth.models import User
 from app.auth.security import decode_access_token
@@ -13,8 +13,16 @@ def get_current_user(request: Request, authorization: Optional[str] = Header(def
         raise api_error("UNAUTHORIZED")
     token = authorization.removeprefix("Bearer ").strip()
     user_id = decode_access_token(token, request.app.state.settings)
-    with Session(request.app.state.db_engine) as session:
+    with user_session(request) as session:
         user = session.get(User, user_id)
     if user is None:
         raise api_error("UNAUTHORIZED")
+    if user.status != "active":
+        raise api_error("ACCOUNT_DISABLED")
+    return user
+
+
+def get_admin_user(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise api_error("FORBIDDEN")
     return user

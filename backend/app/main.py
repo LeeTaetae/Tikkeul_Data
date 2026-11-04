@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth.rate_limit import AttemptLimiter, ResendCooldown
 from app.auth.router import router as auth_router
+from app.auth.store import open_user_database
 from app.cache import TtlCache
 from app.chat.router import router as chat_router
 from app.chat.service import ChatService
@@ -67,11 +68,18 @@ def create_app(
         app.state.reset_code_cooldown = ResendCooldown(cooldown_s=30.0)
         app.state.reset_code_attempts = AttemptLimiter(max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
         create_db_and_tables(app.state.db_engine)
+        # Fail closed when MongoDB is configured: never silently switch account stores.
+        mongo_client, app.state.user_database = await asyncio.to_thread(open_user_database, settings)
         warm_task = asyncio.ensure_future(warm_up_bus_routes())  # 키가 없으면 바로 끝난다
-        yield
-        warm_task.cancel()
-        if http_client is None:
-            await client.aclose()
+        try:
+            yield
+        finally:
+            warm_task.cancel()
+            if mongo_client is not None:
+                mongo_client.close()
+            app.state.db_engine.dispose()
+            if http_client is None:
+                await client.aclose()
 
     app = FastAPI(title="티끌모아Data API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
