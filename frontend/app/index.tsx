@@ -1,6 +1,7 @@
 import type * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -344,12 +345,16 @@ export default function HomeScreen() {
 
   // 도착지 입력창에 2글자 이상 치면 실제 장소 검색(자동완성)을 보여준다. 데모 목적지 4곳만 되던 한계를 없앤다.
   const [destinationSuggestions, setDestinationSuggestions] = useState<PlaceSearchResult[]>([]);
+  // 빈 목록이 "찾는 중"인지 "결과 없음"인지 구분하려고 따로 둔다.
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   useEffect(() => {
     if (!destinationFocused || destination.trim().length < 2) {
       setDestinationSuggestions([]);
+      setSuggestionsLoading(false);
       return;
     }
     let cancelled = false;
+    setSuggestionsLoading(true);
     const timer = setTimeout(() => {
       searchPlaces(destination.trim(), undefined, i18n.language)
         .then((results) => {
@@ -357,6 +362,9 @@ export default function HomeScreen() {
         })
         .catch(() => {
           if (!cancelled) setDestinationSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSuggestionsLoading(false);
         });
     }, 300);
     return () => {
@@ -570,7 +578,16 @@ export default function HomeScreen() {
       return;
     }
     // 제안 목록에서 고르지 않고 그냥 검색을 누르면: 데모 목적지(즉시) → 실제 장소 검색 첫 결과 순으로 찾는다.
-    const destinationPoint = manualDestination ?? findDemoDestination(destination) ?? (await searchPlaces(trimmed))[0]?.point ?? null;
+    let destinationPoint: RoutePoint | null;
+    try {
+      destinationPoint = manualDestination ?? findDemoDestination(destination) ?? (await searchPlaces(trimmed))[0]?.point ?? null;
+    } catch {
+      // 장소 검색 서버 오류·네트워크 실패 시 버튼이 아무 반응 없이 끝나지 않게 실패 안내를 띄운다.
+      setSearched(true);
+      setRouteStyles(null);
+      setLiveError(true);
+      return;
+    }
     if (!destinationPoint) {
       setSearched(true);
       setRouteStyles(null);
@@ -578,6 +595,11 @@ export default function HomeScreen() {
       return;
     }
     await searchRoutes(destinationPoint, trimmed, mode);
+  };
+
+  const closeLiveError = () => {
+    setLiveError(false);
+    setSearched(false);
   };
 
   const onPickSuggestion = async (place: PlaceSearchResult) => {
@@ -1005,8 +1027,10 @@ export default function HomeScreen() {
               onLayout={(e) => setRecentsTop(insets.top + space.md + e.nativeEvent.layout.y)}
               keyboardShouldPersistTaps="handled"
             >
-              {destinationSuggestions.length === 0 ? (
-                <Text style={styles.notice}>{t('map.liveLoading')}</Text>
+              {suggestionsLoading ? (
+                <Text style={styles.notice}>{t('map.searchingPlaces')}</Text>
+              ) : destinationSuggestions.length === 0 ? (
+                <Text style={styles.notice}>{t('map.noDestination')}</Text>
               ) : (
                 destinationSuggestions.map((p, i) => (
                   <Pressable key={i} style={styles.recentItem} onPress={() => onPickSuggestion(p)} accessibilityRole="button">
@@ -1201,9 +1225,9 @@ export default function HomeScreen() {
             t={t}
           />
         </BottomSheet>
-      ) : searched ? (
+      ) : searched && !liveError ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
-          <Text style={styles.notice}>{t(liveError ? 'map.liveError' : 'map.demoHint')}</Text>
+          <Text style={styles.notice}>{t('map.noDestination')}</Text>
         </BottomSheet>
       ) : favoriteCategoryView ? (
         <BottomSheet key="favorite-category" {...sheetProps}>
@@ -1318,6 +1342,26 @@ export default function HomeScreen() {
           )}
         </BottomSheet>
       ) : null}
+      {/* 경로 실패는 하단 한 줄로는 놓치기 쉬워 웹·앱 모두 가운데 팝업으로 알린다. */}
+      <Modal visible={liveError} transparent animationType="fade" statusBarTranslucent onRequestClose={closeLiveError}>
+        <View style={styles.errorBackdrop}>
+          <View style={styles.errorDialog} accessibilityViewIsModal accessibilityRole="alert">
+            <Text style={styles.errorText}>{t('map.liveError')}</Text>
+            <View style={styles.errorActions}>
+              <Pressable style={styles.errorButton} onPress={closeLiveError} accessibilityRole="button">
+                <Text style={styles.errorButtonText}>{t('common.close')}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.errorButton, styles.errorButtonPrimary]}
+                onPress={onSearch}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.errorButtonText, styles.errorButtonTextPrimary]}>{t('nav.retry')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1557,6 +1601,14 @@ const styles = StyleSheet.create({
   searchActionText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
   fabWrap: { alignSelf: 'flex-end', gap: space.sm },
   notice: { fontSize: 14, lineHeight: 20, color: colors.muted },
+  errorBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.lg, backgroundColor: 'rgba(15, 23, 42, 0.45)' },
+  errorDialog: { width: '100%', maxWidth: 360, gap: space.lg, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.surface },
+  errorText: { fontSize: 16, lineHeight: 23, fontWeight: '600', color: colors.ink, textAlign: 'center' },
+  errorActions: { flexDirection: 'row', gap: space.sm },
+  errorButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  errorButtonPrimary: { backgroundColor: colors.brand },
+  errorButtonText: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  errorButtonTextPrimary: { color: colors.surface },
   pickTopRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   pickTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
   pickTitle: { fontSize: 17, fontWeight: '700', color: colors.ink, lineHeight: 22 },
