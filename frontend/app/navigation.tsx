@@ -185,7 +185,7 @@ function WebGuidanceScreen() {
       return;
     }
     setStatus('loading');
-    fetchGuidanceRoute(request.origin, request.destination, request.mode, request.style).then((styled) => {
+    fetchGuidanceRoute(request.origin, request.destination, request.mode, request.style, i18n.language).then((styled) => {
       if (!aliveRef.current || loadedRef.current !== token) return; // 화면이 닫혔거나 더 새 요청이 있다
       // 실패하면 가짜 경로로 채우지 않고 오류를 보여준다. guides 가 없어도(undefined) 경로 자체는 안내에 쓴다.
       if (!styled || styled.path.length < 2) return setStatus('error');
@@ -208,7 +208,7 @@ function WebGuidanceScreen() {
         if (scenario !== 'rerouteFail') next = { ...current, id: newRouteId(), path: replayRerouteFrom(from, current.path) };
       } else if (requestRef.current) {
         const { destination, style } = requestRef.current;
-        const styled = await fetchGuidanceRoute(from, destination, current.mode, style);
+        const styled = await fetchGuidanceRoute(from, destination, current.mode, style, i18n.language);
         if (styled && styled.path.length >= 2) next = toNavRoute(styled, current.mode, newRouteId(), 'api');
       }
       // 화면이 닫혔거나 그 사이 도착했다면 결과를 버린다.

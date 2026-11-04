@@ -132,7 +132,7 @@ interface Props {
 
 // 대중교통·네비게이션 탭의 공통 화면: 즐겨찾기가 맨 위, 그 아래 자주 간 곳 TOP3, 그 아래 최근 간 곳(최신순)이 이어진다.
 export function RouteTimeListScreen({ mode, titleKey }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const { status, token } = useAuth();
   const [favorites, setFavorites] = useState<FavoritePlace[] | null>(null);
@@ -155,11 +155,11 @@ export function RouteTimeListScreen({ mode, titleKey }: Props) {
       setTripRecents(null);
       return;
     }
-    favoritesApi.list(token).then(setFavorites).catch(() => setFavorites(null));
+    favoritesApi.list(token, { lang: i18n.language }).then(setFavorites).catch(() => setFavorites(null));
     // 최근 30일(백엔드 기본값) 안에서 가장 많이 간 곳 TOP 3, 그 밑에 최근 간 순서. 전체 이력을 다 불러오지 않는다.
-    tripsApi.frequent(token).then(setFrequent).catch(() => setFrequent(null));
-    tripsApi.recent(token).then(setTripRecents).catch(() => setTripRecents(null));
-  }, [status, token]);
+    tripsApi.frequent(token, { lang: i18n.language }).then(setFrequent).catch(() => setFrequent(null));
+    tripsApi.recent(token, { lang: i18n.language }).then(setTripRecents).catch(() => setTripRecents(null));
+  }, [status, token, i18n.language]);
 
   const goToRoute = (point: RoutePoint, label: string) => {
     setPendingSearch({ point, label, mode });

@@ -26,6 +26,10 @@ const zh: Resources = {
       body: '地铁站点坐标使用首尔特别市于2022年以公共许可第1类（KOGL Type 1，标明出处）公开的“首尔市站点主数据”。首尔特别市并未赞助或认可本服务。',
       link: '打开官方数据页面',
     },
+    clearHistory: '删除移动记录',
+    clearHistoryConfirm: '要删除所有最近去过和常去的地点记录吗？此操作无法撤销。',
+    clearHistoryDone: '已删除移动记录',
+    clearHistoryFailed: '移动记录删除失败',
   },
   sheet: { expand: '展开面板', collapse: '收起面板' },
   chat: {

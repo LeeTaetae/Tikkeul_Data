@@ -26,6 +26,10 @@ const en: Resources = {
       body: 'Subway station coordinates use “Seoul Station Master Information”, released by the Seoul Metropolitan Government in 2022 under KOGL Type 1 (attribution). The Seoul Metropolitan Government does not sponsor or endorse this service.',
       link: 'Open the official data page',
     },
+    clearHistory: 'Clear location history',
+    clearHistoryConfirm: 'Delete all recent and frequent destinations? This cannot be undone.',
+    clearHistoryDone: 'Location history cleared',
+    clearHistoryFailed: 'Could not clear location history',
   },
   sheet: { expand: 'Expand panel', collapse: 'Collapse panel' },
   chat: {

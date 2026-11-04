@@ -268,6 +268,9 @@ export default function HomeScreen() {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState(false);
   const [searched, setSearched] = useState(false);
+  // 목적지는 찾았지만(=searched) 경로 계산 자체가 실패한 경우. true면 오류를 닫아도 "목적지 없음" 안내 대신
+  // 모드탭이 있는 검색 화면을 그대로 유지해, 다른 이동수단으로 바로 재시도할 수 있게 한다.
+  const [routeFetchFailed, setRouteFetchFailed] = useState(false);
   // 마지막 경로 검색에 쓴 출발지·도착지. 길안내 시작 때 같은 조건으로 안내용 경로(guides 포함)를 다시 받는 데 쓴다.
   const lastSearchRef = useRef<{ origin: RoutePoint; destination: RoutePoint; label: string } | null>(null);
   // 처음엔 "검색" 한 칸만 보이다가, 경로검색 버튼을 누르거나 그 칸을 건드리면 출발/도착 두 칸으로 바뀐다.
@@ -318,7 +321,7 @@ export default function HomeScreen() {
     // 내 주변 카테고리 시트가 열려 있으면 먼저 닫아야 onPlaceClick 이 엉뚱한 nearbyPlaces 인덱스로 안내를 시작하지 않는다.
     closeNearby();
     favoritesApi
-      .list(authToken)
+      .list(authToken, { lang: i18n.language })
       .then((list) => {
         const filtered = list.filter((f) => f.category === favoriteCategory);
         setFavoriteCategoryPlaces(filtered);
@@ -502,6 +505,7 @@ export default function HomeScreen() {
     mapRef.current?.clearRoute();
     setLiveLoading(true);
     setLiveError(false);
+    setRouteFetchFailed(false);
     setOriginAddress(null);
     setDestinationAddress(null);
     setTransitResult(null);
@@ -510,7 +514,7 @@ export default function HomeScreen() {
     lastSearchRef.current = { origin, destination: destinationPoint, label };
     if (travelMode === 'transit') {
       const [transit, originAddressValue, destinationAddressValue] = await Promise.all([
-        fetchTransitRoutes(origin, destinationPoint),
+        fetchTransitRoutes(origin, destinationPoint, i18n.language),
         fetchAddress(origin, i18n.language),
         fetchAddress(destinationPoint, i18n.language),
       ]);
@@ -529,13 +533,16 @@ export default function HomeScreen() {
         return transit.routes.map(toStyledRoute);
       }
       setLiveError(true);
+      setRouteFetchFailed(true);
       return null;
     }
     const [results, originAddressValue, destinationAddressValue] = await Promise.all([
       travelMode === 'driving'
         ? // Tmap 5가지 스타일이 실패(한도 초과 429 → 503 등)하면 /navigation/route 의 추천 경로 하나로 대신한다.
-          fetchRouteStyles(origin, destinationPoint).then((styles) => styles ?? fetchBestRoute(origin, destinationPoint))
-        : fetchModeRoute(origin, destinationPoint, travelMode),
+          fetchRouteStyles(origin, destinationPoint, { lang: i18n.language }).then(
+            (styles) => styles ?? fetchBestRoute(origin, destinationPoint, i18n.language),
+          )
+        : fetchModeRoute(origin, destinationPoint, travelMode, { lang: i18n.language }),
       fetchAddress(origin, i18n.language),
       fetchAddress(destinationPoint, i18n.language),
     ]);
@@ -554,8 +561,38 @@ export default function HomeScreen() {
     }
     setRouteStyles(null);
     setLiveError(true);
+    setRouteFetchFailed(true);
     return null;
   };
+
+  // 검색 후 언어를 바꾸면 화면에 남아있는 출발/도착 주소도 같은 좌표로 다시 번역해 보여준다.
+  useEffect(() => {
+    const search = lastSearchRef.current;
+    if (!search) return;
+    fetchAddress(search.origin, i18n.language).then(setOriginAddress);
+    fetchAddress(search.destination, i18n.language).then(setDestinationAddress);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
+
+  // "내 주변" 카테고리 시트를 열어둔 채 언어를 바꾸면 그 목록도 같은 조건으로 다시 번역해 보여준다.
+  useEffect(() => {
+    if (!nearbyCategory) return;
+    getCurrentLocation()
+      .then((origin) => fetchNearbyPlaces(nearbyCategory, origin, 1000, i18n.language))
+      .then(setNearbyPlaces)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
+
+  // 즐겨찾기 카테고리 시트를 열어둔 채 언어를 바꾸면 그 목록도 같은 조건으로 다시 번역해 보여준다.
+  useEffect(() => {
+    if (!favoriteCategoryView || !authToken) return;
+    favoritesApi
+      .list(authToken, { lang: i18n.language })
+      .then((list) => setFavoriteCategoryPlaces(list.filter((f) => f.category === favoriteCategoryView)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
 
   // 대중교통·네비게이션 탭에서 목적지를 고르고 돌아오면, 그 조건으로 바로 경로를 검색해 지도에 보여준다.
   useFocusEffect(
@@ -599,7 +636,9 @@ export default function HomeScreen() {
 
   const closeLiveError = () => {
     setLiveError(false);
-    setSearched(false);
+    // 목적지는 찾았는데 경로 계산만 실패한 경우(routeFetchFailed)는 검색 화면·모드탭을 그대로 둬서
+    // 다른 이동수단으로 바로 재시도할 수 있게 한다. 목적지 자체를 못 찾은 경우만 처음 화면으로 되돌린다.
+    if (!routeFetchFailed) setSearched(false);
   };
 
   const onPickSuggestion = async (place: PlaceSearchResult) => {
@@ -618,6 +657,7 @@ export default function HomeScreen() {
       setTransitResult(null);
       setActiveRoute(null);
       setSearched(false);
+      setRouteFetchFailed(false);
       mapRef.current?.clearRoute();
       return;
     }
@@ -651,6 +691,7 @@ export default function HomeScreen() {
     setTransitResult(null);
     setActiveRoute(null);
     setSearched(false);
+    setRouteFetchFailed(false);
     setPlannerOpen(false);
     mapRef.current?.clearRoute();
   };
@@ -775,13 +816,13 @@ export default function HomeScreen() {
     let cancelled = false;
     setPickedPlace(null);
     setPickedFavorited(false);
-    fetchPlaceAt(pickedPoint).then((place) => {
+    fetchPlaceAt(pickedPoint, i18n.language).then((place) => {
       if (!cancelled) setPickedPlace(place);
     });
     return () => {
       cancelled = true;
     };
-  }, [pickedPoint]);
+  }, [pickedPoint, i18n.language]);
 
   // 지도에서 고른 위치를 출발지로만 지정한다 — 바로 안내를 시작하지 않고, 도착지를 마저 입력받는다.
   // 경로 검색을 기다리지 않고 여기서 바로 역지오코딩해서, "지도에서 선택한 위치" 대신 실제 주소를 보여준다.
@@ -1225,7 +1266,7 @@ export default function HomeScreen() {
             t={t}
           />
         </BottomSheet>
-      ) : searched && !liveError ? (
+      ) : searched && !liveError && !routeFetchFailed ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t('map.noDestination')}</Text>
         </BottomSheet>

@@ -85,7 +85,7 @@ export function CyclingGuidanceScreen() {
     reroutingRef.current = true;
     setRerouteState('loading');
     try {
-      const styled = (await fetchModeRoute(from, destination, 'cycling'))?.[0];
+      const styled = (await fetchModeRoute(from, destination, 'cycling', { lang: i18n.language }))?.[0];
       // 응답을 기다리는 사이 안내를 끝냈으면 새 경로로 되살리지 않는다(위치 추적이 다시 켜진다).
       if (!aliveRef.current || endedRef.current) return;
       if (!styled || styled.path.length < 2) {

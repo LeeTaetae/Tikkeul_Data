@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Heart, House, Info, LogOut, Map as MapIcon, TriangleAlert, User, X, type LucideIcon } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, Heart, House, Info, LogOut, Map as MapIcon, Trash2, TriangleAlert, User, X, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { LANGUAGES, type Language } from '../../i18n';
 import { authApi } from '../../lib/auth/api';
 import { useAuth } from '../../lib/auth/AuthContext';
 import { authErrorMessage } from '../../lib/auth/errorMessage';
+import { tripsApi } from '../../lib/trips/api';
 import { MAX_CONTENT_WIDTH, colors, radius, shadow, space } from '../../theme';
 import { CarIconSetting } from '../CarIconSetting';
 import { Chip } from './Chip';
@@ -41,6 +42,18 @@ export function MenuSheet({ visible, onClose }: Props) {
   const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [resendError, setResendError] = useState<string | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [clearHistoryState, setClearHistoryState] = useState<'idle' | 'confirm' | 'clearing' | 'done' | 'error'>('idle');
+
+  const onClearHistory = async () => {
+    if (!token) return;
+    setClearHistoryState('clearing');
+    try {
+      await tripsApi.clear(token);
+      setClearHistoryState('done');
+    } catch {
+      setClearHistoryState('error');
+    }
+  };
 
   const onResendVerification = async () => {
     if (!token) return;
@@ -156,6 +169,29 @@ export function MenuSheet({ visible, onClose }: Props) {
                   <Icon icon={Heart} size={22} color={colors.ink} />
                   <Text style={styles.pageText}>{t('favorites.title')}</Text>
                 </Pressable>
+                {clearHistoryState === 'confirm' ? (
+                  <View style={styles.verifyRow}>
+                    <Text style={styles.unverifiedText}>{t('menu.clearHistoryConfirm')}</Text>
+                    <Pressable onPress={() => setClearHistoryState('idle')} accessibilityRole="button" style={({ pressed }) => [styles.resendButton, pressed && styles.pressed]}>
+                      <Text style={styles.resendButtonText}>{t('common.close')}</Text>
+                    </Pressable>
+                    <Pressable onPress={onClearHistory} accessibilityRole="button" style={({ pressed }) => [styles.resendButton, pressed && styles.pressed]}>
+                      <Text style={[styles.resendButtonText, styles.logoutText]}>{t('favorites.delete')}</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => (clearHistoryState === 'clearing' ? null : setClearHistoryState('confirm'))}
+                    accessibilityRole="menuitem"
+                    style={({ pressed }) => [styles.page, pressed && styles.pressed]}
+                  >
+                    <Icon icon={Trash2} size={22} color={colors.ink} />
+                    <Text style={styles.pageText}>{t('menu.clearHistory')}</Text>
+                    {clearHistoryState === 'clearing' && <ActivityIndicator size="small" color={colors.brand} />}
+                  </Pressable>
+                )}
+                {clearHistoryState === 'done' && <Text style={styles.verificationSentText}>{t('menu.clearHistoryDone')}</Text>}
+                {clearHistoryState === 'error' && <Text style={styles.resendErrorText}>{t('menu.clearHistoryFailed')}</Text>}
                 <Pressable
                   onPress={onLogout}
                   accessibilityRole="menuitem"

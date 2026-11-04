@@ -1,5 +1,5 @@
 import { Briefcase, Heart, House, MapPin, Trash2, X, type LucideIcon } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +23,7 @@ const KIND_ICON: Record<FavoriteKind, LucideIcon> = { home: House, work: Briefca
 const KIND_ORDER: Record<FavoriteKind, number> = { home: 0, work: 1, custom: 2 };
 
 export default function FavoritesScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const { status, token } = useAuth();
@@ -39,13 +39,13 @@ export default function FavoritesScreen() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const list = await favoritesApi.list(token);
+      const list = await favoritesApi.list(token, { lang: i18n.language });
       setItems([...list].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
       setLoadError(false);
     } catch {
       setLoadError(true);
     }
-  }, [token]);
+  }, [token, i18n.language]);
 
   useEffect(() => {
     load();
@@ -191,8 +191,15 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 제안 선택·현재 위치 사용으로 query 를 바꿨을 때는 그 값으로 다시 검색하지 않는다 - 안 그러면
+  // 검색 effect 가 300ms 뒤 재실행되어 방금 지운 제안 목록을 다시 채워버린다(코드 리뷰 finding).
+  const skipNextSearchRef = useRef(false);
 
   useEffect(() => {
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      return;
+    }
     if (query.trim().length < 2) {
       setSuggestions([]);
       return;
@@ -223,6 +230,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
   }
 
   const onPickSuggestion = (place: PlaceSearchResult) => {
+    skipNextSearchRef.current = true;
     setPicked(place.point);
     setQuery(place.name);
     setSuggestions([]);
@@ -233,6 +241,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
     setLocating(true);
     try {
       const point = await getCurrentLocation();
+      skipNextSearchRef.current = true;
       setPicked(point);
       setQuery(t('map.myLocation'));
       setSuggestions([]);
