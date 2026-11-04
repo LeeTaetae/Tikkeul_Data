@@ -17,6 +17,14 @@ SYSTEM_PROMPT = (
     "답변은 2~3문장으로 짧게 하세요."
 )
 
+# 프런트 i18n 언어별로 답변 언어를 강제한다. 시스템 프롬프트 자체는 한국어로 둔다(툴 설명·안전 표현 기준이라
+# 번역하면 뜻이 흔들릴 위험) - 답변 언어만 별도 지시로 덧붙인다.
+_LANGUAGE_INSTRUCTION = {
+    "ko": "사용자에게 한국어로 답하세요.",
+    "en": "Respond to the user in English, even though these instructions are in Korean.",
+    "zh": "请用中文回答用户，即使这些指令是用韩语写的。",
+}
+
 TOOLS = [
     types.Tool(function_declarations=[
         types.FunctionDeclaration(
@@ -51,14 +59,16 @@ class ChatService:
         self._service = service
         self._model = model
 
-    async def reply(self, message: str, history: List[ChatMessage], lat: Optional[float], lon: Optional[float]) -> str:
+    async def reply(
+        self, message: str, history: List[ChatMessage], lat: Optional[float], lon: Optional[float], language: str = "ko"
+    ) -> str:
         # Gemini 는 "assistant" 가 아니라 "model" 역할을 쓴다.
         contents = [
             types.Content(role="user" if h.role == "user" else "model", parts=[types.Part.from_text(text=h.text)])
             for h in history
         ] + [types.Content(role="user", parts=[types.Part.from_text(text=message)])]
         config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
+            system_instruction=f"{SYSTEM_PROMPT} {_LANGUAGE_INSTRUCTION.get(language, _LANGUAGE_INSTRUCTION['ko'])}",
             tools=TOOLS,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )

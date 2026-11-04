@@ -32,8 +32,8 @@ export interface NearbyPlace {
   point: RoutePoint;
 }
 
-export async function fetchNearbyPlaces(category: PlaceCategory, origin: RoutePoint, radiusM = 1000): Promise<NearbyPlace[]> {
-  const url = `${API_BASE_URL}/places/nearby?category=${category}&lat=${origin.lat}&lng=${origin.lng}&radius_m=${radiusM}`;
+export async function fetchNearbyPlaces(category: PlaceCategory, origin: RoutePoint, radiusM = 1000, lang?: string): Promise<NearbyPlace[]> {
+  const url = `${API_BASE_URL}/places/nearby?category=${category}&lat=${origin.lat}&lng=${origin.lng}&radius_m=${radiusM}${lang ? `&lang=${lang}` : ''}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`nearby places request failed: ${res.status}`);
   const data: { places: { name: string; address: string; distance_m: number; lat: number; lng: number }[] } = await res.json();

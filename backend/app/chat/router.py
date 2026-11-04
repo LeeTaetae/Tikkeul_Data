@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -20,6 +20,8 @@ class ChatRequest(BaseModel):
     history: List[ChatMessage] = Field(default_factory=list, max_length=_MAX_HISTORY)
     lat: Optional[float] = None
     lon: Optional[float] = None
+    # 프런트 i18n 언어(ko/en/zh). 안 보내면(옛 클라이언트) 한국어로 답한다.
+    language: Literal["ko", "en", "zh"] = "ko"
 
 
 class ChatReply(BaseModel):
@@ -34,5 +36,5 @@ def get_chat_service(request: Request) -> Optional[ChatService]:
 async def chat(body: ChatRequest, chat_service: Optional[ChatService] = Depends(get_chat_service)) -> ChatReply:
     if chat_service is None:
         raise api_error("NOT_CONFIGURED")
-    reply = await chat_service.reply(body.message, body.history, body.lat, body.lon)
+    reply = await chat_service.reply(body.message, body.history, body.lat, body.lon, body.language)
     return ChatReply(reply=reply)

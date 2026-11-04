@@ -67,6 +67,25 @@ async def translate_places_to_language(
     ]
 
 
+# translate_places_to_language 와 같은 배치 번역이지만, 호출하는 쪽(trips) 이 PlaceSearchResult 가 아니라
+# (라벨, 주소) 문자열 쌍만 들고 있어서 모델에 묶이지 않는 범용 버전으로 둔다.
+async def translate_labeled_addresses_to_language(
+    items: list[tuple[str, str]], lang: Optional[str], client_id: str, client_secret: str
+) -> list[tuple[str, str]]:
+    target = _RESULT_LANG_TO_PAPAGO_TARGET.get(lang or "")
+    if not target or not client_id or not client_secret or not items:
+        return items
+    lines = [field for pair in items for field in pair]
+    try:
+        translated_text = await _papago_translate("\n".join(lines), "ko", target, client_id, client_secret)
+    except Exception:
+        return items
+    translated_lines = translated_text.split("\n")
+    if len(translated_lines) != len(lines):
+        return items
+    return [(translated_lines[i * 2], translated_lines[i * 2 + 1]) for i in range(len(items))]
+
+
 # 역지오코딩 주소(경로 선택 화면 상단 출발지/도착지 라벨)도 같은 이유로 화면 언어로 번역한다.
 async def translate_address_to_language(address: Optional[str], lang: Optional[str], client_id: str, client_secret: str) -> Optional[str]:
     target = _RESULT_LANG_TO_PAPAGO_TARGET.get(lang or "")

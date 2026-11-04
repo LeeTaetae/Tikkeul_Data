@@ -10,6 +10,7 @@ from .providers import (
     TmapProvider,
     translate_address_to_language,
     translate_chinese_query_to_korean,
+    translate_labeled_addresses_to_language,
     translate_places_to_language,
 )
 from .schemas import (
@@ -96,7 +97,7 @@ async def post_transit_routes(req: RouteRequest) -> TransitRoutesResponse:
 
 
 @places_router.get("/nearby", response_model=NearbyPlacesResponse)
-async def get_nearby_places(category: str, lat: float, lng: float, radius_m: int = 1000) -> NearbyPlacesResponse:
+async def get_nearby_places(category: str, lat: float, lng: float, radius_m: int = 1000, lang: Optional[str] = None) -> NearbyPlacesResponse:
     group_code = _CATEGORY_GROUP_CODES.get(category)
     keyword = _CATEGORY_KEYWORDS.get(category)
     if not group_code and not keyword:
@@ -109,6 +110,11 @@ async def get_nearby_places(category: str, lat: float, lng: float, radius_m: int
         )
     except Exception as exc:
         raise HTTPException(status_code=503, detail="주변 장소를 찾을 수 없습니다") from exc
+    # 카카오 결과는 항상 한국어다 - 장소 검색(get_places)과 같은 이유로 화면 언어로 번역한다.
+    translated = await translate_labeled_addresses_to_language(
+        [(p.name, p.address) for p in places], lang, settings.papago_client_id, settings.papago_client_secret
+    )
+    places = [p.model_copy(update={"name": name, "address": address}) for p, (name, address) in zip(places, translated)]
     return NearbyPlacesResponse(places=places)
 
 

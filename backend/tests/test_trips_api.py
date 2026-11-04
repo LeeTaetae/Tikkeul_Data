@@ -192,3 +192,40 @@ def test_popular_rejects_out_of_range_coordinates(make_client):
     client = make_client(lambda r: None)
     assert client.get("/api/trips/popular", params={"lat": 999, "lng": 127.00}).status_code == 422
     assert client.get("/api/trips/popular", params={"lat": 37.50, "lng": 999}).status_code == 422
+
+
+def test_popular_translates_label_and_address_when_lang_is_set(make_client, monkeypatch):
+    import httpx
+
+    import app.trips.router as trips_router
+    from app.navigation.config import Settings as NavSettings
+
+    client = make_client(lambda r: None)
+    token = _signup_and_token(client)
+    client.post("/api/trips", json=_trip_body("스타벅스", dest_lat=37.50, dest_lon=127.00), headers=_auth(token))
+
+    monkeypatch.setattr(
+        trips_router, "get_navigation_settings", lambda: NavSettings(_env_file=None, papago_client_id="id", papago_client_secret="secret")
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"result": {"translatedText": "Starbucks\nGangnam-gu, Seoul"}}})
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+
+    res = client.get("/api/trips/popular", params={"lat": 37.50, "lng": 127.00, "lang": "en"})
+    assert res.status_code == 200
+    assert res.json()[0]["label"] == "Starbucks"
+
+
+def test_popular_stays_korean_without_lang(make_client):
+    client = make_client(lambda r: None)
+    token = _signup_and_token(client)
+    client.post("/api/trips", json=_trip_body("스타벅스", dest_lat=37.50, dest_lon=127.00), headers=_auth(token))
+    res = client.get("/api/trips/popular", params={"lat": 37.50, "lng": 127.00})
+    assert res.json()[0]["label"] == "스타벅스"

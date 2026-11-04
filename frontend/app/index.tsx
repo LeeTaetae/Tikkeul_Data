@@ -299,18 +299,18 @@ export default function HomeScreen() {
   useEffect(() => {
     getCurrentLocation()
       .then(async (point) => {
-        const popular = await tripsApi.popular({ lat: point.lat, lng: point.lng, limit: 20 });
+        const popular = await tripsApi.popular({ lat: point.lat, lng: point.lng, limit: 20, lang: i18n.language });
         if (popular.length > 0) return popular;
         // 트립 데이터가 없는 콜드스타트 동네: 카카오 주변 음식점·카페로 대체.
         const [restaurants, cafes] = await Promise.all([
-          fetchNearbyPlaces('restaurant', point, 1000).catch(() => []),
-          fetchNearbyPlaces('cafe', point, 1000).catch(() => []),
+          fetchNearbyPlaces('restaurant', point, 1000, i18n.language).catch(() => []),
+          fetchNearbyPlaces('cafe', point, 1000, i18n.language).catch(() => []),
         ]);
         return toFallbackPopular([...restaurants, ...cafes], 20);
       })
       .then(setPopularPlaces)
       .catch(() => setPopularPlaces(null));
-  }, []);
+  }, [i18n.language]);
 
   // 즐겨찾기 화면의 카테고리 그룹 헤더를 탭해 들어오면(favoriteCategory 파라미터), 그 카테고리의 즐겨찾기들을 지도에 점으로 찍는다.
   useEffect(() => {
@@ -691,7 +691,7 @@ export default function HomeScreen() {
     setNearbyLoading(true);
     try {
       const origin = await getCurrentLocation();
-      const places = await fetchNearbyPlaces(category, origin);
+      const places = await fetchNearbyPlaces(category, origin, 1000, i18n.language);
       setNearbyPlaces(places);
       const color = NEARBY_CATEGORIES.find((c) => c.key === category)?.color ?? colors.brand;
       mapRef.current?.showPlaces(places.map((p) => ({ point: p.point, label: p.name })), color);
@@ -1318,20 +1318,20 @@ export default function HomeScreen() {
             <>
               <View style={styles.popularGrid}>
                 {PLACEHOLDER_TRENDS.map((item) => (
-                  <View key={item.name} style={styles.popularCard}>
+                  <View key={item.id} style={styles.popularCard}>
                     <View style={styles.trendCategoryRow}>
                       <Icon icon={TREND_ICON[item.category]} size={14} color={colors.brand} />
                       <Text style={styles.trendCategoryText}>{t(`places.trendCategory.${item.category}`)}</Text>
                     </View>
                     <Text style={styles.popularCardLabel} numberOfLines={2}>
-                      {item.name}
+                      {t(`places.trendItems.${item.id}.name`)}
                     </Text>
                     <Text style={styles.popularCardAddress} numberOfLines={1}>
-                      {item.region}
+                      {t(`places.trendItems.${item.id}.region`)}
                     </Text>
                     <View style={styles.popularHashtag}>
                       <Text style={styles.popularHashtagText} numberOfLines={2}>
-                        #{item.description}
+                        #{t(`places.trendItems.${item.id}.description`)}
                       </Text>
                     </View>
                   </View>
