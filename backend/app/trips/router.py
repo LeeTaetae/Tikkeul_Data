@@ -60,8 +60,8 @@ def get_frequent(
 @router.get("/popular", response_model=List[FrequentDestination])
 def get_popular(
     request: Request,
-    lat: float = Query(...),
-    lng: float = Query(...),
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
     radius_km: float = Query(default=3.0, gt=0, le=20.0),
     days: int = Query(default=DEFAULT_HISTORY_DAYS, ge=1, le=MAX_HISTORY_DAYS),
     limit: int = Query(default=10, ge=1, le=30),

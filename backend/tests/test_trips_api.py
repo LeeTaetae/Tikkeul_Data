@@ -186,3 +186,9 @@ def test_popular_excludes_places_outside_the_radius(make_client):
 def test_popular_requires_lat_and_lng(make_client):
     client = make_client(lambda r: None)
     assert client.get("/api/trips/popular").status_code == 422
+
+
+def test_popular_rejects_out_of_range_coordinates(make_client):
+    client = make_client(lambda r: None)
+    assert client.get("/api/trips/popular", params={"lat": 999, "lng": 127.00}).status_code == 422
+    assert client.get("/api/trips/popular", params={"lat": 37.50, "lng": 999}).status_code == 422
