@@ -77,6 +77,7 @@ const zh: Resources = {
     hoursMinutes: '{{h}} 小时 {{m}} 分钟',
     km: '{{n}} 公里',
     liveLoading: '正在加载路线…',
+    searchingPlaces: '正在搜索地点…',
     liveError: '无法加载路线，请稍后重试。',
     noDestination: '目的地不存在，请换个名称搜索。',
     styleRecommended: '实时推荐',

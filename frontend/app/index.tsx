@@ -345,12 +345,16 @@ export default function HomeScreen() {
 
   // 도착지 입력창에 2글자 이상 치면 실제 장소 검색(자동완성)을 보여준다. 데모 목적지 4곳만 되던 한계를 없앤다.
   const [destinationSuggestions, setDestinationSuggestions] = useState<PlaceSearchResult[]>([]);
+  // 빈 목록이 "찾는 중"인지 "결과 없음"인지 구분하려고 따로 둔다.
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   useEffect(() => {
     if (!destinationFocused || destination.trim().length < 2) {
       setDestinationSuggestions([]);
+      setSuggestionsLoading(false);
       return;
     }
     let cancelled = false;
+    setSuggestionsLoading(true);
     const timer = setTimeout(() => {
       searchPlaces(destination.trim(), undefined, i18n.language)
         .then((results) => {
@@ -358,6 +362,9 @@ export default function HomeScreen() {
         })
         .catch(() => {
           if (!cancelled) setDestinationSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSuggestionsLoading(false);
         });
     }, 300);
     return () => {
@@ -1014,8 +1021,10 @@ export default function HomeScreen() {
               onLayout={(e) => setRecentsTop(insets.top + space.md + e.nativeEvent.layout.y)}
               keyboardShouldPersistTaps="handled"
             >
-              {destinationSuggestions.length === 0 ? (
-                <Text style={styles.notice}>{t('map.liveLoading')}</Text>
+              {suggestionsLoading ? (
+                <Text style={styles.notice}>{t('map.searchingPlaces')}</Text>
+              ) : destinationSuggestions.length === 0 ? (
+                <Text style={styles.notice}>{t('map.noDestination')}</Text>
               ) : (
                 destinationSuggestions.map((p, i) => (
                   <Pressable key={i} style={styles.recentItem} onPress={() => onPickSuggestion(p)} accessibilityRole="button">

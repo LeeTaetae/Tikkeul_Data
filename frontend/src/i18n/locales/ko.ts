@@ -75,6 +75,7 @@ const ko = {
     hoursMinutes: '{{h}}시간 {{m}}분',
     km: '{{n}}km',
     liveLoading: '경로를 불러오는 중입니다...',
+    searchingPlaces: '장소를 찾는 중입니다...',
     liveError: '경로를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
     noDestination: '목적지가 존재하지 않습니다. 다른 이름으로 검색해 주세요.',
     styleRecommended: '실시간 추천',

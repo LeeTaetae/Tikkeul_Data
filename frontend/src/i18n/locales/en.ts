@@ -77,6 +77,7 @@ const en: Resources = {
     hoursMinutes: '{{h}} hr {{m}} min',
     km: '{{n}} km',
     liveLoading: 'Loading route…',
+    searchingPlaces: 'Searching places…',
     liveError: 'Could not load the route. Please try again.',
     noDestination: 'Destination not found. Try searching with a different name.',
     styleRecommended: 'Real-time recommended',
