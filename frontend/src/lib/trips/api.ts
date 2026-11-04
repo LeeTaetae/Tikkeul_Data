@@ -28,6 +28,6 @@ export const tripsApi = {
   frequent: (token: string, params: { days?: number; limit?: number } = {}, options?: RequestOptions) =>
     client.get<FrequentDestination[]>('/api/trips/frequent', params, { ...options, token }),
   // 로그인 없이도 쓴다 - 전체 유저 집계(누가 갔는지는 안 드러남). 홈 화면 기본 패널용.
-  popular: (params: { lat: number; lng: number; radius_km?: number; limit?: number }, options?: RequestOptions) =>
+  popular: (params: { lat: number; lng: number; radius_km?: number; limit?: number; lang?: string }, options?: RequestOptions) =>
     client.get<FrequentDestination[]>('/api/trips/popular', params, options),
 };

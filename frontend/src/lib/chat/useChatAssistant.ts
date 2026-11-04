@@ -21,7 +21,7 @@ export function useChatAssistant() {
       setSending(true);
       try {
         const origin = await getCurrentLocation();
-        const body = buildRequestBody(text, messages, origin);
+        const body = buildRequestBody(text, messages, origin, i18n.language);
         const { reply } = await chatApi.send(body);
         setMessages((prev) => [...prev, { role: 'assistant', text: reply }]);
         void speaker.speak(reply, i18n.language, { source: 'chat' });

@@ -23,10 +23,11 @@ function isRealLocation(origin: RoutePoint | null): origin is RoutePoint {
   return origin !== null && !(origin.lat === DEMO_ORIGIN_LAT && origin.lng === DEMO_ORIGIN_LNG);
 }
 
-export function buildRequestBody(message: string, history: ChatTurn[], origin: RoutePoint | null) {
+export function buildRequestBody(message: string, history: ChatTurn[], origin: RoutePoint | null, language: string) {
   return {
     message,
     history: trimHistory(history),
     ...(isRealLocation(origin) ? { lat: origin.lat, lon: origin.lng } : {}),
+    language,
   };
 }

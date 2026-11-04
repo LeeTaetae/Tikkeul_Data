@@ -1,10 +1,12 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlmodel import Session
 
 from app.auth.deps import get_current_user
 from app.auth.models import User
+from app.navigation.config import get_settings as get_navigation_settings
+from app.navigation.providers import translate_labeled_addresses_to_language
 from app.trips.models import FrequentDestination, RecentDestination, Trip, TripCreate, TripCreated
 from app.trips.service import cell_of, frequent_destinations, popular_destinations, recent_destinations
 
@@ -58,14 +60,22 @@ def get_frequent(
 
 
 @router.get("/popular", response_model=List[FrequentDestination])
-def get_popular(
+async def get_popular(
     request: Request,
     lat: float = Query(..., ge=-90, le=90),
     lng: float = Query(..., ge=-180, le=180),
     radius_km: float = Query(default=3.0, gt=0, le=20.0),
     days: int = Query(default=DEFAULT_HISTORY_DAYS, ge=1, le=MAX_HISTORY_DAYS),
     limit: int = Query(default=10, ge=1, le=30),
+    lang: Optional[str] = Query(default=None),
 ) -> List[FrequentDestination]:
-    """로그인 없이도 보는 홈 화면 기본 패널용 — 누가 갔는지는 안 밝히고 전체 유저 집계만 보여준다."""
+    """로그인 없이도 보는 홈 화면 기본 패널용 — 누가 갔는지는 안 밝히고 전체 유저 집계만 보여준다.
+    라벨·주소는 사용자가 한국어로 남긴 실제 목적지 이름이라, 화면 언어가 ko 가 아니면 번역해서 돌려준다
+    (navigation 라우터의 장소 검색과 같은 방식, translate_places_to_language 참고)."""
     with Session(request.app.state.db_engine) as session:
-        return popular_destinations(session, lat, lng, radius_km, days, limit)
+        destinations = popular_destinations(session, lat, lng, radius_km, days, limit)
+    settings = get_navigation_settings()
+    translated = await translate_labeled_addresses_to_language(
+        [(d.label, d.address_text) for d in destinations], lang, settings.papago_client_id, settings.papago_client_secret
+    )
+    return [d.model_copy(update={"label": label, "address_text": address}) for d, (label, address) in zip(destinations, translated)]

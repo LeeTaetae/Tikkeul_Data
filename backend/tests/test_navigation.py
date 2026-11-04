@@ -720,6 +720,74 @@ def test_translate_places_to_language_skips_korean_and_falls_back_on_line_mismat
     assert asyncio.run(translate_places_to_language(places, "en", "", "")) == places
 
 
+def test_translate_labeled_addresses_to_language_translates_label_and_address_in_one_call(monkeypatch):
+    from app.navigation.providers import translate_labeled_addresses_to_language
+
+    items = [("강남역", "서울 강남구"), ("명동거리", "서울 중구")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"message": {"result": {"translatedText": "Gangnam Station\nGangnam-gu, Seoul\nMyeongdong Street\nJung-gu, Seoul"}}}
+        )
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    result = asyncio.run(translate_labeled_addresses_to_language(items, "en", "id", "secret"))
+    assert result == [("Gangnam Station", "Gangnam-gu, Seoul"), ("Myeongdong Street", "Jung-gu, Seoul")]
+
+
+def test_translate_labeled_addresses_to_language_skips_korean(monkeypatch):
+    from app.navigation.providers import translate_labeled_addresses_to_language
+
+    items = [("강남역", "서울 강남구")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("ko(기본 언어)는 파파고를 호출하면 안 됨")
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+    assert asyncio.run(translate_labeled_addresses_to_language(items, "ko", "id", "secret")) == items
+    assert asyncio.run(translate_labeled_addresses_to_language(items, None, "id", "secret")) == items
+
+
+def test_get_nearby_places_translates_results_when_lang_is_set(monkeypatch):
+    from app.navigation.routers import get_nearby_places
+    import app.navigation.routers as nav_routers_module
+
+    class StubKakaoNearby:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        async def search_nearby(self, *_a, **_kw):
+            return [NearbyPlace(name="강남역", lat=37.0, lng=127.0, address="서울 강남구", distance_m=10)]
+
+    monkeypatch.setattr(nav_routers_module, "get_settings", lambda: NavSettings(_env_file=None, papago_client_id="id", papago_client_secret="secret"))
+    monkeypatch.setattr(nav_routers_module, "KakaoRoutingProvider", StubKakaoNearby)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"result": {"translatedText": "Gangnam Station\nGangnam-gu, Seoul"}}})
+
+    import app.navigation.providers as providers_module
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        providers_module.httpx, "AsyncClient", lambda *a, **kw: real_client(*a, transport=httpx.MockTransport(handler), **kw)
+    )
+
+    result = asyncio.run(get_nearby_places(category="restaurant", lat=37.0, lng=127.0, lang="en"))
+    assert result.places[0].name == "Gangnam Station"
+    assert result.places[0].address == "Gangnam-gu, Seoul"
+    assert result.places[0].distance_m == 10  # 번역 외 필드는 그대로 유지
+
+
 def test_translate_address_to_language_translates_only_for_en_or_zh(monkeypatch):
     from app.navigation.providers import translate_address_to_language
 

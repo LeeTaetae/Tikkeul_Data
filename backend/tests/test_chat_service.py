@@ -77,6 +77,27 @@ def test_general_question_answers_without_tool_call():
     assert fake_service.incidents_calls == []
 
 
+def test_language_defaults_to_korean_instruction():
+    client = FakeClient([FakeResponse([], "ok")])
+    svc = ChatService(client, FakeTrafficService())
+    asyncio.run(svc.reply("hi", [], None, None))
+    assert "한국어로 답하세요" in client.calls[0]["config"].system_instruction
+
+
+def test_language_en_adds_english_instruction():
+    client = FakeClient([FakeResponse([], "ok")])
+    svc = ChatService(client, FakeTrafficService())
+    asyncio.run(svc.reply("hi", [], None, None, "en"))
+    assert "Respond to the user in English" in client.calls[0]["config"].system_instruction
+
+
+def test_language_zh_adds_chinese_instruction():
+    client = FakeClient([FakeResponse([], "ok")])
+    svc = ChatService(client, FakeTrafficService())
+    asyncio.run(svc.reply("hi", [], None, None, "zh"))
+    assert "请用中文回答" in client.calls[0]["config"].system_instruction
+
+
 def test_realtime_question_calls_incidents_tool():
     client = FakeClient([
         FakeResponse([FakeCall("nearby_incidents")], None),

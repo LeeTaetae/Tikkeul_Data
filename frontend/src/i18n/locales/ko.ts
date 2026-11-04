@@ -429,6 +429,23 @@ const ko = {
       performance: '공연',
     },
     trendDisclaimer: '예시 데이터예요. 공공데이터 연동 후 실제 정보로 바뀔 예정이에요.',
+    // src/lib/trends/placeholderTrends.ts 의 id 와 1:1 대응(더미 데이터, 공공데이터 연동 전까지).
+    trendItems: {
+      'jinhae-gunhangje': { name: '진해 군항제', region: '경남 창원', description: '해마다 봄에 열리는 벚꽃 축제' },
+      'busan-fireworks': { name: '부산불꽃축제', region: '부산 광안리', description: '밤하늘을 수놓는 불꽃놀이' },
+      'daehangno-theater': { name: '대학로 소극장 공연', region: '서울 혜화', description: '소극장 연극·뮤지컬이 모인 거리' },
+      'hapjeong-cafe-street': { name: '합정 로스터리 카페거리', region: '서울 합정동', description: '원두를 직접 로스팅하는 카페들' },
+      'euljiro-eatery-alley': { name: '을지로 노포 골목', region: '서울 을지로', description: '오래된 노포 맛집이 모인 골목' },
+      'jarasum-jazz-festival': { name: '자라섬 재즈페스티벌', region: '경기 가평', description: '가을마다 열리는 재즈 축제' },
+      'jeonpo-cafe-street': { name: '전포 카페거리', region: '부산 전포동', description: '개성 있는 카페들이 모인 거리' },
+      'seoul-arts-center': { name: '예술의전당 공연', region: '서울 서초', description: '클래식·오페라를 만날 수 있는 공연장' },
+      'songjeong-seafood-street': { name: '송정 해물요리 거리', region: '울산 송정', description: '해산물 맛집이 모인 거리' },
+      'hangang-zoning-out': { name: '한강 멍때리기 대회', region: '서울 한강공원', description: '도심 속에서 쉬어가는 이색 행사' },
+      'sinpo-food-cart-alley': { name: '포장마차 골목', region: '인천 신포동', description: '밤에 더 북적이는 노점 골목' },
+      'haeridan-cafe-street': { name: '해리단길 카페거리', region: '부산 해운대', description: '바다 근처 개성 있는 카페들' },
+      'sejong-center': { name: '세종문화회관 공연', region: '서울 광화문', description: '클래식·무용 공연이 자주 열리는 곳' },
+      'cheongchun-festival': { name: '청춘페스티벌', region: '경기 수원', description: '매년 열리는 청년 문화 축제' },
+    },
   },
   transitTab: {
     title: '대중교통',

@@ -8,8 +8,8 @@ class FakeChatService:
         self.reply_text = reply_text
         self.calls = []
 
-    async def reply(self, message, history, lat, lon):
-        self.calls.append((message, history, lat, lon))
+    async def reply(self, message, history, lat, lon, language="ko"):
+        self.calls.append((message, history, lat, lon, language))
         return self.reply_text
 
 
@@ -24,7 +24,7 @@ def test_chat_endpoint_returns_reply(make_client):
     response = client.post("/api/chat", json={"message": "위험구간 있어?", "history": [], "lat": 37.5, "lon": 127.0})
     assert response.status_code == 200
     assert response.json() == {"reply": "근처에 공사가 있어요."}
-    assert fake.calls == [("위험구간 있어?", [], 37.5, 127.0)]
+    assert fake.calls == [("위험구간 있어?", [], 37.5, 127.0, "ko")]
 
 
 def test_chat_endpoint_without_key_returns_not_configured(make_client):
