@@ -210,6 +210,25 @@ const ko = {
     unknownPlace: '위치 정보 없음',
     empty: '표시할 알림이 없습니다.',
   },
+  visionHazard: {
+    label: { kickboard: '전동킥보드', motorcycle: '오토바이', vehicle: '차량', person: '보행자', animal: '동물' },
+    message: {
+      kickboard: '전방에 전동킥보드가 있어요',
+      motorcycle: '전방에 오토바이가 있어요',
+      vehicle: '전방에 차량이 있어요',
+      person: '전방에 보행자가 있어요',
+      animal: '전방에 동물이 있어요',
+    },
+    // final 단계(최종 경고)로 막 들어왔을 때만 읽는다. 모델 클래스 5개(킥보드·오토바이·차량·보행자·동물) 기준이며
+    // "자전거"는 학습된 클래스가 아니다(ADR 0002) - 가장 가까운 kickboard/motorcycle로 탐지된다.
+    finalSpeech: {
+      kickboard: '킥보드가 접근했습니다. 멈추세요!',
+      motorcycle: '오토바이가 접근했습니다. 멈추세요!',
+      vehicle: '차량이 접근했습니다. 멈추세요!',
+      person: '사람이 접근했습니다. 멈추세요!',
+      animal: '동물이 접근했습니다. 멈추세요!',
+    },
+  },
   traffic: {
     area: '내 위치 주변 약 5km',
     region: '현재 지역: {{name}}',

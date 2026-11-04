@@ -212,6 +212,23 @@ const en: Resources = {
     unknownPlace: 'Location unknown',
     empty: 'No alerts to show.',
   },
+  visionHazard: {
+    label: { kickboard: 'Kickboard', motorcycle: 'Motorcycle', vehicle: 'Vehicle', person: 'Pedestrian', animal: 'Animal' },
+    message: {
+      kickboard: 'Kickboard ahead',
+      motorcycle: 'Motorcycle ahead',
+      vehicle: 'Vehicle ahead',
+      person: 'Pedestrian ahead',
+      animal: 'Animal ahead',
+    },
+    finalSpeech: {
+      kickboard: 'A kickboard is approaching. Stop!',
+      motorcycle: 'A motorcycle is approaching. Stop!',
+      vehicle: 'A vehicle is approaching. Stop!',
+      person: 'A pedestrian is approaching. Stop!',
+      animal: 'An animal is approaching. Stop!',
+    },
+  },
   traffic: {
     area: 'Within about 5 km of your location',
     region: 'Current area: {{name}}',

@@ -13,7 +13,7 @@ const regionCache = new Map<string, Promise<string | null>>();
 const zonesCache = new Map<string, { at: number; promise: Promise<ProtectionZone[]> }>();
 const ZONES_TTL_MS = 10 * 60 * 1000;
 
-function cachedRegion(lat: number, lng: number): Promise<string | null> {
+export function cachedRegion(lat: number, lng: number): Promise<string | null> {
   const query = regionQueryFor({ latitude: lat, longitude: lng });
   let promise = regionCache.get(query.key);
   if (!promise) {
@@ -31,7 +31,7 @@ function cachedRegion(lat: number, lng: number): Promise<string | null> {
   return promise;
 }
 
-function cachedZones(sggCd: string): Promise<ProtectionZone[]> {
+export function cachedZones(sggCd: string): Promise<ProtectionZone[]> {
   const hit = zonesCache.get(sggCd);
   if (hit && Date.now() - hit.at < ZONES_TTL_MS) return hit.promise;
   const promise = trafficApi

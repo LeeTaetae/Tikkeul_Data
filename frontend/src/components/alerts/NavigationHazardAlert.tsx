@@ -15,7 +15,7 @@ import { TYPE_STYLE, TypeIcon } from './AlertCard';
 
 // 거리 단계 알약. 중립색만 쓰고, 가까울수록 테두리 → 채움으로 진해진다. 단계는 알약의 글자("주의"·"접근 경고"·"최종 경고")로도 전달한다.
 // 위험의 심각도는 유형 색 띠·아이콘·심각도 배지가 맡는다. 거리와 심각도를 같은 색으로 섞어 과장하지 않는다.
-const STAGE_PILL: Record<Exclude<HazardStage, 'advance'>, { bg: string; fg: string; border: string }> = {
+export const STAGE_PILL: Record<Exclude<HazardStage, 'advance'>, { bg: string; fg: string; border: string }> = {
   caution: { bg: colors.surface, fg: colors.ink, border: colors.muted },
   approach: { bg: colors.surface, fg: colors.ink, border: colors.ink },
   final: { bg: colors.ink, fg: colors.surface, border: colors.ink },

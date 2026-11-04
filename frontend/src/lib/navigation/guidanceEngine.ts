@@ -241,7 +241,7 @@ const M_PER_DEG = 111_320;
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
 /** 두 좌표 사이 거리(m). 수 km 이내에서 오차가 작은 평면 근사다. */
-function distanceM(a: LatLng, b: LatLng): number {
+export function distanceM(a: LatLng, b: LatLng): number {
   const k = Math.cos(toRad((a.lat + b.lat) / 2));
   return Math.hypot((b.lat - a.lat) * M_PER_DEG, (b.lng - a.lng) * M_PER_DEG * k);
 }
