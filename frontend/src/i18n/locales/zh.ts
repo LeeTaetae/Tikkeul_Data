@@ -220,6 +220,13 @@ const zh: Resources = {
       person: '前方有行人',
       animal: '前方有动物',
     },
+    finalSpeech: {
+      kickboard: '电动滑板车正在接近，请停车！',
+      motorcycle: '摩托车正在接近，请停车！',
+      vehicle: '车辆正在接近，请停车！',
+      person: '行人正在接近，请停车！',
+      animal: '动物正在接近，请停车！',
+    },
   },
   traffic: {
     area: '您所在位置周边约5公里',

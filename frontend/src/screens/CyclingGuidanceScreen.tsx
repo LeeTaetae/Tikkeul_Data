@@ -13,10 +13,12 @@ import { Card } from '../components/ui/Card';
 import { Icon } from '../components/ui/Icon';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { RoundButton } from '../components/ui/RoundButton';
+import { VisionHazardController } from '../components/vision/VisionHazardController';
 import { displayEta } from '../lib/navigation/guidanceDisplay';
 import { RIDE_POLICY, toNavRoute, type LatLng, type NavRoute } from '../lib/navigation/guidanceEngine';
 import { clearRideRequest, getRideRequest } from '../lib/navigation/guidanceSession';
 import { cyclingGuides } from '../lib/navigation/rideGuidance';
+import { useProtectionZoneStatus } from '../lib/navigation/useProtectionZoneStatus';
 import { rideGpsStatus, useRideMapFollow } from '../lib/navigation/useRideMap';
 import { useGuidanceTracking } from '../lib/navigation/useGuidanceTracking';
 import { useTurnInstructionSpeech } from '../lib/useTurnInstructionSpeech';
@@ -36,7 +38,8 @@ let routeSeq = 0;
 const newRouteId = () => `cycling-${Date.now()}-${++routeSeq}`;
 
 // 카카오 자전거 응답에는 회전 안내 지점이 없어서, 좌표가 있는 안내 문구를 안내 지점으로 바꿔 쓴다(rideGuidance.cyclingGuides).
-// NavRoute.mode 는 정책 선택에 쓰이지 않고(policy 가 우선), 자동차·도보 전용 기능(위험 경고 등)도 이 화면은 쓰지 않는다.
+// NavRoute.mode 는 정책 선택에 쓰이지 않고(policy 가 우선), ITS 돌발정보·과속 경고 같은 자동차 전용 기능은 이 화면이 쓰지 않는다.
+// 보호구역 상태만 useProtectionZoneStatus 로 가볍게 받아 전방 비전 민감도에 쓴다.
 const toCyclingRoute = (styled: StyledRoute): NavRoute => ({
   ...toNavRoute(styled, 'walking', newRouteId()),
   policy: RIDE_POLICY.cycling,
@@ -101,6 +104,8 @@ export function CyclingGuidanceScreen() {
   const view = useGuidanceTracking({ route, enabled: focused && route !== null, onReroute: (fix) => reroute({ lat: fix.lat, lng: fix.lng }, false) });
   const { snapshot, position } = view;
   const arrived = view.phase === 'arrived';
+  const visionEnabled = focused && route !== null && position !== null && !arrived;
+  const inProtectionZone = useProtectionZoneStatus(route, snapshot?.progressM ?? 0, visionEnabled);
 
   // 음성 안내: 좌표가 있는 안내 문구를 그 지점에 가까워질 때 한 번씩 읽는다(자동차 길안내와 같은 훅).
   const speechRoute = useMemo(() => (route ? { id: route.id, points: route.path.map((p) => ({ latitude: p.lat, longitude: p.lng })) } : null), [route]);
@@ -179,6 +184,9 @@ export function CyclingGuidanceScreen() {
       <View style={styles.mapLayer}>
         <KakaoMap ref={mapRef} autoLocate={false} onUserPan={() => setFollowing(false)} onReady={() => setMapReady(true)} />
       </View>
+
+      {/* 전방 비전 경고(ADR 0002). 화면엔 카메라를 띄우지 않고 배너·진동만 낸다. */}
+      <VisionHazardController enabled={visionEnabled} inProtectionZone={inProtectionZone} />
 
       <View style={[styles.top, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.column}>

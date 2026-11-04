@@ -1,0 +1,7 @@
+{
+  "name": "tikkeul-vision-detector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "On-device YOLO vision hazard detection (camera + CoreML) for Tikkeul Data",
+  "license": "UNLICENSED"
+}

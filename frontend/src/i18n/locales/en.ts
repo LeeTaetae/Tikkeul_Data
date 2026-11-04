@@ -220,6 +220,13 @@ const en: Resources = {
       person: 'Pedestrian ahead',
       animal: 'Animal ahead',
     },
+    finalSpeech: {
+      kickboard: 'A kickboard is approaching. Stop!',
+      motorcycle: 'A motorcycle is approaching. Stop!',
+      vehicle: 'A vehicle is approaching. Stop!',
+      person: 'A pedestrian is approaching. Stop!',
+      animal: 'An animal is approaching. Stop!',
+    },
   },
   traffic: {
     area: 'Within about 5 km of your location',

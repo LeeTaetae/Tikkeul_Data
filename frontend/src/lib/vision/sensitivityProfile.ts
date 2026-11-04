@@ -6,12 +6,14 @@ export interface SensitivityProfile {
   targetFps: number;
 }
 
+// 0.45 -> 0.8: 실기기 테스트에서 학습 범위 밖 사물(실내 책상 등)이 애매한 확신도로 오탐되는 경우가
+// 많아, 기준을 올려 자신 없는 탐지를 더 많이 걸러낸다. docs/ADR/0002 참고.
 const BASE_CONFIDENCE: Record<HazardClass, number> = {
-  kickboard: 0.45,
-  motorcycle: 0.45,
-  vehicle: 0.45,
-  person: 0.45,
-  animal: 0.45,
+  kickboard: 0.8,
+  motorcycle: 0.8,
+  vehicle: 0.8,
+  person: 0.8,
+  animal: 0.8,
 };
 
 export const DEFAULT_SENSITIVITY: SensitivityProfile = { confidenceByClass: BASE_CONFIDENCE, targetFps: 5 };

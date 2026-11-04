@@ -10,7 +10,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tikkeuldata.app",
-      "deploymentTarget": "16.4"
+      "deploymentTarget": "16.4",
+      "infoPlist": {
+        "NSCameraUsageDescription": "전방 위험(킥보드·보행자 등) 탐지를 위해 카메라를 사용합니다."
+      }
     },
     "android": {
       "package": "com.tikkeuldata.app",

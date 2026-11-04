@@ -9,17 +9,17 @@ import {
   sensitivityProfileFor,
 } from '../src/lib/vision/sensitivityProfile.ts';
 
-test('보호구역이 아니면 기본 프로파일(모든 클래스 0.45, 5fps)', () => {
+test('보호구역이 아니면 기본 프로파일(모든 클래스 0.8, 5fps)', () => {
   const p = sensitivityProfileFor(false);
   assert.equal(p.targetFps, 5);
-  assert.equal(p.confidenceByClass.person, 0.45);
+  assert.equal(p.confidenceByClass.person, 0.8);
   assert.deepEqual(p, DEFAULT_SENSITIVITY);
 });
 
 test('보호구역이면 person만 0.25, 나머지는 그대로, 10fps', () => {
   const p = sensitivityProfileFor(true);
   assert.equal(p.confidenceByClass.person, 0.25);
-  assert.equal(p.confidenceByClass.vehicle, 0.45);
+  assert.equal(p.confidenceByClass.vehicle, 0.8);
   assert.equal(p.targetFps, 10);
   assert.deepEqual(p, PROTECTION_ZONE_SENSITIVITY);
 });

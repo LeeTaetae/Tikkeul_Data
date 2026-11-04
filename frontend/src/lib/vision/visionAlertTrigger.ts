@@ -1,8 +1,9 @@
-// 진동 edge-trigger: 단계가 올라갈 때만 울린다. 같은 단계 유지·하락은 울리지 않는다. docs/ADR/0002 참고.
+// 진동 edge-trigger: final(최종 경고) 단계에 막 들어온 순간에만 울린다. 주의·접근 경고는 배너만 뜨고
+// 진동은 없다 - 매 단계마다 울리면 과잉 경보라 사용자 요청으로 final만으로 좁혔다. docs/ADR/0002 참고.
 import type { HazardStage } from '../hazardStage';
 
 export const STAGE_RANK: Record<HazardStage, number> = { advance: 0, caution: 1, approach: 2, final: 3 };
 
 export function shouldVibrate(prevStage: HazardStage, nextStage: HazardStage): boolean {
-  return STAGE_RANK[nextStage] > STAGE_RANK[prevStage] && nextStage !== 'advance';
+  return nextStage === 'final' && prevStage !== 'final';
 }

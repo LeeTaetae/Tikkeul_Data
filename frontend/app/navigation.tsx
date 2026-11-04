@@ -7,6 +7,7 @@ import { speaker } from '../src/lib/speech/speaker';
 import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
+import { VisionHazardController } from '../src/components/vision/VisionHazardController';
 import { HazardRail, RAIL_ITEM_HEIGHT, RAIL_ITEM_HEIGHT_COMPACT, RAIL_OVERFLOW_HEIGHT } from '../src/components/navigation/HazardRail';
 import { NavBottomPanel } from '../src/components/navigation/NavBottomPanel';
 import { NavStatus } from '../src/components/navigation/NavStatus';
@@ -388,7 +389,8 @@ function WebGuidanceScreen() {
   // 현재 속도는 위치 변화로 추정한 값이다. 제한속도는 경로 응답에 없어서, 어린이보호구역 지점 근처에서만 법정 30km/h 를 보여준다.
   const showSpeed = ready && driving && !arrived && position !== null;
   const speedKmh = speedKmhOf(snapshot?.speedMps ?? null);
-  const cautionKmh = nearSchoolZone(hazard.zoneOnRoute.map((z) => z.offsetM), snapshot?.progressM ?? 0) ? SCHOOL_ZONE_SPEED_LIMIT_KMH : null;
+  const inProtectionZone = nearSchoolZone(hazard.zoneOnRoute.map((z) => z.offsetM), snapshot?.progressM ?? 0);
+  const cautionKmh = inProtectionZone ? SCHOOL_ZONE_SPEED_LIMIT_KMH : null;
   const speedBadge = showSpeed ? <SpeedBadge speedKmh={speedKmh} cautionKmh={cautionKmh} compact={compactLayout} /> : null;
 
   return (
@@ -396,6 +398,9 @@ function WebGuidanceScreen() {
       <View style={styles.mapLayer}>
         {driving ? <NavigationMap ref={mapRef} onUserPan={() => setFollowing(false)} onReady={() => setReadyMapKind('driving')} /> : <KakaoMap ref={mapRef} autoLocate={false} onUserPan={() => setFollowing(false)} onReady={() => setReadyMapKind('other')} />}
       </View>
+
+      {/* 전방 비전 경고(ADR 0002). 화면엔 카메라를 띄우지 않고 배너·진동만 낸다. iOS 전용(네이티브 모듈 미구현 플랫폼은 no-op). */}
+      <VisionHazardController enabled={showSpeed} inProtectionZone={inProtectionZone} />
 
       {/* 위험 경고는 하단 패널 바로 위에 올려놓는다(NavigationHazardAlert 의 bottomOffset). */}
       {showAlert && hazard.warning && (
