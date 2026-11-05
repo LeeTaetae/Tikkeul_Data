@@ -400,7 +400,7 @@ function WebGuidanceScreen() {
       </View>
 
       {/* 전방 비전 경고(ADR 0002). 화면엔 카메라를 띄우지 않고 배너·진동만 낸다. iOS 전용(네이티브 모듈 미구현 플랫폼은 no-op). */}
-      <VisionHazardController enabled={showSpeed} inProtectionZone={inProtectionZone} />
+      <VisionHazardController enabled={showSpeed} inProtectionZone={inProtectionZone} speedKmh={speedKmh} />
 
       {/* 위험 경고는 하단 패널 바로 위에 올려놓는다(NavigationHazardAlert 의 bottomOffset). */}
       {showAlert && hazard.warning && (

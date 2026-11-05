@@ -21,9 +21,11 @@ interface Props {
   enabled: boolean;
   // GPS 기준 어린이보호구역 등 상황 적응형 민감도 대상 구역 안에 있는지(frontend/src/lib/navigation/drivingDisplay.ts nearSchoolZone 등으로 계산).
   inProtectionZone: boolean;
+  // 보호구역 안에서 차량 탐지를 다시 켤지 판단하는 데만 쓴다(sensitivityProfile.ts). 모르면 null.
+  speedKmh: number | null;
 }
 
-export function VisionHazardController({ enabled, inProtectionZone }: Props) {
+export function VisionHazardController({ enabled, inProtectionZone, speedKmh }: Props) {
   const { t, i18n } = useTranslation();
   const [state, setState] = useState<VisionFrameState>(INITIAL_VISION_FRAME_STATE);
   const [closed, setClosed] = useState(false);
@@ -45,7 +47,7 @@ export function VisionHazardController({ enabled, inProtectionZone }: Props) {
 
   if (!enabled) return null;
 
-  const profile = sensitivityProfileFor(inProtectionZone);
+  const profile = sensitivityProfileFor(inProtectionZone, speedKmh);
 
   const onDetections = ({ nativeEvent }: { nativeEvent: { detections: RawDetectionEvent[] } }) => {
     const prev = frameStateRef.current;

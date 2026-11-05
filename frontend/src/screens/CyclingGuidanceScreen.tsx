@@ -186,7 +186,11 @@ export function CyclingGuidanceScreen() {
       </View>
 
       {/* 전방 비전 경고(ADR 0002). 화면엔 카메라를 띄우지 않고 배너·진동만 낸다. */}
-      <VisionHazardController enabled={visionEnabled} inProtectionZone={inProtectionZone} />
+      <VisionHazardController
+        enabled={visionEnabled}
+        inProtectionZone={inProtectionZone}
+        speedKmh={snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null}
+      />
 
       <View style={[styles.top, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.column}>

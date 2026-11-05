@@ -9,19 +9,31 @@ import {
   sensitivityProfileFor,
 } from '../src/lib/vision/sensitivityProfile.ts';
 
-test('보호구역이 아니면 기본 프로파일(모든 클래스 0.8, 5fps)', () => {
-  const p = sensitivityProfileFor(false);
+test('보호구역이 아니면 기본 프로파일(모든 클래스 0.8, 5fps) - 속도는 영향 없음', () => {
+  const p = sensitivityProfileFor(false, null);
   assert.equal(p.targetFps, 5);
   assert.equal(p.confidenceByClass.person, 0.8);
+  assert.equal(p.confidenceByClass.vehicle, 0.8);
   assert.deepEqual(p, DEFAULT_SENSITIVITY);
+  assert.deepEqual(sensitivityProfileFor(false, 50), DEFAULT_SENSITIVITY);
 });
 
-test('보호구역이면 person만 0.25, 나머지는 그대로, 10fps', () => {
-  const p = sensitivityProfileFor(true);
-  assert.equal(p.confidenceByClass.person, 0.25);
+test('보호구역 + 저속(또는 속도 모름)이면 person 0.25, 차량 탐지는 꺼짐, 10fps', () => {
+  const slow = sensitivityProfileFor(true, 10);
+  assert.equal(slow.confidenceByClass.person, 0.25);
+  assert.equal(slow.confidenceByClass.vehicle, Infinity);
+  assert.equal(slow.targetFps, 10);
+
+  const unknownSpeed = sensitivityProfileFor(true, null);
+  assert.equal(unknownSpeed.confidenceByClass.vehicle, Infinity);
+});
+
+test('보호구역이라도 시속 50 이상이면 차량 탐지가 다시 켜진다', () => {
+  const p = sensitivityProfileFor(true, 50);
   assert.equal(p.confidenceByClass.vehicle, 0.8);
-  assert.equal(p.targetFps, 10);
+  assert.equal(p.confidenceByClass.person, 0.25);
   assert.deepEqual(p, PROTECTION_ZONE_SENSITIVITY);
+  assert.deepEqual(sensitivityProfileFor(true, 49.9).confidenceByClass.vehicle, Infinity);
 });
 
 test('confidence가 threshold와 정확히 같으면 통과한다(포함)', () => {
