@@ -51,10 +51,9 @@ def test_admin_login_and_live_revocation(mongo_auth):
     client, db, settings = mongo_auth
     normal = signup(client, settings)
     credentials = {"email": "mongo@example.com", "password": "password123"}
-    assert client.post("/api/auth/admin/login", json=credentials).status_code == 403
     assert client.get("/api/auth/admin/me", headers=bearer(normal)).status_code == 403
     db.users.update_one({"email": credentials["email"]}, {"$set": {"role": "admin"}})
-    admin = client.post("/api/auth/admin/login", json=credentials)
+    admin = client.post("/api/auth/login", json=credentials)
     assert admin.status_code == 200 and admin.json()["user"]["role"] == "admin"
     assert client.get("/api/auth/admin/me", headers=bearer(admin)).status_code == 200
     db.users.update_one({"email": credentials["email"]}, {"$set": {"role": "user"}})

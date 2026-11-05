@@ -13,9 +13,9 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (email: string, password: string, adminOnly?: boolean) => Promise<AuthUser>;
-  loginWithGoogle: () => Promise<void>;
-  loginWithKakao: () => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthUser>;
+  loginWithGoogle: () => Promise<AuthUser>;
+  loginWithKakao: () => Promise<AuthUser>;
   signup: (email: string, password: string, verifyToken: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -47,8 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string, adminOnly = false) => {
-    const res = await (adminOnly ? authApi.adminLogin(email, password) : authApi.login(email, password));
+  const login = async (email: string, password: string) => {
+    const res = await authApi.login(email, password);
     await setToken(res.access_token);
     setState({ status: 'authenticated', user: res.user, token: res.access_token });
     return res.user;
@@ -70,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await authApi.loginGoogle(response.data.idToken);
     await setToken(res.access_token);
     setState({ status: 'authenticated', user: res.user, token: res.access_token });
+    return res.user;
   };
 
   // 카카오 네이티브 로그인: 카카오 SDK 로 accessToken 을 받아 백엔드로 교환한다. 취소는 KAKAO_LOGIN_CANCELLED 로 구분한다.
@@ -78,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await authApi.loginKakao(accessToken);
     await setToken(res.access_token);
     setState({ status: 'authenticated', user: res.user, token: res.access_token });
+    return res.user;
   };
 
   const signup = async (email: string, password: string, verifyToken: string) => {

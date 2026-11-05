@@ -20,6 +20,9 @@ class SqlUsers(Session):
     def by_social(self, provider, provider_id):
         return self.exec(select(User).where(User.provider == provider, User.provider_id == provider_id)).first()
 
+    def all_users(self):
+        return list(self.exec(select(User).order_by(User.id)).all())
+
 
 class MongoUsers:
     def __init__(self, database):
@@ -39,6 +42,9 @@ class MongoUsers:
 
     def by_social(self, provider, provider_id):
         return self._load(self.db.users.find_one({"provider": provider, "provider_id": provider_id}))
+
+    def all_users(self):
+        return [self._load(document) for document in self.db.users.find(sort=[("id", 1)])]
 
     def get(self, model, user_id):
         return self._load(self.db.users.find_one({"id": user_id}))
