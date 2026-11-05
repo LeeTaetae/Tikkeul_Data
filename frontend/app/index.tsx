@@ -37,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
 import { ChatAssistantPanel } from '../src/components/chat/ChatAssistantPanel';
+import { FrequentDestinationBanner } from '../src/components/FrequentDestinationBanner';
 import { Logo } from '../src/components/Logo';
 import { Card } from '../src/components/ui/Card';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
@@ -69,6 +70,7 @@ import { searchPlaces, type PlaceSearchResult } from '../src/lib/places/search';
 import { loadRecentRoutes, loadRecents, saveRecent, saveRecentRoute, type RecentDestination, type RecentRoute } from '../src/lib/recents';
 import { useAuth } from '../src/lib/auth/AuthContext';
 import { tripsApi, type FrequentDestination } from '../src/lib/trips/api';
+import { pickFrequentDestination } from '../src/lib/trips/frequentBanner';
 import { toFallbackPopular } from '../src/lib/places/popularFallback';
 import { PLACEHOLDER_TRENDS, type TrendCategory } from '../src/lib/trends/placeholderTrends';
 import { clearPendingSearch, getPendingSearch } from '../src/lib/navigation/pendingSearch';
@@ -252,6 +254,25 @@ export default function HomeScreen() {
   const [recents, setRecents] = useState<RecentDestination[]>(() => loadRecents());
   const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>(() => loadRecentRoutes());
   const [mode, setMode] = useState<TravelMode>('driving');
+  // 자주 가는 목적지 안내 배너. 앱 세션(이 화면 마운트)당 1회만 조회 - 로그인 전엔 authToken이 null이라
+  // 로그인 완료 시점에 다시 시도하도록 의존성에 authStatus/authToken을 둔다.
+  const [frequentDestination, setFrequentDestination] = useState<FrequentDestination | null>(null);
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !authToken) {
+      setFrequentDestination(null); // 로그아웃하면 이전 계정의 목적지가 남아있지 않게 지운다
+      return;
+    }
+    let cancelled = false;
+    tripsApi
+      .frequent(authToken, { limit: 1, lang: i18n.language })
+      .then((destinations) => {
+        if (!cancelled) setFrequentDestination(pickFrequentDestination(destinations));
+      })
+      .catch(() => {}); // 실패해도 배너만 안 뜨면 된다 - 홈 화면 자체를 막지 않는다
+    return () => {
+      cancelled = true; // 응답이 늦게 와서 로그아웃·계정 전환 이후에 도착하면 반영하지 않는다
+    };
+  }, [authStatus, authToken]);
   const [manualOrigin, setManualOrigin] = useState<RoutePoint | null>(null);
   const [manualDestination, setManualDestination] = useState<RoutePoint | null>(null);
   const [originAddress, setOriginAddress] = useState<string | null>(null);
@@ -673,6 +694,17 @@ export default function HomeScreen() {
     await searchRoutes(recent.point, recent.label, mode);
   };
 
+  const onConfirmFrequent = async () => {
+    if (!frequentDestination) return;
+    const point: RoutePoint = { lat: frequentDestination.lat, lng: frequentDestination.lon };
+    setFrequentDestination(null);
+    setDestination(frequentDestination.label);
+    setManualDestination(point);
+    await searchRoutes(point, frequentDestination.label, mode);
+  };
+
+  const onDismissFrequent = () => setFrequentDestination(null);
+
   const onPickRecentRoute = async (route: RecentRoute) => {
     setMode(route.mode);
     setDestination(route.destinationLabel);
@@ -950,6 +982,13 @@ export default function HomeScreen() {
       <View style={[styles.overlay, { paddingTop: insets.top + space.md }]}>
         <View style={styles.column}>
           <ScreenHeader title={<Logo />} />
+          {frequentDestination && !inRouteView && (
+            <FrequentDestinationBanner
+              label={frequentDestination.label}
+              onConfirm={onConfirmFrequent}
+              onDismiss={onDismissFrequent}
+            />
+          )}
           {/* 개발용 임시 진입점(docs/ADR/0002 vision-test). 캘리브레이션 끝나면 제거. */}
           {__DEV__ && (
             <Pressable onPress={() => router.push('/vision-test')} style={styles.devVisionTestButton}>
