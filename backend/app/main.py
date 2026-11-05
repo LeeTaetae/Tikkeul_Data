@@ -61,16 +61,17 @@ def create_app(
         app.state.chat_service = ChatService(chat_client, app.state.service) if chat_client else None
         app.state.settings = settings
         app.state.db_engine = make_engine(settings)
-        app.state.resend_cooldown = ResendCooldown()
-        app.state.signup_code_cooldown = ResendCooldown(cooldown_s=30.0)
-        app.state.signup_code_attempts = AttemptLimiter(max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
-        app.state.reset_code_cooldown = ResendCooldown(cooldown_s=30.0)
-        app.state.reset_code_attempts = AttemptLimiter(max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
-        # 로그인 비밀번호 무차별 대입 방어. 이메일당 5번 틀리면 5분간 막는다(성공하면 바로 풀림).
-        app.state.login_attempts = AttemptLimiter(max_attempts=5, window_s=300.0)
-        # /api/chat 은 인증 없는 공개 엔드포인트라 IP당 호출 빈도를 막아 Gemini 비용 남용을 막는다.
-        app.state.chat_rate_limiter = AttemptLimiter(max_attempts=10, window_s=60.0)
         create_db_and_tables(app.state.db_engine)
+        engine = app.state.db_engine
+        app.state.resend_cooldown = ResendCooldown(engine, "resend_cooldown")
+        app.state.signup_code_cooldown = ResendCooldown(engine, "signup_code_cooldown", cooldown_s=30.0)
+        app.state.signup_code_attempts = AttemptLimiter(engine, "signup_code_attempts", max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
+        app.state.reset_code_cooldown = ResendCooldown(engine, "reset_code_cooldown", cooldown_s=30.0)
+        app.state.reset_code_attempts = AttemptLimiter(engine, "reset_code_attempts", max_attempts=5, window_s=settings.signup_code_expires_minutes * 60.0)
+        # 로그인 비밀번호 무차별 대입 방어. 이메일당 5번 틀리면 5분간 막는다(성공하면 바로 풀림).
+        app.state.login_attempts = AttemptLimiter(engine, "login", max_attempts=5, window_s=300.0)
+        # /api/chat 은 인증 없는 공개 엔드포인트라 IP당 호출 빈도를 막아 Gemini 비용 남용을 막는다.
+        app.state.chat_rate_limiter = AttemptLimiter(engine, "chat", max_attempts=10, window_s=60.0)
         warm_task = asyncio.ensure_future(warm_up_bus_routes())  # 키가 없으면 바로 끝난다
         yield
         warm_task.cancel()
