@@ -69,7 +69,7 @@ export async function fetchRouteStyles(
 
 // route-styles(Tmap 5가지)가 실패했을 때만 쓰는 대체 경로. 백엔드 /navigation/route 는 Tmap 이 안 되면 네이버로 넘어간다.
 // 카드 하나('추천')만 돌려준다. 실제 길안내는 카카오 SDK 가 따로 계산하므로 이 경로는 미리보기용이다. 실패하면 null.
-export async function fetchBestRoute(origin: RoutePoint, destination: RoutePoint): Promise<StyledRoute[] | null> {
+export async function fetchBestRoute(origin: RoutePoint, destination: RoutePoint, lang?: string): Promise<StyledRoute[] | null> {
   if (!API_BASE_URL) return null;
   try {
     const res = await fetchWithTimeout(
@@ -77,7 +77,7 @@ export async function fetchBestRoute(origin: RoutePoint, destination: RoutePoint
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildRouteBody(origin, destination)),
+        body: JSON.stringify(buildRouteBody(origin, destination, { lang })),
       },
       ROUTE_TIMEOUT_MS,
     );
@@ -94,7 +94,7 @@ export async function fetchModeRoute(
   origin: RoutePoint,
   destination: RoutePoint,
   mode: Exclude<TravelMode, 'driving'>,
-  options: Pick<RouteRequestOptions, 'includeGuides'> = {},
+  options: Pick<RouteRequestOptions, 'includeGuides' | 'lang'> = {},
 ): Promise<StyledRoute[] | null> {
   if (!API_BASE_URL) return null;
   try {
@@ -121,11 +121,12 @@ export async function fetchGuidanceRoute(
   destination: RoutePoint,
   mode: 'driving' | 'walking',
   style: DrivingStyle = 'recommended',
+  lang?: string,
 ): Promise<StyledRoute | null> {
   const routes =
     mode === 'driving'
-      ? await fetchRouteStyles(origin, destination, { includeGuides: true, styles: [style] })
-      : await fetchModeRoute(origin, destination, 'walking', { includeGuides: true });
+      ? await fetchRouteStyles(origin, destination, { includeGuides: true, styles: [style], lang })
+      : await fetchModeRoute(origin, destination, 'walking', { includeGuides: true, lang });
   return routes?.[0] ?? null;
 }
 
@@ -221,7 +222,7 @@ function parseTransitRoutes(data: unknown): TransitRoutesResult | null {
   };
 }
 
-export async function fetchTransitRoutes(origin: RoutePoint, destination: RoutePoint): Promise<TransitRoutesResult | null> {
+export async function fetchTransitRoutes(origin: RoutePoint, destination: RoutePoint, lang?: string): Promise<TransitRoutesResult | null> {
   if (!API_BASE_URL) return null;
   try {
     const res = await fetchWithTimeout(
@@ -229,7 +230,7 @@ export async function fetchTransitRoutes(origin: RoutePoint, destination: RouteP
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination }),
+        body: JSON.stringify(lang ? { origin, destination, lang } : { origin, destination }),
       },
       ROUTE_TIMEOUT_MS,
     );

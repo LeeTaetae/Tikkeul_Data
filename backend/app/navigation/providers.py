@@ -47,6 +47,26 @@ async def translate_chinese_query_to_korean(query: str, client_id: str, client_s
 _RESULT_LANG_TO_PAPAGO_TARGET = {"en": "en", "zh": "zh-CN"}
 
 
+# 여러 줄을 한 번에 번역한다. 빈 문자열(주소 없는 즐겨찾기 등)이 섞여 있으면 파파고가 응답에서 그 줄을
+# 그냥 지워버려 줄 수가 안 맞는 경우가 실호출로 확인됐다(2026-11-05) - 그래서 빈 줄은 애초에 보내지 않고
+# 그 자리는 그대로 빈 문자열로 둔다. 그래도 줄 수가 안 맞거나 호출 자체가 실패하면 None(호출 쪽이 원문 유지).
+async def _translate_lines(lines: list[str], target: str, client_id: str, client_secret: str) -> Optional[list[str]]:
+    indices = [i for i, line in enumerate(lines) if line]
+    if not indices:
+        return list(lines)
+    try:
+        translated_text = await _papago_translate("\n".join(lines[i] for i in indices), "ko", target, client_id, client_secret)
+    except Exception:
+        return None
+    translated = translated_text.split("\n")
+    if len(translated) != len(indices):
+        return None
+    result = list(lines)
+    for i, text in zip(indices, translated):
+        result[i] = text
+    return result
+
+
 async def translate_places_to_language(
     places: list[PlaceSearchResult], lang: Optional[str], client_id: str, client_secret: str
 ) -> list[PlaceSearchResult]:
@@ -54,15 +74,11 @@ async def translate_places_to_language(
     if not target or not client_id or not client_secret or not places:
         return places
     lines = [field for p in places for field in (p.name, p.address)]
-    try:
-        translated_text = await _papago_translate("\n".join(lines), "ko", target, client_id, client_secret)
-    except Exception:
-        return places
-    translated_lines = translated_text.split("\n")
-    if len(translated_lines) != len(lines):
+    translated = await _translate_lines(lines, target, client_id, client_secret)
+    if translated is None:
         return places
     return [
-        PlaceSearchResult(name=translated_lines[i * 2], address=translated_lines[i * 2 + 1], lat=p.lat, lng=p.lng)
+        PlaceSearchResult(name=translated[i * 2], address=translated[i * 2 + 1], lat=p.lat, lng=p.lng)
         for i, p in enumerate(places)
     ]
 
@@ -76,14 +92,19 @@ async def translate_labeled_addresses_to_language(
     if not target or not client_id or not client_secret or not items:
         return items
     lines = [field for pair in items for field in pair]
-    try:
-        translated_text = await _papago_translate("\n".join(lines), "ko", target, client_id, client_secret)
-    except Exception:
+    translated = await _translate_lines(lines, target, client_id, client_secret)
+    if translated is None:
         return items
-    translated_lines = translated_text.split("\n")
-    if len(translated_lines) != len(lines):
-        return items
-    return [(translated_lines[i * 2], translated_lines[i * 2 + 1]) for i in range(len(items))]
+    return [(translated[i * 2], translated[i * 2 + 1]) for i in range(len(items))]
+
+
+# 턴바이턴 안내 문구(Tmap·카카오가 한국어로만 줌) 목록을 통째로 번역한다.
+async def translate_texts_to_language(texts: list[str], lang: Optional[str], client_id: str, client_secret: str) -> list[str]:
+    target = _RESULT_LANG_TO_PAPAGO_TARGET.get(lang or "")
+    if not target or not client_id or not client_secret or not texts:
+        return texts
+    translated = await _translate_lines(texts, target, client_id, client_secret)
+    return translated if translated is not None else texts
 
 
 # 역지오코딩 주소(경로 선택 화면 상단 출발지/도착지 라벨)도 같은 이유로 화면 언어로 번역한다.

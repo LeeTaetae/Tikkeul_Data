@@ -33,8 +33,12 @@ def get_chat_service(request: Request) -> Optional[ChatService]:
 
 
 @router.post("", response_model=ChatReply)
-async def chat(body: ChatRequest, chat_service: Optional[ChatService] = Depends(get_chat_service)) -> ChatReply:
+async def chat(body: ChatRequest, request: Request, chat_service: Optional[ChatService] = Depends(get_chat_service)) -> ChatReply:
     if chat_service is None:
         raise api_error("NOT_CONFIGURED")
+    # 인증 없는 공개 엔드포인트라 IP당 호출 빈도를 막아 Gemini 비용 남용(DoS)을 막는다.
+    client_ip = request.client.host if request.client else "unknown"
+    if not request.app.state.chat_rate_limiter.try_attempt(client_ip):
+        raise api_error("TOO_MANY_REQUESTS")
     reply = await chat_service.reply(body.message, body.history, body.lat, body.lon, body.language)
     return ChatReply(reply=reply)

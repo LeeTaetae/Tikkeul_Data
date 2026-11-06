@@ -10,6 +10,14 @@ from app.trips.models import FrequentDestination, RecentDestination, Trip
 CELL_PRECISION = 3  # 소수 3자리 ~= 100m 격자
 
 
+def delete_all_trips(session: Session, user_id: int) -> None:
+    """사용자가 자신의 이동 기록(최근/자주 간 곳 집계용 원본)을 전부 지운다. 보존기간 정책이 없어 직접 지울
+    방법이 이거뿐이다(코드 리뷰 finding 3)."""
+    for trip in session.exec(select(Trip).where(Trip.user_id == user_id)).all():
+        session.delete(trip)
+    session.commit()
+
+
 def cell_of(lat: float, lon: float) -> str:
     return f"{round(lat, CELL_PRECISION)},{round(lon, CELL_PRECISION)}"
 

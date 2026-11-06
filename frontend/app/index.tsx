@@ -37,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
 import { ChatAssistantPanel } from '../src/components/chat/ChatAssistantPanel';
+import { FrequentDestinationBanner } from '../src/components/FrequentDestinationBanner';
 import { Logo } from '../src/components/Logo';
 import { Card } from '../src/components/ui/Card';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
@@ -69,6 +70,7 @@ import { searchPlaces, type PlaceSearchResult } from '../src/lib/places/search';
 import { loadRecentRoutes, loadRecents, saveRecent, saveRecentRoute, type RecentDestination, type RecentRoute } from '../src/lib/recents';
 import { useAuth } from '../src/lib/auth/AuthContext';
 import { tripsApi, type FrequentDestination } from '../src/lib/trips/api';
+import { pickFrequentDestination } from '../src/lib/trips/frequentBanner';
 import { toFallbackPopular } from '../src/lib/places/popularFallback';
 import { PLACEHOLDER_TRENDS, type TrendCategory } from '../src/lib/trends/placeholderTrends';
 import { clearPendingSearch, getPendingSearch } from '../src/lib/navigation/pendingSearch';
@@ -252,6 +254,25 @@ export default function HomeScreen() {
   const [recents, setRecents] = useState<RecentDestination[]>(() => loadRecents());
   const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>(() => loadRecentRoutes());
   const [mode, setMode] = useState<TravelMode>('driving');
+  // 자주 가는 목적지 안내 배너. 앱 세션(이 화면 마운트)당 1회만 조회 - 로그인 전엔 authToken이 null이라
+  // 로그인 완료 시점에 다시 시도하도록 의존성에 authStatus/authToken을 둔다.
+  const [frequentDestination, setFrequentDestination] = useState<FrequentDestination | null>(null);
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !authToken) {
+      setFrequentDestination(null); // 로그아웃하면 이전 계정의 목적지가 남아있지 않게 지운다
+      return;
+    }
+    let cancelled = false;
+    tripsApi
+      .frequent(authToken, { limit: 1, lang: i18n.language })
+      .then((destinations) => {
+        if (!cancelled) setFrequentDestination(pickFrequentDestination(destinations));
+      })
+      .catch(() => {}); // 실패해도 배너만 안 뜨면 된다 - 홈 화면 자체를 막지 않는다
+    return () => {
+      cancelled = true; // 응답이 늦게 와서 로그아웃·계정 전환 이후에 도착하면 반영하지 않는다
+    };
+  }, [authStatus, authToken]);
   const [manualOrigin, setManualOrigin] = useState<RoutePoint | null>(null);
   const [manualDestination, setManualDestination] = useState<RoutePoint | null>(null);
   const [originAddress, setOriginAddress] = useState<string | null>(null);
@@ -268,6 +289,9 @@ export default function HomeScreen() {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState(false);
   const [searched, setSearched] = useState(false);
+  // 목적지는 찾았지만(=searched) 경로 계산 자체가 실패한 경우. true면 오류를 닫아도 "목적지 없음" 안내 대신
+  // 모드탭이 있는 검색 화면을 그대로 유지해, 다른 이동수단으로 바로 재시도할 수 있게 한다.
+  const [routeFetchFailed, setRouteFetchFailed] = useState(false);
   // 마지막 경로 검색에 쓴 출발지·도착지. 길안내 시작 때 같은 조건으로 안내용 경로(guides 포함)를 다시 받는 데 쓴다.
   const lastSearchRef = useRef<{ origin: RoutePoint; destination: RoutePoint; label: string } | null>(null);
   // 처음엔 "검색" 한 칸만 보이다가, 경로검색 버튼을 누르거나 그 칸을 건드리면 출발/도착 두 칸으로 바뀐다.
@@ -318,7 +342,7 @@ export default function HomeScreen() {
     // 내 주변 카테고리 시트가 열려 있으면 먼저 닫아야 onPlaceClick 이 엉뚱한 nearbyPlaces 인덱스로 안내를 시작하지 않는다.
     closeNearby();
     favoritesApi
-      .list(authToken)
+      .list(authToken, { lang: i18n.language })
       .then((list) => {
         const filtered = list.filter((f) => f.category === favoriteCategory);
         setFavoriteCategoryPlaces(filtered);
@@ -502,6 +526,7 @@ export default function HomeScreen() {
     mapRef.current?.clearRoute();
     setLiveLoading(true);
     setLiveError(false);
+    setRouteFetchFailed(false);
     setOriginAddress(null);
     setDestinationAddress(null);
     setTransitResult(null);
@@ -510,7 +535,7 @@ export default function HomeScreen() {
     lastSearchRef.current = { origin, destination: destinationPoint, label };
     if (travelMode === 'transit') {
       const [transit, originAddressValue, destinationAddressValue] = await Promise.all([
-        fetchTransitRoutes(origin, destinationPoint),
+        fetchTransitRoutes(origin, destinationPoint, i18n.language),
         fetchAddress(origin, i18n.language),
         fetchAddress(destinationPoint, i18n.language),
       ]);
@@ -529,13 +554,16 @@ export default function HomeScreen() {
         return transit.routes.map(toStyledRoute);
       }
       setLiveError(true);
+      setRouteFetchFailed(true);
       return null;
     }
     const [results, originAddressValue, destinationAddressValue] = await Promise.all([
       travelMode === 'driving'
         ? // Tmap 5가지 스타일이 실패(한도 초과 429 → 503 등)하면 /navigation/route 의 추천 경로 하나로 대신한다.
-          fetchRouteStyles(origin, destinationPoint).then((styles) => styles ?? fetchBestRoute(origin, destinationPoint))
-        : fetchModeRoute(origin, destinationPoint, travelMode),
+          fetchRouteStyles(origin, destinationPoint, { lang: i18n.language }).then(
+            (styles) => styles ?? fetchBestRoute(origin, destinationPoint, i18n.language),
+          )
+        : fetchModeRoute(origin, destinationPoint, travelMode, { lang: i18n.language }),
       fetchAddress(origin, i18n.language),
       fetchAddress(destinationPoint, i18n.language),
     ]);
@@ -554,8 +582,38 @@ export default function HomeScreen() {
     }
     setRouteStyles(null);
     setLiveError(true);
+    setRouteFetchFailed(true);
     return null;
   };
+
+  // 검색 후 언어를 바꾸면 화면에 남아있는 출발/도착 주소도 같은 좌표로 다시 번역해 보여준다.
+  useEffect(() => {
+    const search = lastSearchRef.current;
+    if (!search) return;
+    fetchAddress(search.origin, i18n.language).then(setOriginAddress);
+    fetchAddress(search.destination, i18n.language).then(setDestinationAddress);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
+
+  // "내 주변" 카테고리 시트를 열어둔 채 언어를 바꾸면 그 목록도 같은 조건으로 다시 번역해 보여준다.
+  useEffect(() => {
+    if (!nearbyCategory) return;
+    getCurrentLocation()
+      .then((origin) => fetchNearbyPlaces(nearbyCategory, origin, 1000, i18n.language))
+      .then(setNearbyPlaces)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
+
+  // 즐겨찾기 카테고리 시트를 열어둔 채 언어를 바꾸면 그 목록도 같은 조건으로 다시 번역해 보여준다.
+  useEffect(() => {
+    if (!favoriteCategoryView || !authToken) return;
+    favoritesApi
+      .list(authToken, { lang: i18n.language })
+      .then((list) => setFavoriteCategoryPlaces(list.filter((f) => f.category === favoriteCategoryView)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
 
   // 대중교통·네비게이션 탭에서 목적지를 고르고 돌아오면, 그 조건으로 바로 경로를 검색해 지도에 보여준다.
   useFocusEffect(
@@ -599,7 +657,9 @@ export default function HomeScreen() {
 
   const closeLiveError = () => {
     setLiveError(false);
-    setSearched(false);
+    // 목적지는 찾았는데 경로 계산만 실패한 경우(routeFetchFailed)는 검색 화면·모드탭을 그대로 둬서
+    // 다른 이동수단으로 바로 재시도할 수 있게 한다. 목적지 자체를 못 찾은 경우만 처음 화면으로 되돌린다.
+    if (!routeFetchFailed) setSearched(false);
   };
 
   const onPickSuggestion = async (place: PlaceSearchResult) => {
@@ -618,6 +678,7 @@ export default function HomeScreen() {
       setTransitResult(null);
       setActiveRoute(null);
       setSearched(false);
+      setRouteFetchFailed(false);
       mapRef.current?.clearRoute();
       return;
     }
@@ -632,6 +693,17 @@ export default function HomeScreen() {
     setManualDestination(recent.point);
     await searchRoutes(recent.point, recent.label, mode);
   };
+
+  const onConfirmFrequent = async () => {
+    if (!frequentDestination) return;
+    const point: RoutePoint = { lat: frequentDestination.lat, lng: frequentDestination.lon };
+    setFrequentDestination(null);
+    setDestination(frequentDestination.label);
+    setManualDestination(point);
+    await searchRoutes(point, frequentDestination.label, mode);
+  };
+
+  const onDismissFrequent = () => setFrequentDestination(null);
 
   const onPickRecentRoute = async (route: RecentRoute) => {
     setMode(route.mode);
@@ -651,6 +723,7 @@ export default function HomeScreen() {
     setTransitResult(null);
     setActiveRoute(null);
     setSearched(false);
+    setRouteFetchFailed(false);
     setPlannerOpen(false);
     mapRef.current?.clearRoute();
   };
@@ -775,13 +848,13 @@ export default function HomeScreen() {
     let cancelled = false;
     setPickedPlace(null);
     setPickedFavorited(false);
-    fetchPlaceAt(pickedPoint).then((place) => {
+    fetchPlaceAt(pickedPoint, i18n.language).then((place) => {
       if (!cancelled) setPickedPlace(place);
     });
     return () => {
       cancelled = true;
     };
-  }, [pickedPoint]);
+  }, [pickedPoint, i18n.language]);
 
   // 지도에서 고른 위치를 출발지로만 지정한다 — 바로 안내를 시작하지 않고, 도착지를 마저 입력받는다.
   // 경로 검색을 기다리지 않고 여기서 바로 역지오코딩해서, "지도에서 선택한 위치" 대신 실제 주소를 보여준다.
@@ -909,6 +982,13 @@ export default function HomeScreen() {
       <View style={[styles.overlay, { paddingTop: insets.top + space.md }]}>
         <View style={styles.column}>
           <ScreenHeader title={<Logo />} />
+          {frequentDestination && !inRouteView && (
+            <FrequentDestinationBanner
+              label={frequentDestination.label}
+              onConfirm={onConfirmFrequent}
+              onDismiss={onDismissFrequent}
+            />
+          )}
           {/* 관리자 계정에만 보인다. 탐지 디버그·회원 관리는 관리자 화면 안에 있다. */}
           {authUser?.role === 'admin' && (
             <Pressable accessibilityRole="button" onPress={() => router.push('/admin')} style={styles.devVisionTestButton}>
@@ -1225,7 +1305,7 @@ export default function HomeScreen() {
             t={t}
           />
         </BottomSheet>
-      ) : searched && !liveError ? (
+      ) : searched && !liveError && !routeFetchFailed ? (
         <BottomSheet key="notice" draggable={false} {...sheetProps}>
           <Text style={styles.notice}>{t('map.noDestination')}</Text>
         </BottomSheet>

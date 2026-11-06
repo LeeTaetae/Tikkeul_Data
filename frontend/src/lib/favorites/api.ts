@@ -25,7 +25,8 @@ export interface FavoritePlaceInput {
 }
 
 export const favoritesApi = {
-  list: (token: string, options?: RequestOptions) => client.get<FavoritePlace[]>('/api/favorites', {}, { ...options, token }),
+  list: (token: string, params: { lang?: string } = {}, options?: RequestOptions) =>
+    client.get<FavoritePlace[]>('/api/favorites', params, { ...options, token }),
   create: (body: FavoritePlaceInput, token: string, options?: RequestOptions) =>
     client.post<FavoritePlace>('/api/favorites', body, { ...options, token }),
   update: (id: number, body: Partial<FavoritePlaceInput>, token: string, options?: RequestOptions) =>

@@ -3,9 +3,12 @@ from typing import Callable, List, Optional
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.pool import StaticPool
+from sqlmodel import create_engine
 
 from app.cache import TtlCache
 from app.config import Settings
+from app.db import create_db_and_tables
 from app.main import create_app
 from tests.fixtures import KEYS
 
@@ -60,3 +63,11 @@ def make_client():
 @pytest.fixture
 def clock() -> FakeClock:
     return FakeClock()
+
+
+@pytest.fixture
+def engine():
+    """rate_limit 등 DB 저장 로직을 단독으로 테스트할 때 쓰는 메모리 SQLite 엔진."""
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    create_db_and_tables(eng)
+    return eng

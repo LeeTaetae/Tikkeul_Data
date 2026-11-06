@@ -8,6 +8,8 @@ from app.auth.deps import get_current_user
 from app.auth.models import User
 from app.errors import api_error
 from app.favorites.models import FavoriteKind, FavoritePlace, FavoritePlaceCreate, FavoritePlacePublic, FavoritePlaceUpdate
+from app.navigation.config import get_settings as get_navigation_settings
+from app.navigation.providers import translate_labeled_addresses_to_language
 
 router = APIRouter(prefix="/api/favorites", tags=["favorites"])
 
@@ -30,10 +32,16 @@ def _check_kind_not_taken(session: Session, user: User, kind: FavoriteKind, excl
 
 
 @router.get("", response_model=List[FavoritePlacePublic])
-def list_favorites(request: Request, user: User = Depends(get_current_user)) -> List[FavoritePlace]:
+async def list_favorites(request: Request, lang: Optional[str] = None, user: User = Depends(get_current_user)) -> List[FavoritePlace]:
     with Session(request.app.state.db_engine) as session:
         places = session.exec(select(FavoritePlace).where(FavoritePlace.user_id == user.id)).all()
-        return sorted(places, key=lambda p: (_KIND_ORDER[p.kind], p.created_at))
+        places = sorted(places, key=lambda p: (_KIND_ORDER[p.kind], p.created_at))
+    # 사용자가 한국어로 남긴 라벨·주소라, 화면 언어가 ko 가 아니면 번역해서 돌려준다(장소 검색과 같은 방식).
+    settings = get_navigation_settings()
+    translated = await translate_labeled_addresses_to_language(
+        [(p.label, p.address_text) for p in places], lang, settings.papago_client_id, settings.papago_client_secret
+    )
+    return [p.model_copy(update={"label": label, "address_text": address}) for p, (label, address) in zip(places, translated)]
 
 
 @router.post("", response_model=FavoritePlacePublic, status_code=201)

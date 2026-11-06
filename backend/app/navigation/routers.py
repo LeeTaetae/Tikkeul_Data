@@ -12,6 +12,7 @@ from .providers import (
     translate_chinese_query_to_korean,
     translate_labeled_addresses_to_language,
     translate_places_to_language,
+    translate_texts_to_language,
 )
 from .schemas import (
     LatLng,
@@ -21,9 +22,12 @@ from .schemas import (
     PlaceAtPointResponse,
     PlaceSearchResponse,
     ReverseGeocodeResponse,
+    RouteInstruction,
     RouteRequest,
     RouteStylesRequest,
     RouteStylesResponse,
+    StyledRoute,
+    TransitRouteOption,
     TransitRoutesResponse,
 )
 from .service import get_best_route, get_mode_route, get_route_styles, get_transit_routes
@@ -48,6 +52,39 @@ _CATEGORY_KEYWORDS: dict[str, str] = {
 }
 
 
+# Tmap·카카오가 주는 턴바이턴 안내 문구는 항상 한국어다 - 장소 검색과 같은 이유로 화면 언어로 번역한다.
+# 여러 경로의 안내문을 한 번에 모아 한 번만 번역 호출한다(경로마다 호출하면 느려진다).
+async def _translate_styled_routes(routes: list[StyledRoute], lang: Optional[str], settings) -> list[StyledRoute]:
+    counts = [len(r.instructions) for r in routes]
+    texts = [i.text for r in routes for i in r.instructions]
+    translated = await translate_texts_to_language(texts, lang, settings.papago_client_id, settings.papago_client_secret)
+    if len(translated) != len(texts):
+        return routes
+    result = []
+    offset = 0
+    for route, count in zip(routes, counts):
+        chunk = translated[offset : offset + count]
+        offset += count
+        new_instructions = [RouteInstruction(text=text, point=i.point) for text, i in zip(chunk, route.instructions)]
+        result.append(route.model_copy(update={"instructions": new_instructions}))
+    return result
+
+
+async def _translate_transit_routes(routes: list[TransitRouteOption], lang: Optional[str], settings) -> list[TransitRouteOption]:
+    counts = [len(r.instructions) for r in routes]
+    texts = [text for r in routes for text in r.instructions]
+    translated = await translate_texts_to_language(texts, lang, settings.papago_client_id, settings.papago_client_secret)
+    if len(translated) != len(texts):
+        return routes
+    result = []
+    offset = 0
+    for route, count in zip(routes, counts):
+        chunk = translated[offset : offset + count]
+        offset += count
+        result.append(route.model_copy(update={"instructions": chunk}))
+    return result
+
+
 @router.post("/route", response_model=NavigationResponse)
 async def post_route(req: RouteRequest) -> NavigationResponse:
     settings = get_settings()
@@ -70,6 +107,7 @@ async def post_route_styles(req: RouteStylesRequest) -> RouteStylesResponse:
     )
     if not routes:
         raise HTTPException(status_code=503, detail="경로를 찾을 수 없습니다")
+    routes = await _translate_styled_routes(routes, req.lang, settings)
     return RouteStylesResponse(routes=routes)
 
 
@@ -82,7 +120,8 @@ async def post_route_by_mode(req: ModeRouteRequest) -> RouteStylesResponse:
         route = await get_mode_route(req.origin, req.destination, req.mode, tmap, kakao, include_guides=req.include_guides)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"{req.mode} 경로를 찾을 수 없습니다") from exc
-    return RouteStylesResponse(routes=[route])
+    routes = await _translate_styled_routes([route], req.lang, settings)
+    return RouteStylesResponse(routes=routes)
 
 
 @router.post("/transit-routes", response_model=TransitRoutesResponse)
@@ -93,6 +132,7 @@ async def post_transit_routes(req: RouteRequest) -> TransitRoutesResponse:
         options, counts = await get_transit_routes(req.origin, req.destination, kakao)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="대중교통 경로를 찾을 수 없습니다") from exc
+    options = await _translate_transit_routes(options, req.lang, settings)
     return TransitRoutesResponse(routes=options, **counts)
 
 
@@ -137,7 +177,7 @@ async def get_place_search(
 
 
 @places_router.get("/at", response_model=PlaceAtPointResponse)
-async def get_place_at_point(lat: float, lng: float, radius_m: int = 60) -> PlaceAtPointResponse:
+async def get_place_at_point(lat: float, lng: float, radius_m: int = 60, lang: Optional[str] = None) -> PlaceAtPointResponse:
     """지도에서 탭한 좌표의 장소 상세 패널용. 주소는 항상 시도하고, 장소명·카테고리는 반경 안에 걸리는 게 있을 때만 채운다."""
     settings = get_settings()
     kakao = KakaoRoutingProvider(settings.kakao_rest_api_key)
@@ -156,9 +196,15 @@ async def get_place_at_point(lat: float, lng: float, radius_m: int = 60) -> Plac
             return None
 
     address, place = await asyncio.gather(safe_address(), safe_place())
+    # 카카오 결과는 항상 한국어다 - 장소 검색과 같은 이유로 화면 언어로 번역한다.
+    name, category, address = await asyncio.gather(
+        translate_address_to_language(place.name if place else None, lang, settings.papago_client_id, settings.papago_client_secret),
+        translate_address_to_language(place.category if place else None, lang, settings.papago_client_id, settings.papago_client_secret),
+        translate_address_to_language(address, lang, settings.papago_client_id, settings.papago_client_secret),
+    )
     return PlaceAtPointResponse(
-        name=place.name if place else None,
-        category=place.category if place else None,
+        name=name,
+        category=category,
         address=address,
         distance_m=place.distance_m if place else None,
     )

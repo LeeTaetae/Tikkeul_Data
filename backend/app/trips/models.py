@@ -18,8 +18,8 @@ class Trip(SQLModel, table=True):
     destination_lat: float
     destination_lon: float
     destination_cell: str = Field(index=True)
-    destination_label: str
-    destination_address_text: str = ""
+    destination_label: str = Field(max_length=200)
+    destination_address_text: str = Field(default="", max_length=500)
     started_at: datetime = Field(default_factory=_utcnow, index=True)
 
 
@@ -29,8 +29,8 @@ class TripPoint(SQLModel):
 
 
 class TripDestinationPoint(TripPoint):
-    label: str
-    address_text: str = ""
+    label: str = Field(max_length=200)
+    address_text: str = Field(default="", max_length=500)
 
     @field_validator("label")
     @classmethod

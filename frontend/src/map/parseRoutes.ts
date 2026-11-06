@@ -97,9 +97,11 @@ export interface RouteRequestOptions {
   includeGuides?: boolean;
   /** 자동차 전용. 재탐색처럼 한 스타일만 필요할 때 좁혀서 외부 API 호출을 줄인다 */
   styles?: DrivingStyle[];
+  /** 화면 언어(ko/en/zh). 턴바이턴 안내 문구를 이 언어로 번역해 받는다 */
+  lang?: string;
 }
 
-// include_guides·styles 는 값을 줬을 때만 본문에 넣는다. 그래서 옵션이 없으면 기존 요청 본문과 똑같다.
+// include_guides·styles·lang 은 값을 줬을 때만 본문에 넣는다. 그래서 옵션이 없으면 기존 요청 본문과 똑같다.
 export function buildRouteBody(
   origin: RoutePoint,
   destination: RoutePoint,
@@ -109,5 +111,6 @@ export function buildRouteBody(
   const body: Record<string, unknown> = { origin, destination, ...extra };
   if (options.includeGuides) body.include_guides = true;
   if (options.styles && options.styles.length > 0) body.styles = options.styles;
+  if (options.lang) body.lang = options.lang;
   return body;
 }

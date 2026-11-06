@@ -85,7 +85,7 @@ export function CyclingGuidanceScreen() {
     reroutingRef.current = true;
     setRerouteState('loading');
     try {
-      const styled = (await fetchModeRoute(from, destination, 'cycling'))?.[0];
+      const styled = (await fetchModeRoute(from, destination, 'cycling', { lang: i18n.language }))?.[0];
       // 응답을 기다리는 사이 안내를 끝냈으면 새 경로로 되살리지 않는다(위치 추적이 다시 켜진다).
       if (!aliveRef.current || endedRef.current) return;
       if (!styled || styled.path.length < 2) {
@@ -186,7 +186,11 @@ export function CyclingGuidanceScreen() {
       </View>
 
       {/* 전방 비전 경고(ADR 0002). 화면엔 카메라를 띄우지 않고 배너·진동만 낸다. */}
-      <VisionHazardController enabled={visionEnabled} inProtectionZone={inProtectionZone} />
+      <VisionHazardController
+        enabled={visionEnabled}
+        inProtectionZone={inProtectionZone}
+        speedKmh={snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null}
+      />
 
       <View style={[styles.top, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.column}>

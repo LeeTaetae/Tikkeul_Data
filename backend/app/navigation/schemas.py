@@ -13,6 +13,8 @@ class RouteRequest(BaseModel):
     destination: LatLng
     # 켜면 응답에 회전 안내 지점(guides)을 함께 준다. 기본(꺼짐)은 기존 응답과 똑같다. 길안내 화면만 켠다.
     include_guides: bool = False
+    # 화면 언어(ko/en/zh). 턴바이턴 안내 문구(Tmap·카카오가 한국어로만 줌)를 이 언어로 번역해 돌려준다.
+    lang: Optional[str] = None
 
 
 # 회전·안내 지점 하나. Tmap 경로 응답의 Point 피처에서 가져온다(좌표·turnType·도로명을 그대로 보존하고 만들어내지 않는다).

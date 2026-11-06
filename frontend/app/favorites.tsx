@@ -1,5 +1,5 @@
-import { Briefcase, Heart, House, MapPin, Trash2, X, type LucideIcon } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Briefcase, ChevronDown, ChevronUp, Heart, House, MapPin, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -23,13 +23,23 @@ const KIND_ICON: Record<FavoriteKind, LucideIcon> = { home: House, work: Briefca
 const KIND_ORDER: Record<FavoriteKind, number> = { home: 0, work: 1, custom: 2 };
 
 export default function FavoritesScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const { status, token } = useAuth();
 
   const [items, setItems] = useState<FavoritePlace[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  // 카테고리 그룹은 기본 접힘(100개짜리 카테고리가 화면을 다 덮지 않게) - 이 Set 에 들어있으면 "펴짐".
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = (category: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
 
   // 비로그인 상태로 들어오면(메뉴에서 직접 주소 입력 등) 로그인 화면으로 보내고, 성공하면 여기로 돌아온다.
   useEffect(() => {
@@ -39,13 +49,13 @@ export default function FavoritesScreen() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const list = await favoritesApi.list(token);
+      const list = await favoritesApi.list(token, { lang: i18n.language });
       setItems([...list].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
       setLoadError(false);
     } catch {
       setLoadError(true);
     }
-  }, [token]);
+  }, [token, i18n.language]);
 
   useEffect(() => {
     load();
@@ -107,24 +117,45 @@ export default function FavoritesScreen() {
           {flatItems.map((item) => (
             <FavoriteRow key={item.id} item={item} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
           ))}
-          {Object.entries(groupedByCategory).map(([category, group]) => (
-            <View key={category} style={styles.group}>
-              <Pressable
-                onPress={() => router.push({ pathname: '/', params: { favoriteCategory: category } })}
-                style={({ pressed }) => [styles.groupHeader, pressed && styles.pressed]}
-                accessibilityRole="button"
-              >
-                <Text style={styles.groupHeaderText}>{category}</Text>
-              </Pressable>
-              {group.map((item) => (
-                <FavoriteRow key={item.id} item={item} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
-              ))}
-            </View>
-          ))}
+          {Object.entries(groupedByCategory).map(([category, group]) => {
+            const expanded = expandedCategories.has(category);
+            return (
+              <View key={category} style={styles.group}>
+                <View style={styles.groupHeaderRow}>
+                  <Pressable
+                    onPress={() => router.push({ pathname: '/', params: { favoriteCategory: category } })}
+                    style={({ pressed }) => [styles.groupHeader, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.groupHeaderText}>{category}</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => toggleCategory(category)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded }}
+                    accessibilityLabel={category}
+                    hitSlop={8}
+                    style={styles.groupChevron}
+                  >
+                    <Icon icon={expanded ? ChevronUp : ChevronDown} size={20} color={colors.muted} />
+                  </Pressable>
+                </View>
+                {expanded &&
+                  group.map((item) => (
+                    <FavoriteRow key={item.id} item={item} onPress={() => onStart(item)} onDelete={() => onDelete(item.id)} />
+                  ))}
+              </View>
+            );
+          })}
         </View>
       )}
 
-      <AddFavoriteCard token={token} existingKinds={new Set(items?.map((i) => i.kind))} onAdded={load} />
+      <AddFavoriteCard
+        token={token}
+        existingKinds={new Set(items?.map((i) => i.kind))}
+        existingCategories={Object.keys(groupedByCategory)}
+        onAdded={load}
+      />
     </Screen>
   );
 }
@@ -179,7 +210,17 @@ function FavoriteRow({ item, onPress, onDelete }: { item: FavoritePlace; onPress
   );
 }
 
-function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; existingKinds: Set<FavoriteKind> | undefined; onAdded: () => Promise<void> }) {
+function AddFavoriteCard({
+  token,
+  existingKinds,
+  existingCategories,
+  onAdded,
+}: {
+  token: string;
+  existingKinds: Set<FavoriteKind> | undefined;
+  existingCategories: string[];
+  onAdded: () => Promise<void>;
+}) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<FavoriteKind>('custom');
@@ -191,8 +232,15 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 제안 선택·현재 위치 사용으로 query 를 바꿨을 때는 그 값으로 다시 검색하지 않는다 - 안 그러면
+  // 검색 effect 가 300ms 뒤 재실행되어 방금 지운 제안 목록을 다시 채워버린다(코드 리뷰 finding).
+  const skipNextSearchRef = useRef(false);
 
   useEffect(() => {
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      return;
+    }
     if (query.trim().length < 2) {
       setSuggestions([]);
       return;
@@ -223,6 +271,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
   }
 
   const onPickSuggestion = (place: PlaceSearchResult) => {
+    skipNextSearchRef.current = true;
     setPicked(place.point);
     setQuery(place.name);
     setSuggestions([]);
@@ -233,6 +282,7 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
     setLocating(true);
     try {
       const point = await getCurrentLocation();
+      skipNextSearchRef.current = true;
       setPicked(point);
       setQuery(t('map.myLocation'));
       setSuggestions([]);
@@ -303,6 +353,13 @@ function AddFavoriteCard({ token, existingKinds, onAdded }: { token: string; exi
       </Pressable>
       {picked && !suggestions.length && <Text style={styles.pickedNotice}>{t('favorites.locationPicked')}</Text>}
       <TextField label={t('favorites.label')} placeholder={t('favorites.labelPlaceholder')} value={label} onChangeText={setLabel} error={error ?? undefined} />
+      {kind === 'custom' && existingCategories.length > 0 && (
+        <View style={styles.categoryChipRow}>
+          {existingCategories.map((name) => (
+            <Chip key={name} label={name} selected={category === name} onPress={() => setCategory(name)} />
+          ))}
+        </View>
+      )}
       {kind === 'custom' && (
         <TextField label={t('favorites.category')} placeholder={t('favorites.categoryPlaceholder')} value={category} onChangeText={setCategory} />
       )}
@@ -321,8 +378,10 @@ const styles = StyleSheet.create({
   emptyHint: { fontSize: 14, color: colors.muted, textAlign: 'center' },
   list: { gap: space.sm },
   group: { gap: space.sm },
-  groupHeader: { paddingVertical: space.xs, paddingHorizontal: space.xs },
+  groupHeaderRow: { flexDirection: 'row', alignItems: 'center' },
+  groupHeader: { flex: 1, paddingVertical: space.xs, paddingHorizontal: space.xs },
   groupHeaderText: { fontSize: 14, fontWeight: '800', color: colors.brand },
+  groupChevron: { padding: space.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minWidth: 0 },
   rowIcon: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
@@ -356,6 +415,7 @@ const styles = StyleSheet.create({
   addHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   addTitle: { fontSize: 17, fontWeight: '800', color: colors.ink },
   kindRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  categoryChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   kindTakenNotice: { fontSize: 13, color: colors.dangerInk, fontWeight: '600' },
   currentLocationRow: { minHeight: 36, justifyContent: 'center' },
   currentLocationHint: { fontSize: 13, color: colors.brand, fontWeight: '700' },
