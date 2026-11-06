@@ -1,7 +1,9 @@
 #import "KakaoNavigationController.h"
 #import "CarVoiceSpeaker.h"
 #import "CarVoiceText.h"
+#import "HazardRailOverlayView.h"
 #import <AVFoundation/AVFoundation.h>
+#import <QuartzCore/QuartzCore.h>
 #import <KNSDK/KNSDK.h>
 #import <KNSDK/KNNaviView.h>
 #import <math.h>
@@ -24,9 +26,31 @@
 @property(nonatomic, strong, nullable) CarVoiceSpeaker *voiceSpeaker;
 @property(nonatomic, copy) NSString *voiceLanguage;
 @property(nonatomic) BOOL voiceFailureShown;
+@property(nonatomic, strong, nullable) HazardRailOverlayView *railOverlay;
+@property(nonatomic) CFTimeInterval lastLocationEmit;
 @end
 
+// 위험 레일: JS → 네이티브 스냅샷의 보관소. 오버레이가 아직 없을 때 온 마지막 스냅샷은 오버레이가 붙을 때 그려진다.
+static const NSUInteger kMaxRailJSON = 16384;
+static __weak KakaoNavigationController *sActiveController = nil;
+static NSString *sLastRailJSON = nil;
+
 @implementation KakaoNavigationController
+
++ (void)setHazardRailJSON:(NSString *)json {
+  if (![json isKindOfClass:NSString.class] || json.length > kMaxRailJSON) return;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    sLastRailJSON = [json copy];
+    [sActiveController.railOverlay applySnapshotJSON:json];
+  });
+}
+
++ (void)clearHazardRail {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    sLastRailJSON = nil;
+    [sActiveController.railOverlay applySnapshotJSON:nil];
+  });
+}
 
 + (NSDictionary *)configuration {
   NSString *key = [NSBundle.mainBundle objectForInfoDictionaryKey:@"KakaoNaviNativeAppKey"];
@@ -211,6 +235,11 @@
         [self.naviView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
       ]];
       [self.naviView sndVolume:1.0];
+      // 위험 레일: JS 가 보낸 스냅샷을 왼쪽에 그린다. 실패해도 길안내를 막지 않는다.
+      self.railOverlay = [[HazardRailOverlayView alloc] initWithLanguage:self.voiceLanguage];
+      [self.railOverlay attachToHost:self.view naviView:self.naviView];
+      sActiveController = self;
+      if (sLastRailJSON) [self.railOverlay applySnapshotJSON:sLastRailJSON];
     });
   }];
 }
@@ -219,6 +248,10 @@
   if (self.closed) return;
   self.closed = YES;
   [self.voiceSpeaker stop];
+  [self.railOverlay detach];
+  self.railOverlay = nil;
+  if (sActiveController == self) { sActiveController = nil; sLastRailJSON = nil; } // 다음 주행에 지난 위험이 남지 않게
+  self.eventHandler = nil;
   [NSNotificationCenter.defaultCenter removeObserver:self];
   self.naviView.guideStateDelegate = nil;
   self.guidance.guideStateDelegate = nil;
@@ -253,16 +286,16 @@
 - (void)naviViewGuideState:(KNGuideState)state {}
 - (void)naviViewGuideEnded:(KNNaviView *)view { [self finishWithCode:nil message:nil]; }
 
-- (void)guidanceGuideStarted:(KNGuidance *)g { [self.naviView guidanceGuideStarted:g]; }
+- (void)guidanceGuideStarted:(KNGuidance *)g { [self.naviView guidanceGuideStarted:g]; [self emitRoute:@"started" route:g.routesOnGuide.firstObject]; }
 - (void)guidanceCheckingRouteChange:(KNGuidance *)g { [self.naviView guidanceCheckingRouteChange:g]; }
 - (void)guidanceOutOfRoute:(KNGuidance *)g { [self.naviView guidanceOutOfRoute:g]; }
 - (void)guidanceRouteUnchanged:(KNGuidance *)g { [self.naviView guidanceRouteUnchanged:g]; }
 - (void)guidance:(KNGuidance *)g routeUnchangedWithError:(KNError *)error { [self.naviView guidance:g routeUnchangedWithError:error]; }
-- (void)guidanceRouteChanged:(KNGuidance *)g fromRoute:(KNRoute *)fromRoute fromLocation:(KNLocation *)fromLocation toRoute:(KNRoute *)toRoute toLocation:(KNLocation *)toLocation reason:(KNGuideRouteChangeReason)reason { [self.voiceSpeaker stop]; [self.naviView guidanceRouteChanged:g]; }
+- (void)guidanceRouteChanged:(KNGuidance *)g fromRoute:(KNRoute *)fromRoute fromLocation:(KNLocation *)fromLocation toRoute:(KNRoute *)toRoute toLocation:(KNLocation *)toLocation reason:(KNGuideRouteChangeReason)reason { [self.voiceSpeaker stop]; [self.naviView guidanceRouteChanged:g]; [self emitRoute:@"changed" route:toRoute]; }
 - (void)guidanceGuideEnded:(KNGuidance *)g { [self.naviView guidanceGuideEnded:g isShowDriveResultDialog:YES]; }
 - (void)guidance:(KNGuidance *)g didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { [self.naviView guidance:g didUpdateRoutes:routes multiRouteInfo:info]; }
 - (void)guidance:(KNGuidance *)g didUpdateIndoorRoute:(KNRoute *)route { if (route) [self.naviView guidance:g didUpdateIndoorRoute:route]; }
-- (void)guidance:(KNGuidance *)g didUpdateLocation:(KNGuide_Location *)location { [self.naviView guidance:g didUpdateLocation:location]; }
+- (void)guidance:(KNGuidance *)g didUpdateLocation:(KNGuide_Location *)location { [self.naviView guidance:g didUpdateLocation:location]; [self emitLocation:location]; }
 - (void)guidance:(KNGuidance *)g didUpdateRouteGuide:(KNGuide_Route *)route { [self.naviView guidance:g didUpdateRouteGuide:route]; }
 - (void)guidance:(KNGuidance *)g didUpdateSafetyGuide:(KNGuide_Safety *)safety { [self.naviView guidance:g didUpdateSafetyGuide:safety]; }
 - (void)guidance:(KNGuidance *)g didUpdateAroundSafeties:(NSArray<KNSafety *> *)safeties { [self.naviView guidance:g didUpdateAroundSafeties:safeties]; }
@@ -277,4 +310,44 @@
 - (void)guidance:(KNGuidance *)g willPlayVoiceGuide:(KNGuide_Voice *)voice { [self.naviView guidance:g willPlayVoiceGuide:voice]; }
 - (void)guidance:(KNGuidance *)g didFinishPlayVoiceGuide:(KNGuide_Voice *)voice { [self.naviView guidance:g didFinishPlayVoiceGuide:voice]; }
 - (void)guidance:(KNGuidance *)g didUpdateCitsGuide:(KNGuide_Cits *)cits { [self.naviView guidance:g didUpdateCitsGuide:cits]; }
+
+// ── 위험 레일용 이벤트: SDK 의 위치·경로를 JS 위험 로직으로 넘긴다 ──────────────────────────
+// 좌표는 앱 안(JS)에서만 쓰이고 로그에 남기지 않는다. 위치는 1초에 한 번, 경로는 시작·재탐색 때만 보낸다.
+- (void)emitLocation:(KNGuide_Location *)location {
+  if (!self.eventHandler || self.closed) return;
+  CFTimeInterval now = CACurrentMediaTime();
+  if (now - self.lastLocationEmit < 1.0) return;
+  KNGPSData *gps = location.gpsMatched;
+  if (!gps) return;
+  self.lastLocationEmit = now;
+  DoublePoint p = [KNSDK.sharedInstance convertKATECToWGS84WithX:(SInt32)llround(gps.pos.x) y:(SInt32)llround(gps.pos.y)]; // x: 경도, y: 위도
+  self.eventHandler(@{ @"kind": @"location", @"lat": @(p.y), @"lng": @(p.x), @"speedKmh": @(gps.speed), @"angle": @(gps.angle),
+                       @"hdop": @(gps.hdop), @"posTrust": @(gps.posTrust), @"valid": @(gps.valid) });
+}
+
+- (void)emitRoute:(NSString *)reason route:(KNRoute * _Nullable)route {
+  if (!self.eventHandler || self.closed || !route) return;
+  NSArray *polyline = [route routePolylineWGS84];
+  NSMutableArray *points = [NSMutableArray arrayWithCapacity:MIN(polyline.count, 6000)];
+  for (id element in polyline) {
+    if (points.count >= 6000) break;
+    double lng = NAN, lat = NAN;
+    // 원소 형식을 헤더가 정하지 않아(@see DoublePoint) 흔한 모양을 모두 받는다: NSValue(DoublePoint/CGPoint), 딕셔너리, [경도, 위도]
+    if ([element isKindOfClass:NSValue.class]) {
+      NSValue *value = element;
+      const char *type = value.objCType;
+      if (strcmp(type, @encode(DoublePoint)) == 0) { DoublePoint dp; [value getValue:&dp]; lng = dp.x; lat = dp.y; }
+      else if (strncmp(type, "{CGPoint", 8) == 0) { CGPoint cp = value.CGPointValue; lng = cp.x; lat = cp.y; }
+    } else if ([element isKindOfClass:NSDictionary.class]) {
+      id x = element[@"x"] ?: element[@"lng"] ?: element[@"lon"];
+      id y = element[@"y"] ?: element[@"lat"];
+      if ([x respondsToSelector:@selector(doubleValue)] && [y respondsToSelector:@selector(doubleValue)]) { lng = [x doubleValue]; lat = [y doubleValue]; }
+    } else if ([element isKindOfClass:NSArray.class] && [element count] >= 2) {
+      lng = [element[0] doubleValue]; lat = [element[1] doubleValue];
+    }
+    if (isfinite(lng) && isfinite(lat)) [points addObject:@{ @"x": @(lng), @"y": @(lat) }];
+  }
+  if (points.count < 2) return;
+  self.eventHandler(@{ @"kind": @"route", @"reason": reason, @"count": @(polyline.count), @"keys": @[@"x", @"y"], @"points": points });
+}
 @end

@@ -1,8 +1,10 @@
+from typing import List
+
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlmodel import Session, select
+from app.auth.store import user_session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, get_admin_user
 from app.auth.mailer import send_reset_code_email, send_signup_code_email, send_verification_email
 from app.auth.models import (
     EmailAvailability,
@@ -23,6 +25,7 @@ from app.auth.models import (
     TokenResponse,
     User,
     UserPublic,
+    UserStatusUpdate,
     normalize_email,
 )
 from app.auth.social import find_or_create_social_user, verify_google_id_token, verify_kakao_access_token
@@ -53,8 +56,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/signup/send-code", response_model=SignupCodeSentResponse)
 def send_signup_code(body: SignupCodeRequest, request: Request) -> SignupCodeSentResponse:
     settings = request.app.state.settings
-    with Session(request.app.state.db_engine) as session:
-        existing = session.exec(select(User).where(User.email == body.email)).first()
+    with user_session(request) as session:
+        existing = session.by_email(body.email)
         if existing is not None:
             raise api_error("EMAIL_TAKEN")
     if settings.secret("resend_api_key") is None:
@@ -81,38 +84,46 @@ def verify_signup_code_endpoint(body: SignupCodeVerifyRequest, request: Request)
 def signup(body: SignupRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
     check_signup_verified(body.verify_token, body.email, settings)
-    with Session(request.app.state.db_engine) as session:
-        existing = session.exec(select(User).where(User.email == body.email)).first()
+    with user_session(request) as session:
+        existing = session.by_email(body.email)
         if existing is not None:
             raise api_error("EMAIL_TAKEN")
         # 가입 직전 인증번호로 이미 확인된 이메일이다 - 계정을 바로 인증됨으로 만든다.
         user = User(email=body.email, password_hash=hash_password(body.password), email_verified=True)
         session.add(user)
         session.flush()  # id 를 받되 커밋은 안 한다 - 아래 토큰 발급이 실패하면 세션이 닫힐 때 롤백된다
+        if user.status != "active":
+            raise api_error("ACCOUNT_DISABLED")
         token = create_access_token(user.id, settings)
         session.commit()
         session.refresh(user)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic.model_validate(user),
         )
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request) -> TokenResponse:
+    return _password_login(body, request)
+
+
+def _password_login(body: LoginRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
     # 이메일당 시도 횟수를 제한해 비밀번호 무차별 대입을 막는다(가입 인증번호·비밀번호 재설정과 같은 패턴).
     if not request.app.state.login_attempts.try_attempt(body.email):
         raise api_error("TOO_MANY_REQUESTS")
-    with Session(request.app.state.db_engine) as session:
-        user = session.exec(select(User).where(User.email == body.email)).first()
+    with user_session(request) as session:
+        user = session.by_email(body.email)
         if user is None or user.password_hash is None or not verify_password(body.password, user.password_hash):
             raise api_error("INVALID_CREDENTIALS")
+        if user.status != "active":
+            raise api_error("ACCOUNT_DISABLED")
         request.app.state.login_attempts.reset(body.email)
         token = create_access_token(user.id, settings)
         return TokenResponse(
             access_token=token,
-            user=UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at),
+            user=UserPublic.model_validate(user),
         )
 
 
@@ -120,19 +131,21 @@ def login(body: LoginRequest, request: Request) -> TokenResponse:
 def login_with_google(body: SocialLoginRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
     payload = verify_google_id_token(body.id_token, settings)
-    with Session(request.app.state.db_engine) as session:
+    with user_session(request) as session:
         nickname = payload.get("name")
         # 구글이 이메일을 아직 확인하지 않았다고 보고하면(email_verified=False, 드물지만 공식 문서에 명시된 가능성) 그
         # 이메일을 신뢰하지 않는다 - 안 그러면 남의 이메일을 주장해 EMAIL_TAKEN으로 그 이메일의 실제 소유자를 막을 수 있다.
         email = payload.get("email") if payload.get("email_verified") else None
         user = find_or_create_social_user(session, provider="google", provider_id=payload["sub"], email=email, nickname=nickname)
+        if user.status != "active":
+            raise api_error("ACCOUNT_DISABLED")
         token = create_access_token(user.id, settings)
         session.commit()
         session.refresh(user)
         return TokenResponse(
             access_token=token,
             user=UserPublic(
-                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, created_at=user.created_at
+                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, role=user.role, status=user.status, created_at=user.created_at
             ),
         )
 
@@ -143,15 +156,17 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request) -> TokenResponse
     payload = verify_kakao_access_token(body.access_token, settings)
     profile = (payload.get("kakao_account") or {}).get("profile") or {}
     nickname = profile.get("nickname")
-    with Session(request.app.state.db_engine) as session:
+    with user_session(request) as session:
         user = find_or_create_social_user(session, provider="kakao", provider_id=str(payload["id"]), email=None, nickname=nickname)
+        if user.status != "active":
+            raise api_error("ACCOUNT_DISABLED")
         token = create_access_token(user.id, settings)
         session.commit()
         session.refresh(user)
         return TokenResponse(
             access_token=token,
             user=UserPublic(
-                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, created_at=user.created_at
+                id=user.id, provider=user.provider, email=user.email, nickname=nickname, email_verified=user.email_verified, role=user.role, status=user.status, created_at=user.created_at
             ),
         )
 
@@ -163,14 +178,14 @@ def check_email(email: str, request: Request) -> EmailAvailability:
         normalized = normalize_email(email)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    with Session(request.app.state.db_engine) as session:
-        existing = session.exec(select(User).where(User.email == normalized)).first()
+    with user_session(request) as session:
+        existing = session.by_email(normalized)
         return EmailAvailability(available=existing is None)
 
 
 @router.get("/me", response_model=UserPublic)
 def me(user: User = Depends(get_current_user)) -> UserPublic:
-    return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+    return UserPublic.model_validate(user)
 
 
 @router.post("/send-verification", response_model=SendVerificationResponse)
@@ -194,7 +209,7 @@ def verify_email(token: str, request: Request) -> UserPublic:
     # purpose 클레임으로 로그인 토큰의 재사용을 막아준다. 두 번 눌러도(이미 인증됨) 에러 없이 그대로 성공 처리한다.
     settings = request.app.state.settings
     user_id = decode_email_verify_token(token, settings)
-    with Session(request.app.state.db_engine) as session:
+    with user_session(request) as session:
         user = session.get(User, user_id)
         if user is None:
             raise api_error("UNAUTHORIZED")  # 토큰 발급 후 계정이 삭제된 경우 - get_current_user 와 같은 처리
@@ -202,7 +217,7 @@ def verify_email(token: str, request: Request) -> UserPublic:
         session.add(user)
         session.commit()
         session.refresh(user)
-        return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+        return UserPublic.model_validate(user)
 
 
 # ── 비밀번호 재설정 ──────────────────────────────────────────────────────────
@@ -211,8 +226,8 @@ def verify_email(token: str, request: Request) -> UserPublic:
 @router.post("/password-reset/send-code", response_model=PasswordResetSendCodeResponse)
 def send_reset_code(body: PasswordResetSendCodeRequest, request: Request) -> PasswordResetSendCodeResponse:
     settings = request.app.state.settings
-    with Session(request.app.state.db_engine) as session:
-        user = session.exec(select(User).where(User.email == body.email)).first()
+    with user_session(request) as session:
+        user = session.by_email(body.email)
     if user is None:
         # 계정 존재 여부를 숨긴다 - 실제로는 메일을 안 보내지만, 응답 모양(challenge 포함)은
         # 실제 계정 분기와 동일하게 만든다. 가짜 challenge 는 verify-code 에서 INVALID_CODE 로
@@ -251,12 +266,39 @@ def reset_password(body: PasswordResetRequest, request: Request) -> UserPublic:
     except jwt.PyJWTError:
         raise api_error("UNAUTHORIZED")
     check_reset_verified(body.token, email, settings)
-    with Session(request.app.state.db_engine) as session:
-        user = session.exec(select(User).where(User.email == email)).first()
+    with user_session(request) as session:
+        user = session.by_email(email)
         if user is None:
             raise api_error("UNAUTHORIZED")
         user.password_hash = hash_password(body.new_password)
         session.add(user)
         session.commit()
         session.refresh(user)
-        return UserPublic(id=user.id, provider=user.provider, email=user.email, email_verified=user.email_verified, created_at=user.created_at)
+        return UserPublic.model_validate(user)
+
+
+@router.get("/admin/me", response_model=UserPublic)
+def admin_me(user: User = Depends(get_admin_user)) -> UserPublic:
+    return UserPublic.model_validate(user)
+
+
+@router.get("/admin/users", response_model=List[UserPublic])
+def admin_list_users(request: Request, _: User = Depends(get_admin_user)) -> List[UserPublic]:
+    with user_session(request) as session:
+        return [UserPublic.model_validate(u) for u in session.all_users()]
+
+
+@router.patch("/admin/users/{user_id}/status", response_model=UserPublic)
+def admin_set_user_status(user_id: int, body: UserStatusUpdate, request: Request, admin: User = Depends(get_admin_user)) -> UserPublic:
+    # 자기 계정을 막으면 관리자 화면에서 바로 쫓겨나고 되돌릴 사람이 없을 수 있다.
+    if user_id == admin.id and body.status == "disabled":
+        raise api_error("CANNOT_DISABLE_SELF")
+    with user_session(request) as session:
+        user = session.get(User, user_id)
+        if user is None:
+            raise api_error("USER_NOT_FOUND")
+        user.status = body.status
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return UserPublic.model_validate(user)

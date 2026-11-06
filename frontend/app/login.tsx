@@ -12,6 +12,7 @@ import { PrimaryButton } from '../src/components/ui/PrimaryButton';
 import { RoundButton } from '../src/components/ui/RoundButton';
 import { SocialButton } from '../src/components/ui/SocialButton';
 import { TextField } from '../src/components/ui/TextField';
+import type { AuthUser } from '../src/lib/auth/api';
 import { authErrorMessage } from '../src/lib/auth/errorMessage';
 import { useAuth } from '../src/lib/auth/AuthContext';
 import { isKakaoLoginAvailable } from '../src/native/kakaoLogin';
@@ -34,14 +35,19 @@ export default function LoginScreen() {
 
   const canSubmit = email.trim().includes('@') && password.length > 0 && !submitting;
 
+  // 화면 이동만 role 로 나눈다. 관리자 API 권한은 서버(get_admin_user)가 요청마다 다시 확인한다.
+  const goAfterLogin = (user: AuthUser, fallback: () => void) => {
+    if (user.role === 'admin') router.replace('/admin' as never);
+    else if (redirect) router.replace(redirect as never);
+    else fallback();
+  };
+
   const onSubmit = async () => {
     if (!canSubmit) return;
     setError(null);
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
-      if (redirect) router.replace(redirect as never);
-      else router.back();
+      goAfterLogin(await login(email.trim(), password), () => router.replace('/'));
     } catch (e) {
       setError(authErrorMessage(e, t));
     } finally {
@@ -54,9 +60,7 @@ export default function LoginScreen() {
     setError(null);
     setGoogleSubmitting(true);
     try {
-      await loginWithGoogle();
-      if (redirect) router.replace(redirect as never);
-      else router.back();
+      goAfterLogin(await loginWithGoogle(), () => router.back());
     } catch (e) {
       // 사용자가 구글 로그인 창을 취소한 경우는 오류가 아니다.
       if ((e as { code?: string })?.code !== 'GOOGLE_SIGNIN_CANCELLED') setError(authErrorMessage(e, t));
@@ -70,9 +74,7 @@ export default function LoginScreen() {
     setError(null);
     setKakaoSubmitting(true);
     try {
-      await loginWithKakao();
-      if (redirect) router.replace(redirect as never);
-      else router.back();
+      goAfterLogin(await loginWithKakao(), () => router.back());
     } catch (e) {
       // 사용자가 카카오 로그인 창을 취소한 경우는 오류가 아니다.
       if ((e as { code?: string })?.code !== 'KAKAO_LOGIN_CANCELLED') setError(authErrorMessage(e, t));

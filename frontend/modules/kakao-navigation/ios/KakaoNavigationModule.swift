@@ -5,10 +5,16 @@ public final class KakaoNavigationModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("KakaoNavigation")
+    // Product SDK feed, independent of Android's optional debug diagnostics.
+    Events("onGuidance")
 
     Function("getStatus") {
       KakaoNavigationController.configuration()
     }
+
+    // 위험 레일 스냅샷(JSON). 판단은 JS 가 하고 네이티브는 그리기만 한다.
+    Function("setHazardRail") { (json: String) in KakaoNavigationController.setHazardRailJSON(json) }
+    Function("clearHazardRail") { KakaoNavigationController.clearHazardRail() }
 
     AsyncFunction("openNavigation") { (options: [String: Any], promise: Promise) in
       guard self.activeController == nil else {
@@ -26,6 +32,9 @@ public final class KakaoNavigationModule: Module {
         } else {
           promise.resolve(["status": "closed"])
         }
+      }
+      controller.eventHandler = { [weak self] event in
+        if let body = event as? [String: Any] { self?.sendEvent("onGuidance", body) }
       }
       self.activeController = controller
       controller.modalPresentationStyle = .fullScreen

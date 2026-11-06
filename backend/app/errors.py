@@ -12,6 +12,11 @@ class ApiError(Exception):
 
 
 _ERRORS: Dict[str, Tuple[int, str]] = {
+    "AUTH_DB_UNAVAILABLE": (503, "계정 데이터베이스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    "FORBIDDEN": (403, "관리자 권한이 필요합니다."),
+    "ACCOUNT_DISABLED": (403, "사용이 중지된 계정입니다."),
+    "USER_NOT_FOUND": (404, "회원을 찾을 수 없습니다."),
+    "CANNOT_DISABLE_SELF": (400, "자기 계정은 사용 중지할 수 없습니다."),
     "NOT_CONFIGURED": (503, "서버에 이 API의 인증키가 설정되지 않았습니다."),
     "UPSTREAM_AUTH": (502, "공공 API 인증에 실패했습니다. 서버의 인증키 설정을 확인해야 합니다."),
     "UPSTREAM_RATE_LIMIT": (503, "공공 API 사용량 제한에 도달했습니다. 잠시 후 다시 시도해 주세요."),

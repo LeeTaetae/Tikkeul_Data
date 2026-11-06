@@ -233,7 +233,7 @@ export default function HomeScreen() {
     favLng?: string;
     favLabel?: string;
   }>();
-  const { status: authStatus, token: authToken } = useAuth();
+  const { status: authStatus, token: authToken, user: authUser } = useAuth();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   // 좁은 화면(320px 등)에서는 검색 버튼을 글자 대신 아이콘으로 줄여 입력창 폭을 지킨다.
@@ -989,10 +989,10 @@ export default function HomeScreen() {
               onDismiss={onDismissFrequent}
             />
           )}
-          {/* 개발용 임시 진입점(docs/ADR/0002 vision-test). 캘리브레이션 끝나면 제거. */}
-          {__DEV__ && (
-            <Pressable onPress={() => router.push('/vision-test')} style={styles.devVisionTestButton}>
-              <Text style={styles.devVisionTestText}>[DEV] vision-test 열기</Text>
+          {/* 관리자 계정에만 보인다. 탐지 디버그·회원 관리는 관리자 화면 안에 있다. */}
+          {authUser?.role === 'admin' && (
+            <Pressable accessibilityRole="button" onPress={() => router.push('/admin')} style={styles.devVisionTestButton}>
+              <Text style={styles.devVisionTestText}>{t('auth.adminTitle')}</Text>
             </Pressable>
           )}
           {showPlanner ? (
