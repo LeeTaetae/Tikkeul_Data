@@ -97,14 +97,36 @@ final class VisionDetectorView: ExpoView {
         self.session.addOutput(self.output)
       }
       self.session.commitConfiguration()
+      // 프리셋·포맷이 바뀌면 최대 노출 시간이 기본값으로 돌아가므로 구성이 끝난 뒤에 건다.
+      let exposureLimit = Self.limitExposure(device)
       self.session.startRunning()
       let isRunning = self.session.isRunning
       let outputs = self.session.outputs.count
       DispatchQueue.main.async {
         self.previewLayer.session = self.session
         // 임시 진단(docs/ADR/0002): onDetections가 전혀 안 오면 이걸로 세션 구성 중 어디서 끊겼는지 본다.
-        self.onError(["message": "session setup: canAddOutput=\(canAddOutput) isRunning=\(isRunning) outputsCount=\(outputs) hasVisionRequest=\(self.visionRequest != nil) modelLoadError=\(self.modelLoadError ?? "none")"])
+        self.onError(["message": "session setup: canAddOutput=\(canAddOutput) isRunning=\(isRunning) outputsCount=\(outputs) hasVisionRequest=\(self.visionRequest != nil) modelLoadError=\(self.modelLoadError ?? "none") exposureLimit=\(exposureLimit)"])
       }
+    }
+  }
+}
+
+extension VisionDetectorView {
+  // 빠르게 지나가는 객체는 노출 시간 동안 번져서(모션 블러) 신뢰도가 떨어진다 - ml/eval_motion_blur.py 측정에서
+  // 25px 블러면 person recall이 절반 가까이 줄었다. 자동 노출의 최대 노출 시간을 1/250초로 묶어 블러를 줄이고,
+  // 부족한 밝기는 자동 노출이 ISO로 채운다. 밤에는 더 어둡고 노이즈가 늘 수 있다(실기기 확인 필요, docs/ADR/0002).
+  // 적용된 값(초)을 진단 문자열로 돌려준다.
+  static func limitExposure(_ device: AVCaptureDevice) -> String {
+    let format = device.activeFormat
+    let target = CMTime(value: 1, timescale: 250)
+    let clamped = CMTimeMaximum(format.minExposureDuration, CMTimeMinimum(target, format.maxExposureDuration))
+    do {
+      try device.lockForConfiguration()
+      defer { device.unlockForConfiguration() }
+      device.activeMaxExposureDuration = clamped
+      return String(format: "%.4fs", CMTimeGetSeconds(clamped))
+    } catch {
+      return "failed(\(error.localizedDescription))"
     }
   }
 }
