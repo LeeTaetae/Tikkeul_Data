@@ -28,6 +28,8 @@ from app.routers import geo, traffic
 from app.service import TrafficService
 from app.trips.router import router as trips_router
 from app.upstream import Upstream
+from app.weather.router import router as weather_router
+from app.weather.service import WeatherService
 
 _KEY_NAMES = [
     "its_traffic_api_key",
@@ -57,6 +59,7 @@ def create_app(
     async def lifespan(app: FastAPI):
         client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(settings.http_timeout_s, connect=5.0))
         app.state.service = TrafficService(Upstream(client, settings), settings, cache or TtlCache())
+        app.state.weather = WeatherService(Upstream(client, settings), settings)
         gemini_key = settings.secret("gemini_api_key")
         chat_client = genai.Client(api_key=gemini_key, http_options=genai_types.HttpOptions(timeout=15000)) if gemini_key else None
         app.state.chat_service = ChatService(chat_client, app.state.service) if chat_client else None
@@ -108,6 +111,7 @@ def create_app(
 
     app.include_router(traffic.router)
     app.include_router(geo.router)
+    app.include_router(weather_router)
     app.include_router(navigation_router)
     app.include_router(geocode_router)
     app.include_router(places_router)

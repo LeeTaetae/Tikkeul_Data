@@ -145,6 +145,40 @@ class Upstream:
             raise api_error("UPSTREAM_BAD_RESPONSE")
         return documents
 
+    async def kma_nowcast(self, base_date: str, base_time: str, nx: int, ny: int) -> Any:
+        return await self.kma_weather("nowcast", base_date, base_time, nx, ny)
+
+    async def kma_weather(self, kind: str, base_date: str, base_time: str, nx: int, ny: int) -> Any:
+        """기상청 초단기실황 한 시각. 좌표가 아니라 격자(nx, ny)만 보낸다. 키가 든 URL 은 로그·예외에 남기지 않는다."""
+        url = {"nowcast": self._settings.kma_nowcast_url,
+               "ultra": self._settings.kma_ultra_forecast_url,
+               "village": self._settings.kma_village_forecast_url}[kind]
+        params = {
+            "serviceKey": self._key("kma_service_key"), "pageNo": 1, "numOfRows": 100 if kind == "nowcast" else 1000, "dataType": "JSON",
+            "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny,
+        }
+        try:
+            response = await self._client.get(url, params=params)
+        except httpx.TimeoutException as exc:
+            _log_failure(url, exc)
+            raise api_error("UPSTREAM_TIMEOUT") from None
+        except httpx.HTTPError as exc:
+            _log_failure(url, exc)
+            raise api_error("UPSTREAM_UNAVAILABLE") from None
+        status = response.status_code
+        if status in (401, 403):
+            logger.warning("기상청 인증 거절 status=%d", status)
+            raise api_error("UPSTREAM_AUTH")
+        if status == 429:
+            raise api_error("UPSTREAM_RATE_LIMIT")
+        if not 200 <= status < 300:
+            raise api_error("UPSTREAM_ERROR")
+        try:
+            return response.json()
+        except ValueError:
+            # 게이트웨이 오류(키 미등록 등)는 JSON 이 아니라 XML 로 오기도 한다. 내용을 해석하지 않고 응답 오류로 처리한다.
+            raise api_error("UPSTREAM_BAD_RESPONSE") from None
+
     async def protection_zone_page(self, sgg_cd: str, page: int, rows: int) -> Tuple[List[Dict[str, Any]], int]:
         """경찰청 보호구역 한 페이지. (항목, 전체 페이지 수)를 돌려준다."""
         params = {"serviceKey": self._key("protection_zone_service_key"), "sggCd": sgg_cd, "numOfRows": rows, "pageNo": page}

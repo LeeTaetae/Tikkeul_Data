@@ -57,6 +57,10 @@ export default function RootLayout() {
         <Tabs.Screen name="forgot-password" options={hiddenScreen} />
         <Tabs.Screen name="map" options={hiddenScreen} />
         <Tabs.Screen name="alerts" options={hiddenScreen} />
+        {/* 이전 디버그 주소는 권한 확인이 있는 관리자 패널로 연결한다. */}
+        <Tabs.Screen name="vision-test" options={hiddenScreen} />
+        {/* 개발 전용 onGuidance 진단 화면(운영 빌드에서는 아무것도 그리지 않는다). */}
+        <Tabs.Screen name="guidance-capture" options={hiddenScreen} />
       </Tabs>
     </AuthProvider>
   );

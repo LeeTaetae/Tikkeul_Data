@@ -13,6 +13,10 @@ import { createApiClient, type RequestOptions } from './client';
 
 const client = createApiClient({ baseUrl: API_BASE_URL });
 
+export const weatherApi = {
+  safety:(lat:number,lon:number,options?:RequestOptions)=>client.get<import('../weather/safety').SafetyWeather>('/api/weather/safety',{lat,lon},options),
+};
+
 const bboxParams = (b: BBox) => ({ min_lon: b.minLon, max_lon: b.maxLon, min_lat: b.minLat, max_lat: b.maxLat });
 
 /** 좌표 → 시군구(보호구역 조회용 sgg_cd). 좌표는 소수 3자리로 반올림해서 보낸다(regionQueryFor). */

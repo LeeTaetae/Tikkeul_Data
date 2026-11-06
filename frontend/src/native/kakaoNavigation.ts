@@ -24,6 +24,8 @@ export function setNativeHazardRail(_json: string): void {}
 
 export function clearNativeHazardRail(): void {}
 
+export function setNativeWeatherSafetyBanner(_text:string|null):void {}
+
 export function onNativeGuidanceFeed(_listener: (event: Record<string, unknown>) => void): () => void {
   return () => {};
 }

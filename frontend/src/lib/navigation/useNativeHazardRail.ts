@@ -6,6 +6,7 @@ import type { NavRoute } from './guidanceEngine';
 import { parseNativeLocation, parseNativeRoute, type NativePosition } from './nativeGuidanceFeed';
 import { buildNativeRailSnapshot, railChanged, serializeNativeRail, type NativeRailSnapshot } from './nativeHazardRail';
 import { useRouteHazardWarning } from './useRouteHazardWarning';
+import { createNativeWeatherFixGate } from './nativeWeatherFix';
 
 /**
  * 카카오 SDK 주행 화면(네이티브)의 위치·경로 이벤트로 기존 위험 훅(useRouteHazardWarning)을 돌리고, 그 결과(rail)를
@@ -18,9 +19,13 @@ import { useRouteHazardWarning } from './useRouteHazardWarning';
  * 한계: SDK 화면이 앞에 있으면 RN 호스트가 일시정지되어 setInterval 이 멈춘다(실기기에서 확인). useApi 의 60초 자동 갱신도
  * 타이머라서 이 동안은 멈춘다. 위험 데이터는 경로·조회 영역이 바뀔 때 다시 받는다.
  */
-export function useNativeHazardRail(): void {
+export function useNativeHazardRail() {
   const [route, setRoute] = useState<NavRoute | null>(null);
   const [position, setPosition] = useState<NativePosition | null>(null);
+  const [weatherFix,setWeatherFix]=useState<import('../tunnel/approach').GpsFix|null>(null);
+  const [positionTrusted,setPositionTrusted]=useState(false);
+  const [weatherProgressM,setWeatherProgressM]=useState<number|null>(null);
+  const gpsGate=useRef(createNativeWeatherFixGate());
 
   useEffect(
     () =>
@@ -30,9 +35,17 @@ export function useNativeHazardRail(): void {
           const path = parseNativeRoute(event.points, keys);
           // 경로를 해석하지 못하면 이전 경로를 남기지 않는다(오래된 경로로 위험을 판정하면 안 된다).
           setRoute(path ? { id: `native-${Date.now()}`, source: 'api', mode: 'driving', path } : null);
+          gpsGate.current.reset();setWeatherFix(null);setWeatherProgressM(null);setPositionTrusted(false);
         } else if (event.kind === 'location') {
           const next = parseNativeLocation(event);
-          if (next) setPosition(next);
+          if (next) {
+            setPosition(next);
+          }
+          const measured=gpsGate.current.accept(event,Date.now());
+          if(measured.kind==='accepted') {
+            setWeatherFix(measured.value.fix);setWeatherProgressM(measured.value.progressM);
+            setPositionTrusted(measured.value.positionTrusted);
+          } else if(measured.kind==='rejected') {setWeatherFix(null);setWeatherProgressM(null);setPositionTrusted(false);}
         }
       }),
     [],
@@ -72,4 +85,5 @@ export function useNativeHazardRail(): void {
 
   // 주행 화면이 끝나면 오버레이를 비운다.
   useEffect(() => () => clearNativeHazardRail(), []);
+  return {weatherRoute:hazardRoute,weatherFix,weatherProgressM,positionTrusted,weatherBlocked:!!hazard.warning};
 }

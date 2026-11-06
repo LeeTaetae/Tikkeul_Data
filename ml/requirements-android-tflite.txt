@@ -1,0 +1,20 @@
+# Android TFLite 변환·검증용 격리 환경(frontend/ml/.venv, Git 제외). 2026-11-05 Windows 11 / Python 3.11 에서 이 조합으로 변환·검증이 성공했다.
+#   python -m venv frontend/ml/.venv            # 기존 conda/py311·ai/tunnel_detection/.venv 와 섞지 않는다
+#   frontend/ml/.venv/Scripts/python -m pip install -r ml/requirements-android-tflite.txt
+# ultralytics 8.4.x 의 tensorflow 계열 export 는 numpy<2, tensorflow<=2.19 를 요구한다(그래서 터널 PoC venv(numpy 2.x)와 분리해야 한다).
+ultralytics==8.4.202
+numpy<2
+tensorflow<=2.19.0
+tf_keras<=2.19.0
+onnx2tf>=1.26.3,<1.29.0
+sng4onnx>=1.0.1
+onnx_graphsurgeon>=0.3.26
+ai-edge-litert>=1.2.0
+onnxruntime>=1.20.0
+onnx>=1.12.0
+onnxslim>=0.1.82
+protobuf>=5
+ydf<0.13.0
+googleapis-common-protos<1.74.0
+# 실제로 해석된 버전(참고): torch 2.15.0(CPU) torchvision 0.29.2 numpy 1.26.4 tensorflow 2.19.0 tf_keras 2.19.0 onnx2tf 1.28.8
+#   onnx 1.22.0 onnxruntime 1.31.1 onnxslim 0.1.99 ai-edge-litert 2.3.0 sng4onnx 2.0.1 onnx_graphsurgeon 0.6.1 protobuf 5.29.6

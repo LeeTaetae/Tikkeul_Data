@@ -25,6 +25,7 @@ internal object GuidanceEventFeed {
         "kind" to "location", "lat" to point.y, "lng" to point.x,
         "speedKmh" to gps.speed, "angle" to gps.angle,
         "hdop" to origin.hdop, "posTrust" to origin.posTrust, "valid" to gps.valid,
+        "timestampMs" to origin.timestamp.timeInMillis, "timestampSource" to "sdk_origin",
         "distFromS" to (location.location?.distFromS ?: -1),
       ))
     }.onFailure { Log.w("TikkeulGuidance", "Location event failed: ${it.javaClass.simpleName}") }

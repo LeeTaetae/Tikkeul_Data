@@ -6,6 +6,7 @@ import * as Location from 'expo-location';
 
 import { distanceM } from './guidanceEngine';
 import { cachedRegion, cachedZones } from './useRouteZones';
+import type { GpsFix } from '../tunnel/approach';
 
 // MVP 임시 기준: 보호구역 표시 지점(point) 반경 150m 안이면 "안"으로 본다(구역 경계 도형을 안 쓰고 점 근사).
 const NEAR_ZONE_RADIUS_M = 150;
@@ -17,14 +18,15 @@ export interface NearbyProtectionZoneStatus {
   inZone: boolean;
   /** GPS 가 속력을 안 주면(coords.speed null) null - 비전 차량 탐지 on/off 판단에만 쓴다. */
   speedKmh: number | null;
+  fix:GpsFix|null;
 }
 
 export function useNearbyProtectionZoneStatus(enabled: boolean): NearbyProtectionZoneStatus {
-  const [status, setStatus] = useState<NearbyProtectionZoneStatus>({ inZone: false, speedKmh: null });
+  const [status, setStatus] = useState<NearbyProtectionZoneStatus>({ inZone: false, speedKmh: null,fix:null });
 
   useEffect(() => {
     if (!enabled) {
-      setStatus({ inZone: false, speedKmh: null });
+      setStatus({ inZone: false, speedKmh: null,fix:null });
       return;
     }
     let cancelled = false;
@@ -34,17 +36,19 @@ export function useNearbyProtectionZoneStatus(enabled: boolean): NearbyProtectio
       { accuracy: Location.Accuracy.Balanced, timeInterval: WATCH_TIME_INTERVAL_MS, distanceInterval: WATCH_DISTANCE_INTERVAL_M },
       (fix) => {
         const point = { lat: fix.coords.latitude, lng: fix.coords.longitude };
+        const measured:GpsFix={...point,accuracyM:fix.coords.accuracy??null,timestampMs:fix.timestamp};
+        if(!cancelled)setStatus(previous=>({...previous,fix:measured}));
         const speedKmh = fix.coords.speed != null && fix.coords.speed >= 0 ? fix.coords.speed * 3.6 : null;
         cachedRegion(point.lat, point.lng)
           .then((sggCd) => (sggCd ? cachedZones(sggCd) : []))
           .then((zones) => {
             if (cancelled) return;
             const inZone = zones.some((z) => z.center && distanceM(point, { lat: z.center!.lat, lng: z.center!.lon }) <= NEAR_ZONE_RADIUS_M);
-            setStatus({ inZone, speedKmh });
+            setStatus(previous=>({...previous,inZone,speedKmh}));
           })
           .catch(() => {
             // 지역·구역 조회 실패(네트워크 끊김 등)는 "보호구역 아님"으로 둔다 - 기본 민감도로 안전하게 되돌아간다.
-            if (!cancelled) setStatus({ inZone: false, speedKmh });
+            if (!cancelled) setStatus(previous=>({...previous,inZone:false,speedKmh}));
           });
       },
     ).then((sub) => {
@@ -55,7 +59,7 @@ export function useNearbyProtectionZoneStatus(enabled: boolean): NearbyProtectio
     return () => {
       cancelled = true;
       subscription?.remove();
-      setStatus({ inZone: false, speedKmh: null });
+      setStatus({ inZone: false, speedKmh: null,fix:null });
     };
   }, [enabled]);
 

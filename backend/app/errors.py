@@ -25,6 +25,7 @@ _ERRORS: Dict[str, Tuple[int, str]] = {
     "UPSTREAM_BAD_REQUEST": (502, "공공 API가 요청을 거부했습니다."),
     "UPSTREAM_BAD_RESPONSE": (502, "공공 API 응답을 해석하지 못했습니다."),
     "UPSTREAM_ERROR": (502, "공공 API가 오류를 반환했습니다."),
+    "WEATHER_UNAVAILABLE": (503, "기상 관측 정보를 가져오지 못했습니다. 비·눈 여부를 알 수 없습니다."),
     "REGION_NOT_FOUND": (404, "이 좌표의 시군구를 확인할 수 없습니다. 국내 위치가 아닐 수 있습니다."),
     "INVALID_CREDENTIALS": (401, "이메일 또는 비밀번호가 올바르지 않습니다."),
     "EMAIL_TAKEN": (409, "이미 가입된 이메일입니다."),

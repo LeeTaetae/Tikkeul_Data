@@ -333,7 +333,7 @@ const en: Resources = {
     adminHome: "Go to home",
     adminRequired: "Administrator access is required.",
     accountDisabled: "This account is disabled.",
-    adminVisionUnsupported: "Detection debug is only available in the iOS app on a device.",
+    adminVisionUnsupported: "Detection debug requires an Android/iOS device app with the vision module.",
     adminVisionDebug: "Detection debug",
     adminMembers: "Members",
     adminMembersEmpty: "No members yet.",

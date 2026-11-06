@@ -15,6 +15,7 @@ public final class KakaoNavigationModule: Module {
     // 위험 레일 스냅샷(JSON). 판단은 JS 가 하고 네이티브는 그리기만 한다.
     Function("setHazardRail") { (json: String) in KakaoNavigationController.setHazardRailJSON(json) }
     Function("clearHazardRail") { KakaoNavigationController.clearHazardRail() }
+    Function("setWeatherSafetyBanner") { (text: String) in KakaoNavigationController.setWeatherSafetyBanner(text) }
 
     AsyncFunction("openNavigation") { (options: [String: Any], promise: Promise) in
       guard self.activeController == nil else {

@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- 전방 위험 탐지용 후면 카메라. 런타임 권한은 VisionDetectorView 가 요청한다(iOS 의 AVCaptureDevice.requestAccess 와 같은 자리). -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <!-- 카메라가 없는 기기에서도 앱은 설치된다(탐지만 꺼진다). -->
+  <uses-feature android:name="android.hardware.camera" android:required="false" />
+</manifest>

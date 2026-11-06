@@ -1,3 +1,7 @@
 ios/build/
 ios/kickboard_v3.mlpackage
+android/.gradle/
+android/build/
+# Android 모델은 iOS mlpackage 와 같은 이유로 Git 에 올리지 않는다(학습 산출물). 배치 방법: docs/ANDROID_VISION_DETECTOR.md
+android/src/main/assets/vision/*.tflite
 

@@ -10,6 +10,7 @@ interface KakaoNavigationModule {
   // Android/iOS hazard rail; absent in older native builds.
   setHazardRail?(json: string): void;
   clearHazardRail?(): void;
+  setWeatherSafetyBanner?(text:string):void;
   addListener?(event: 'onLanguageChanged', listener: (event: { language: string }) => void): { remove(): void };
   addListener?(event: 'onGuidance', listener: (event: Record<string, unknown>) => void): { remove(): void };
 }
@@ -53,6 +54,10 @@ export function setNativeHazardRail(json: string): void {
 
 export function clearNativeHazardRail(): void {
   nativeModule()?.clearHazardRail?.();
+}
+
+export function setNativeWeatherSafetyBanner(text:string|null):void {
+  nativeModule()?.setWeatherSafetyBanner?.(text??'');
 }
 
 /**

@@ -36,6 +36,9 @@ ios/
 !frontend/modules/kakao-login/ios/**
 !frontend/modules/vision-detector/ios/
 !frontend/modules/vision-detector/ios/**
+# Android 비전 모듈 소스도 추적한다. 빌드 산출물(android/build, android/.gradle)과 *.tflite 모델은 모듈의 .gitignore 가 다시 제외한다.
+!frontend/modules/vision-detector/android/
+!frontend/modules/vision-detector/android/**
 
 # Python / FastAPI
 *.pyc

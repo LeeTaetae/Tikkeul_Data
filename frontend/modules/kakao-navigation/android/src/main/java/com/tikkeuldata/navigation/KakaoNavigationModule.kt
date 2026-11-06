@@ -93,6 +93,7 @@ class KakaoNavigationModule : Module() {
     // 위험 레일 스냅샷(JSON). 판단은 JS 가 하고 네이티브는 그리기만 한다. 너무 큰 입력은 무시한다.
     Function("setHazardRail") { json: String -> HazardRail.set(json) }
     Function("clearHazardRail") { HazardRail.clear() }
+    Function("setWeatherSafetyBanner") { text: String -> WeatherSafetyOverlay.set(text) }
 
     // SPIKE(임시): JS 가 위치 이벤트를 받았다는 확인(ACK)과 주행 종료 후 요약. 디버그 빌드가 아니면 "disabled"/null.
     Function("spikeAck") { session: Int, id: Int -> NavigationDiagnostics.ack(session, id) }

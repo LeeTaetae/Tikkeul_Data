@@ -56,6 +56,8 @@ export interface SpeakHooks {
   onError?: (error: unknown) => void;
   /** 음성 목록을 기다리는 사이 호출한 쪽이 사라졌는지(화면이 닫힘 등). true 면 읽지 않고 'stale' 을 돌려준다. */
   isCancelled?: () => boolean;
+  /** Optional low-priority admission check after voice resolution, before engine dispatch. */
+  beforeSpeak?: () => Promise<boolean>;
 }
 
 export type SpeechEventStage =
@@ -121,6 +123,8 @@ function errorKind(error: unknown): string {
 
 export function createSpeaker({ engine, platform, preferredWebVoices, onUnsupported, onEvent, now = Date.now }: SpeakerOptions) {
   let generation = 0;
+  let priorityRequests = 0;
+  let resolvingPriority = 0;
   let activeLanguage: SpeechLanguage | null = null;
   let voicesPromise: Promise<VoiceLike[]> | null = null;
   let voicesLoadedAt = 0; // 마지막으로 목록을 받은 시각
@@ -190,6 +194,9 @@ export function createSpeaker({ engine, platform, preferredWebVoices, onUnsuppor
   }
 
   async function speak(text: string, language: string, hooks: SpeakHooks = {}): Promise<SpeakResult> {
+    const priority = !hooks.beforeSpeak;
+    if(priority)priorityRequests++;
+    const priorityAtRequest=priorityRequests;
     const lang = speechLanguageOf(language);
     const base = { navigationMode: hooks.source ?? 'unknown', appLanguage: lang, ttsLanguage: SPEECH_LOCALES[lang], text };
     emit({ ...base, stage: 'request' });
@@ -202,7 +209,10 @@ export function createSpeaker({ engine, platform, preferredWebVoices, onUnsuppor
       return 'stale'; // 앱 언어가 이미 바뀐 뒤에 이전 언어로 만든 문장
     }
     const requested = generation;
-    const target = await resolveTarget(lang);
+    if(priority)resolvingPriority++;
+    let target:Awaited<ReturnType<typeof resolveTarget>>;
+    try { target = await resolveTarget(lang); }
+    finally { if(priority)resolvingPriority--; }
     if (requested !== generation || hooks.isCancelled?.()) {
       emit({ ...base, stage: 'skip', reason: requested !== generation ? 'cancelled-while-resolving-voice' : 'caller-gone', speakCalled: false });
       return 'stale'; // 기다리는 동안 언어가 바뀌었거나 stop() 됐거나 호출한 쪽이 사라졌다
@@ -254,6 +264,9 @@ export function createSpeaker({ engine, platform, preferredWebVoices, onUnsuppor
         },
       });
     };
+    if (hooks.beforeSpeak && !await hooks.beforeSpeak()) return 'stale';
+    if (hooks.beforeSpeak && (resolvingPriority>0||priorityAtRequest!==priorityRequests)) return 'stale';
+    if (requested !== generation || hooks.isCancelled?.()) return 'stale';
     run(target.voice);
     return 'spoken';
   }

@@ -75,7 +75,7 @@ interface SegmentProjection {
 }
 
 // 점 하나를 경로의 각 선분에 투영한다. 선분마다 수직 거리, 경로 시작 기준 위치, 선분의 진행 방위를 돌려준다.
-function projections(route: Route, point: RoutePoint): SegmentProjection[] {
+export function projectRouteCandidates(route: Route, point: RoutePoint): SegmentProjection[] {
   const origin = route.points[0];
   if (!origin) return [];
   const k = Math.cos(toRad(origin.latitude));
@@ -107,7 +107,7 @@ function projections(route: Route, point: RoutePoint): SegmentProjection[] {
 
 /** 경로에서 가장 가까운 지점. 판정과 무관하게 위치만 구한다(시뮬레이터가 기준 거리를 잡을 때 쓴다). */
 export function projectOntoRoute(route: Route, point: RoutePoint): SegmentProjection | null {
-  return projections(route, point).reduce<SegmentProjection | null>(
+  return projectRouteCandidates(route, point).reduce<SegmentProjection | null>(
     (best, p) => (!best || p.lateralM < best.lateralM ? p : best),
     null,
   );
@@ -123,7 +123,7 @@ export function matchHazardsToRoute(route: Route, alerts: RoadAlert[], options: 
 
   for (const alert of alerts) {
     // 경로에서 허용 거리 안에 있는 선분들
-    const near = projections(route, alert).filter((p) => p.lateralM <= maxLateralM);
+    const near = projectRouteCandidates(route, alert).filter((p) => p.lateralM <= maxLateralM);
     if (near.length === 0) {
       result.rejected.push({ alert, reason: 'offRoute' });
       continue;
@@ -303,7 +303,7 @@ export function classifyIncidentOnRoute(route: Route, alert: RoadAlert, ctx: Inc
   }
   const freshness = freshnessOf(alert, policy, ctx.nowMs, ctx.dataStale);
 
-  const near = projections(route, alert);
+  const near = projectRouteCandidates(route, alert);
   const candidates = near.filter((p) => p.lateralM <= policy.candidateLateralM);
   if (candidates.length === 0) {
     const nearest = near.reduce<number | null>((m, p) => (m === null || p.lateralM < m ? p.lateralM : m), null);

@@ -1,0 +1,282 @@
+{
+ "version": 1,
+ "note": "Kotlin(VisionDecodingTest, DetectionEventContractTest)과 JS(vision-android-contract.test.mjs)가 함께 읽는다. 숫자는 scripts 로 생성한 값이며 손계산으로 검증 가능하다.",
+ "contract": {
+  "eventKeys": [
+   "detections",
+   "debugRawType",
+   "debugRawCount",
+   "debugRecognizedCount"
+  ],
+  "detectionKeys": [
+   "class",
+   "confidence",
+   "box"
+  ],
+  "boxKeys": [
+   "x",
+   "y",
+   "width",
+   "height"
+  ],
+  "labels": [
+   "kickboard",
+   "person",
+   "car",
+   "motorcycle",
+   "animal"
+  ],
+  "defaultTargetFps": 5,
+  "confidenceFloor": 0.25
+ },
+ "geometry": {
+  "srcW": 640,
+  "srcH": 480,
+  "rotation": 90,
+  "dstW": 384,
+  "dstH": 384,
+  "expect": {
+   "uprightW": 480,
+   "uprightH": 640,
+   "scale": 0.6,
+   "padX": 48.0,
+   "padY": 0.0
+  }
+ },
+ "decodeCases": [
+  {
+   "name": "channels_first_normalized",
+   "shape": [
+    1,
+    9,
+    4
+   ],
+   "output": [
+    0.5,
+    0.505,
+    0.260417,
+    0.78125,
+    0.5,
+    0.5,
+    0.78125,
+    0.260417,
+    0.15,
+    0.15,
+    0.15625,
+    0.104167,
+    0.3,
+    0.3,
+    0.104167,
+    0.104167,
+    0.01,
+    0.01,
+    0.01,
+    0.2,
+    0.9,
+    0.6,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.3,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01
+   ],
+   "expectedRawCount": 3,
+   "expectedDetections": [
+    {
+     "class": "person",
+     "confidence": 0.9,
+     "box": {
+      "x": 0.4,
+      "y": 0.35,
+      "width": 0.2,
+      "height": 0.3
+     }
+    },
+    {
+     "class": "car",
+     "confidence": 0.3,
+     "box": {
+      "x": 0.076389,
+      "y": 0.729167,
+      "width": 0.208333,
+      "height": 0.104167
+     }
+    }
+   ]
+  },
+  {
+   "name": "anchors_first_normalized",
+   "shape": [
+    1,
+    4,
+    9
+   ],
+   "output": [
+    0.5,
+    0.5,
+    0.15,
+    0.3,
+    0.01,
+    0.9,
+    0.01,
+    0.01,
+    0.01,
+    0.505,
+    0.5,
+    0.15,
+    0.3,
+    0.01,
+    0.6,
+    0.01,
+    0.01,
+    0.01,
+    0.260417,
+    0.78125,
+    0.15625,
+    0.104167,
+    0.01,
+    0.01,
+    0.3,
+    0.01,
+    0.01,
+    0.78125,
+    0.260417,
+    0.104167,
+    0.104167,
+    0.2,
+    0.01,
+    0.01,
+    0.01,
+    0.01
+   ],
+   "expectedRawCount": 3,
+   "expectedDetections": [
+    {
+     "class": "person",
+     "confidence": 0.9,
+     "box": {
+      "x": 0.4,
+      "y": 0.35,
+      "width": 0.2,
+      "height": 0.3
+     }
+    },
+    {
+     "class": "car",
+     "confidence": 0.3,
+     "box": {
+      "x": 0.076389,
+      "y": 0.729167,
+      "width": 0.208333,
+      "height": 0.104167
+     }
+    }
+   ]
+  },
+  {
+   "name": "channels_first_pixels",
+   "shape": [
+    1,
+    9,
+    4
+   ],
+   "output": [
+    192.0,
+    193.92,
+    100.0,
+    300.0,
+    192.0,
+    192.0,
+    300.0,
+    100.0,
+    57.6,
+    57.6,
+    60.0,
+    40.0,
+    115.2,
+    115.2,
+    40.0,
+    40.0,
+    0.01,
+    0.01,
+    0.01,
+    0.2,
+    0.9,
+    0.6,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.3,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01,
+    0.01
+   ],
+   "expectedRawCount": 3,
+   "expectedDetections": [
+    {
+     "class": "person",
+     "confidence": 0.9,
+     "box": {
+      "x": 0.4,
+      "y": 0.35,
+      "width": 0.2,
+      "height": 0.3
+     }
+    },
+    {
+     "class": "car",
+     "confidence": 0.3,
+     "box": {
+      "x": 0.076389,
+      "y": 0.729167,
+      "width": 0.208333,
+      "height": 0.104167
+     }
+    }
+   ]
+  }
+ ],
+ "event": {
+  "detections": [
+   {
+    "class": "person",
+    "confidence": 0.9,
+    "box": {
+     "x": 0.4,
+     "y": 0.35,
+     "width": 0.2,
+     "height": 0.3
+    }
+   },
+   {
+    "class": "car",
+    "confidence": 0.3,
+    "box": {
+     "x": 0.076389,
+     "y": 0.729167,
+     "width": 0.208333,
+     "height": 0.104167
+    }
+   }
+  ],
+  "debugRawType": "LiteRtYolo",
+  "debugRawCount": 3,
+  "debugRecognizedCount": 2
+ }
+}
