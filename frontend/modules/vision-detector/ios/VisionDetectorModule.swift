@@ -5,13 +5,17 @@ import ExpoModulesCore
 import AVFoundation
 import Vision
 import CoreML
+import CoreImage
 
 public final class VisionDetectorModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VisionDetector")
 
     View(VisionDetectorView.self) {
-      Events("onDetections", "onError")
+      Events("onDetections", "onError", "onPortalFrame")
+      Prop("portalCandidatesEnabled") { (view: VisionDetectorView, enabled: Bool) in
+        view.portalCandidatesEnabled = enabled
+      }
 
       Prop("targetFps") { (view: VisionDetectorView, fps: Double) in
         view.targetFps = fps
@@ -34,6 +38,36 @@ final class VisionDetectorView: ExpoView {
 
   let onDetections = EventDispatcher()
   let onError = EventDispatcher()
+  let onPortalFrame = EventDispatcher()
+  var portalCandidatesEnabled = false
+  private var lastPortalAt: CFTimeInterval = 0
+  private let portalContext = CIContext(options: [.cacheIntermediates: false])
+
+  fileprivate func emitPortalFrame(_ buffer: CVPixelBuffer, now: CFTimeInterval) {
+    guard portalCandidatesEnabled, now-lastPortalAt >= 0.5 else { return }
+    lastPortalAt = now
+    // Same portrait orientation as the existing Vision request. Never saved/uploaded.
+    let upright = CIImage(cvPixelBuffer: buffer).oriented(.right)
+    let scale = 160 / max(upright.extent.width, upright.extent.height)
+    let small = upright.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    guard let image = portalContext.createCGImage(small, from: small.extent) else { return }
+    let w = image.width, h = image.height
+    var rgba = [UInt8](repeating: 0, count: w*h*4)
+    let rendered = rgba.withUnsafeMutableBytes { bytes -> Bool in
+      guard let context = CGContext(data: bytes.baseAddress, width: w, height: h, bitsPerComponent: 8,
+        bytesPerRow: w*4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+      context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+      return true
+    }
+    guard rendered else { return }
+    var rgb = [Int](); rgb.reserveCapacity(w*h*3)
+    for i in stride(from: 0, to: rgba.count, by: 4) { rgb.append(Int(rgba[i])); rgb.append(Int(rgba[i+1])); rgb.append(Int(rgba[i+2])) }
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.portalCandidatesEnabled else { return }
+      self.onPortalFrame(["width": w, "height": h, "rgb": rgb])
+    }
+  }
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -137,6 +171,7 @@ extension VisionDetectorView: AVCaptureVideoDataOutputSampleBufferDelegate {
     guard now - lastInferenceAt >= 1.0 / max(targetFps, 1) else { return }
     guard let request = visionRequest, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
     lastInferenceAt = now
+    emitPortalFrame(pixelBuffer, now: now)
 
     // 뒤 카메라 센서는 가로로 눕혀 들어온다(기기를 세로로 들고 쓴다는 전제). docs/ADR/0002 참고.
     let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])

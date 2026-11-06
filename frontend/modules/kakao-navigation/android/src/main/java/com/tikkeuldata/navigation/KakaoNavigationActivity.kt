@@ -188,6 +188,7 @@ class KakaoNavigationActivity : AppCompatActivity(),
         Log.i("TikkeulVoice", "stage=guidance-init build=car-tts-v1 appLanguage=$voiceLanguage recordedLanguage=${active.sndContainer?.langType} engine=${if (voiceLanguage == "ko") "sdk" else "android-tts"}")
         attachVoiceLanguageButton()
         // 위험 레일: JS 가 보낸 스냅샷을 왼쪽 위에 그린다. 실패해도 길안내를 막지 않는다.
+        WeatherSafetyOverlay.attach(this, container)
         runCatching { railOverlay = HazardRailOverlay(this, intent.getStringExtra("language") ?: "ko").also { it.attach(container) } }
         runCatching { NavigationDiagnostics.attachDiag(this, container) } // SPIKE(임시): 디버그 빌드 전용 JS 전달 진단 오버레이
         runCatching {
@@ -278,6 +279,7 @@ class KakaoNavigationActivity : AppCompatActivity(),
     naviView?.guideStateDelegate = null
     railOverlay?.detach()
     railOverlay = null
+    WeatherSafetyOverlay.detach()
     if (::container.isInitialized) container.removeAllViews()
     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     if (!isChangingConfigurations && !sessionFinished) NavigationSession.close()

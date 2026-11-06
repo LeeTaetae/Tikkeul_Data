@@ -333,7 +333,7 @@ const zh: Resources = {
     adminHome: '返回首页',
     adminRequired: '需要管理员权限。',
     accountDisabled: '此账户已停用。',
-    adminVisionUnsupported: '检测调试仅在 iOS 真机应用中可用。',
+    adminVisionUnsupported: '检测调试需要包含视觉模块的 Android/iOS 真机应用。',
     adminVisionDebug: '检测调试',
     adminMembers: '会员管理',
     adminMembersEmpty: '暂无会员。',

@@ -333,7 +333,7 @@ const ko = {
     adminHome: '홈으로 이동',
     adminRequired: '관리자 권한이 필요한 기능이에요.',
     accountDisabled: '사용이 중지된 계정이에요.',
-    adminVisionUnsupported: '탐지 디버그는 iOS 실기기 앱에서만 보여요.',
+    adminVisionUnsupported: '탐지 디버그에는 비전 모듈이 포함된 Android/iOS 실기기 앱이 필요해요.',
     adminVisionDebug: '탐지 디버그',
     adminMembers: '회원 관리',
     adminMembersEmpty: '회원이 없어요.',

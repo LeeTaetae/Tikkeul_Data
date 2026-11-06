@@ -27,6 +27,8 @@
 @property(nonatomic, copy) NSString *voiceLanguage;
 @property(nonatomic) BOOL voiceFailureShown;
 @property(nonatomic, strong, nullable) HazardRailOverlayView *railOverlay;
+@property(nonatomic, strong, nullable) UILabel *weatherSafetyLabel;
+@property(nonatomic, strong, nullable) UIScrollView *weatherSafetyPanel;
 @property(nonatomic) CFTimeInterval lastLocationEmit;
 @end
 
@@ -34,8 +36,28 @@
 static const NSUInteger kMaxRailJSON = 16384;
 static __weak KakaoNavigationController *sActiveController = nil;
 static NSString *sLastRailJSON = nil;
+static NSString *sLastWeatherText = nil;
+static NSUInteger sWeatherGeneration = 0;
 
 @implementation KakaoNavigationController
+
++ (void)setWeatherSafetyBanner:(NSString *)text {
+  if (![text isKindOfClass:NSString.class] || text.length > 500) return;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    sLastWeatherText = [text copy];
+    NSUInteger generation = ++sWeatherGeneration;
+    if (![sActiveController.weatherSafetyLabel.text isEqualToString:text]) {
+      [sActiveController.weatherSafetyPanel setContentOffset:CGPointZero animated:NO];
+    }
+    sActiveController.weatherSafetyLabel.text = text;
+    sActiveController.weatherSafetyPanel.hidden = text.length == 0;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+      if (generation != sWeatherGeneration) return;
+      sLastWeatherText = nil;
+      sActiveController.weatherSafetyPanel.hidden = YES;
+    });
+  });
+}
 
 + (void)setHazardRailJSON:(NSString *)json {
   if (![json isKindOfClass:NSString.class] || json.length > kMaxRailJSON) return;
@@ -238,6 +260,37 @@ static NSString *sLastRailJSON = nil;
       // 위험 레일: JS 가 보낸 스냅샷을 왼쪽에 그린다. 실패해도 길안내를 막지 않는다.
       self.railOverlay = [[HazardRailOverlayView alloc] initWithLanguage:self.voiceLanguage];
       [self.railOverlay attachToHost:self.view naviView:self.naviView];
+      self.weatherSafetyLabel = [UILabel new];
+      self.weatherSafetyLabel.translatesAutoresizingMaskIntoConstraints = NO;
+      self.weatherSafetyLabel.numberOfLines = 0;
+      self.weatherSafetyLabel.font = [UIFont boldSystemFontOfSize:15];
+      self.weatherSafetyLabel.textColor = [UIColor colorWithRed:0.2 green:0.16 blue:0.08 alpha:1];
+      self.weatherSafetyLabel.backgroundColor = [UIColor colorWithRed:1 green:0.98 blue:0.90 alpha:1];
+      self.weatherSafetyLabel.layer.cornerRadius = 12;
+      self.weatherSafetyLabel.clipsToBounds = YES;
+      self.weatherSafetyLabel.userInteractionEnabled = NO;
+      self.weatherSafetyLabel.text = sLastWeatherText;
+      self.weatherSafetyPanel = [UIScrollView new];
+      self.weatherSafetyPanel.translatesAutoresizingMaskIntoConstraints = NO;
+      self.weatherSafetyPanel.backgroundColor = self.weatherSafetyLabel.backgroundColor;
+      self.weatherSafetyPanel.layer.cornerRadius = 12;
+      self.weatherSafetyPanel.hidden = sLastWeatherText.length == 0;
+      [self.weatherSafetyPanel addSubview:self.weatherSafetyLabel];
+      [self.view addSubview:self.weatherSafetyPanel];
+      NSLayoutConstraint *contentHeight = [self.weatherSafetyPanel.heightAnchor constraintEqualToAnchor:self.weatherSafetyLabel.heightAnchor constant:20];
+      contentHeight.priority = UILayoutPriorityDefaultHigh;
+      [NSLayoutConstraint activateConstraints:@[
+        [self.weatherSafetyPanel.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:96],
+        [self.weatherSafetyPanel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
+        [self.weatherSafetyPanel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+        [self.weatherSafetyPanel.heightAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.heightAnchor multiplier:0.30],
+        contentHeight,
+        [self.weatherSafetyLabel.topAnchor constraintEqualToAnchor:self.weatherSafetyPanel.contentLayoutGuide.topAnchor constant:10],
+        [self.weatherSafetyLabel.bottomAnchor constraintEqualToAnchor:self.weatherSafetyPanel.contentLayoutGuide.bottomAnchor constant:-10],
+        [self.weatherSafetyLabel.leadingAnchor constraintEqualToAnchor:self.weatherSafetyPanel.contentLayoutGuide.leadingAnchor constant:12],
+        [self.weatherSafetyLabel.trailingAnchor constraintEqualToAnchor:self.weatherSafetyPanel.contentLayoutGuide.trailingAnchor constant:-12],
+        [self.weatherSafetyLabel.widthAnchor constraintEqualToAnchor:self.weatherSafetyPanel.frameLayoutGuide.widthAnchor constant:-24]
+      ]];
       sActiveController = self;
       if (sLastRailJSON) [self.railOverlay applySnapshotJSON:sLastRailJSON];
     });
@@ -250,7 +303,10 @@ static NSString *sLastRailJSON = nil;
   [self.voiceSpeaker stop];
   [self.railOverlay detach];
   self.railOverlay = nil;
-  if (sActiveController == self) { sActiveController = nil; sLastRailJSON = nil; } // 다음 주행에 지난 위험이 남지 않게
+  if (sActiveController == self) { sActiveController = nil; sLastRailJSON = nil; sLastWeatherText = nil; } // 다음 주행에 지난 위험이 남지 않게
+  [self.weatherSafetyPanel removeFromSuperview];
+  self.weatherSafetyPanel = nil;
+  self.weatherSafetyLabel = nil;
   self.eventHandler = nil;
   [NSNotificationCenter.defaultCenter removeObserver:self];
   self.naviView.guideStateDelegate = nil;
@@ -322,7 +378,10 @@ static NSString *sLastRailJSON = nil;
   self.lastLocationEmit = now;
   DoublePoint p = [KNSDK.sharedInstance convertKATECToWGS84WithX:(SInt32)llround(gps.pos.x) y:(SInt32)llround(gps.pos.y)]; // x: 경도, y: 위도
   self.eventHandler(@{ @"kind": @"location", @"lat": @(p.y), @"lng": @(p.x), @"speedKmh": @(gps.speed), @"angle": @(gps.angle),
-                       @"hdop": @(gps.hdop), @"posTrust": @(gps.posTrust), @"valid": @(gps.valid) });
+                       @"hdop": @(gps.hdop), @"posTrust": @(gps.posTrust), @"valid": @(gps.valid),
+                       // The public iOS KNGPSData contract exposes no measurement date.
+                       // JS reuses the existing Expo GPS measurement; never substitute callback time.
+                       @"timestampMs": [NSNull null], @"timestampSource": @"unavailable" });
 }
 
 - (void)emitRoute:(NSString *)reason route:(KNRoute * _Nullable)route {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { speaker, ttsDebug } from '../lib/speech/speaker';
 import { SPEECH_LOCALES, speechLanguageOf } from '../lib/speech/speechLocale';
@@ -37,6 +37,7 @@ const FAILURE_KEYS: Record<string, string> = {
 const FIX_TIMEOUT_MS = 15_000;
 
 export function NativeNavigationScreen() {
+  const focused=useIsFocused();
   const { t, i18n } = useTranslation();
   useEffect(() => onNativeNavigationLanguageChanged(language => { void i18n.changeLanguage(language); }), [i18n]);
   const router = useRouter();
@@ -46,7 +47,7 @@ export function NativeNavigationScreen() {
   // 카카오 내비 SDK 화면이 떠 있는 동안(iOS는 모달 presentViewController라 RN 루트와 같은 프로세스에 남아있다) true.
   const [navigating, setNavigating] = useState(false);
   // 경로를 안 들고 있어 useRouteZones(경로 기반)를 못 쓰니, 현재 위치만으로 보호구역 여부를 따로 추적한다.
-  const { inZone: inProtectionZone, speedKmh } = useNearbyProtectionZoneStatus(navigating);
+  const { inZone: inProtectionZone, speedKmh,fix:weatherFallbackFix } = useNearbyProtectionZoneStatus(navigating);
   const [spikeReport, setSpikeReport] = useState<SpikeReport | null>(null); // SPIKE(임시)
   const pending = useRef<Promise<NativeNavigationResult> | null>(null);
   // navigation 은 탭 화면이라 홈으로 돌아가도 이 화면이 남는다. 다시 들어올 때마다(포커스) 새 안내 요청으로 처음부터 시작한다.
@@ -140,8 +141,8 @@ export function NativeNavigationScreen() {
   return <SafeAreaView style={styles.root}>
     {/* 전방 비전 경고(ADR 0002). 카카오 내비 SDK 화면이 이 화면을 모달로 덮는 동안에도 진동은 울린다 - 배너는
         SDK 화면 아래 깔려 안 보인다(네이티브 오버레이 작업이 따로 필요, 지금은 범위 밖). */}
-    <VisionHazardController enabled={navigating} inProtectionZone={inProtectionZone} speedKmh={speedKmh} />
-    {Platform.OS !== 'web' && <NativeHazardRailBridge />}
+    <VisionHazardController enabled={focused && navigating} inProtectionZone={inProtectionZone} speedKmh={speedKmh} />
+    {Platform.OS !== 'web' && focused && <NativeHazardRailBridge fallbackFix={weatherFallbackFix} />}
     {diagnostics && <diagnostics.SpikeProbe />}{/* Debug only */}
     <View style={styles.card}>
       {!error && <ActivityIndicator color={colors.brand} size="large" />}

@@ -1,0 +1,51 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.tikkeuldata.vision'
+version = '0.1.0'
+
+android {
+  namespace 'com.tikkeuldata.vision'
+  defaultConfig {
+    minSdkVersion 26
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
+}
+
+dependencies {
+  implementation 'androidx.core:core-ktx:1.17.0'
+
+  // CameraX: 후면 카메라 프레임(ImageAnalysis)과 선택적 미리보기(PreviewView)
+  implementation 'androidx.camera:camera-core:1.5.3'
+  implementation 'androidx.camera:camera-camera2:1.5.3'
+  implementation 'androidx.camera:camera-lifecycle:1.5.3'
+  implementation 'androidx.camera:camera-view:1.5.3'
+  // 카메라를 Activity 가 아니라 앱 프로세스 수명에 묶는다(카카오 내비 Activity 가 앞에 있어도 탐지 유지)
+  // 앱의 다른 라이브러리(Expo 버전 카탈로그)가 이미 2.10.0 으로 고정하므로 같은 버전을 선언한다.
+  implementation 'androidx.lifecycle:lifecycle-process:2.10.0'
+
+  // LiteRT(구 TensorFlow Lite) Interpreter: 기기 내 YOLO 추론
+  implementation 'com.google.ai.edge.litert:litert:1.4.2'
+
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.json:json:20240303'
+}
+
+// 모델(kickboard_v3.tflite)과 labels.txt 는 Git 에 없다. 팀원이 빌드할 때 빠졌다는 걸 바로 알 수 있게 경고를 낸다(빌드는 막지 않는다:
+// 모델이 없으면 앱은 정상 실행되고 비전 탐지만 onError 로 "model file not found" 를 알린다). 배치 방법: docs/ANDROID_VISION_DETECTOR.md
+def visionAssetsDir = file('src/main/assets/vision')
+tasks.matching { it.name == 'preBuild' }.configureEach {
+  doFirst {
+    ['kickboard_v3.tflite', 'labels.txt'].each { name ->
+      if (!new File(visionAssetsDir, name).exists()) {
+        // 콘솔 인코딩 때문에 한글이 깨지므로 ASCII 로 쓴다.
+        logger.warn("[vision-detector] WARNING: ${name} is missing in android/src/main/assets/vision/ - Android vision detection will report 'model file not found'. See docs/ANDROID_VISION_DETECTOR.md")
+      }
+    }
+  }
+}

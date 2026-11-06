@@ -45,6 +45,9 @@ export const speaker = createSpeaker({
   onEvent: __DEV__ ? ttsDebug : undefined,
 });
 
+/** Read-only arbitration for lower-priority safety notices; all speech still uses speaker. */
+export const isSpeechBusy = () => Speech.isSpeakingAsync();
+
 void speaker.changeLanguage(i18n.language);
 i18n.on('languageChanged', (language) => {
   void speaker.changeLanguage(language);

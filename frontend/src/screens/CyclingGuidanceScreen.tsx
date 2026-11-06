@@ -14,6 +14,7 @@ import { Icon } from '../components/ui/Icon';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { RoundButton } from '../components/ui/RoundButton';
 import { VisionHazardController } from '../components/vision/VisionHazardController';
+import { WeatherSafetyBanner } from '../components/alerts/WeatherSafetyBanner';
 import { displayEta } from '../lib/navigation/guidanceDisplay';
 import { RIDE_POLICY, toNavRoute, type LatLng, type NavRoute } from '../lib/navigation/guidanceEngine';
 import { clearRideRequest, getRideRequest } from '../lib/navigation/guidanceSession';
@@ -191,6 +192,7 @@ export function CyclingGuidanceScreen() {
         inProtectionZone={inProtectionZone}
         speedKmh={snapshot?.speedMps != null ? snapshot.speedMps * 3.6 : null}
       />
+      <WeatherSafetyBanner active={visionEnabled} cameraActive={visionEnabled} route={speechRoute} fix={position} progressM={snapshot?.progressM??null} />
 
       <View style={[styles.top, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.column}>

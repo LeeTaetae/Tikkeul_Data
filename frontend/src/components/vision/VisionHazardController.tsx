@@ -5,6 +5,7 @@ import { StyleSheet, Vibration } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { VisionHazardAlert } from '../alerts/VisionHazardAlert';
+import { PortalCandidateOverlay, usePortalCandidates } from './PortalCandidateOverlay';
 import { VisionDetectorView, type RawDetectionEvent } from '../../native/visionDetectorView';
 import { speaker } from '../../lib/speech/speaker';
 import { sensitivityProfileFor } from '../../lib/vision/sensitivityProfile';
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function VisionHazardController({ enabled, inProtectionZone, speedKmh }: Props) {
+  const portals = usePortalCandidates(enabled);
   const { t, i18n } = useTranslation();
   const [state, setState] = useState<VisionFrameState>(INITIAL_VISION_FRAME_STATE);
   const [closed, setClosed] = useState(false);
@@ -77,7 +79,9 @@ export function VisionHazardController({ enabled, inProtectionZone, speedKmh }: 
 
   return (
     <>
-      <VisionDetectorView style={styles.hidden} targetFps={profile.targetFps} onDetections={onDetections} onError={onError} />
+      <VisionDetectorView style={styles.hidden} targetFps={profile.targetFps} onDetections={onDetections} onError={onError}
+        portalCandidatesEnabled onPortalFrame={portals.onPortalFrame} />
+      <PortalCandidateOverlay sample={portals.sample} boxes={false} />
       {!closed && state.stage !== 'advance' && state.topClass && (
         <VisionHazardAlert hazardClass={state.topClass} stage={state.stage} onClose={() => setClosed(true)} />
       )}

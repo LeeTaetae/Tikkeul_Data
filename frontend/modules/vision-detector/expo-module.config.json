@@ -1,1 +1,1 @@
-{"platforms":["apple"],"apple":{"modules":["VisionDetectorModule"]}}
+{"platforms":["apple","android"],"apple":{"modules":["VisionDetectorModule"]},"android":{"modules":["com.tikkeuldata.vision.VisionDetectorModule"]}}

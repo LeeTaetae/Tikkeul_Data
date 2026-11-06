@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     its_prediction_api_key: Optional[SecretStr] = None
     its_caution_api_key: Optional[SecretStr] = None
     protection_zone_service_key: Optional[SecretStr] = None
+    # 기상청 단기예보 조회서비스(초단기실황) 공공데이터포털 서비스키. 터널·교량 접근 시 비·눈·저온 판단에만 쓴다. 서버에서만 쓴다.
+    kma_service_key: Optional[SecretStr] = None
     # 좌표 -> 시군구코드 변환(Kakao Local). 서버에서만 쓰고 프런트엔드에는 내보내지 않는다.
     kakao_rest_api_key: Optional[SecretStr] = None
     gemini_api_key: Optional[SecretStr] = None
@@ -31,6 +33,10 @@ class Settings(BaseSettings):
     its_relay_token: Optional[SecretStr] = None
     protection_zone_url: str = "https://apis.data.go.kr/1320000/safetyzonedtlinfo/getdtllist"
     kakao_region_url: str = "https://dapi.kakao.com/v2/local/geo/coord2regioncode.json"
+    kma_nowcast_url: str = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+    kma_ultra_forecast_url: str = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst"
+    kma_village_forecast_url: str = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+    kma_min_interval_s: float = 0.5
     http_timeout_s: float = 15.0
 
     # 캐시 TTL(초). 공식 문서에 갱신 주기가 없어 2026-10-28 실측으로 정한 값이다(README 참고).
@@ -40,6 +46,8 @@ class Settings(BaseSettings):
     ttl_flow_s: int = 120
     ttl_prediction_s: int = 600
     ttl_protection_s: int = 86400
+    # 초단기실황은 10분마다 갱신된다(정시 생성, 10분 후 제공).
+    ttl_weather_s: int = 600
     # 업스트림이 실패했을 때 마지막 성공 결과를 stale=true 로 계속 내주는 최대 시간
     max_stale_s: int = 1800
 

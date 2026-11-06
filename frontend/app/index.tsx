@@ -995,6 +995,12 @@ export default function HomeScreen() {
               <Text style={styles.devVisionTestText}>{t('auth.adminTitle')}</Text>
             </Pressable>
           )}
+          {__DEV__ && (
+            // as never: expo-router 의 자동 생성 라우트 타입(.expo/types)은 expo start 때 갱신되어, 새 개발 화면은 그 전까지 타입에 없다.
+            <Pressable onPress={() => router.push('/guidance-capture' as never)} style={styles.devVisionTestButton}>
+              <Text style={styles.devVisionTestText}>[DEV] onGuidance 진단 열기</Text>
+            </Pressable>
+          )}
           {showPlanner ? (
             // 출발/도착 두 줄 — 출발은 기본값 "내 위치"(지도에서 고르면 그 라벨), 도착은 검색 중엔 입력창, 경로가 잡히면 텍스트+닫기로 바뀐다.
             // 출발은 동그라미, 도착은 핀 모양으로 구분한다(색만으로 구분하지 않는다).

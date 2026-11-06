@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NavigationHazardAlert } from '../src/components/alerts/NavigationHazardAlert';
 import { VisionHazardController } from '../src/components/vision/VisionHazardController';
+import { WeatherSafetyBanner } from '../src/components/alerts/WeatherSafetyBanner';
 import { HazardRail, RAIL_ITEM_HEIGHT, RAIL_ITEM_HEIGHT_COMPACT, RAIL_OVERFLOW_HEIGHT } from '../src/components/navigation/HazardRail';
 import { NavBottomPanel } from '../src/components/navigation/NavBottomPanel';
 import { NavStatus } from '../src/components/navigation/NavStatus';
@@ -400,7 +401,9 @@ function WebGuidanceScreen() {
       </View>
 
       {/* 전방 비전 경고(ADR 0002). 화면엔 카메라를 띄우지 않고 배너·진동만 낸다. iOS 전용(네이티브 모듈 미구현 플랫폼은 no-op). */}
-      <VisionHazardController enabled={showSpeed} inProtectionZone={inProtectionZone} speedKmh={speedKmh} />
+      <VisionHazardController enabled={focused && showSpeed} inProtectionZone={inProtectionZone} speedKmh={speedKmh} />
+      <WeatherSafetyBanner active={speechActive} cameraActive={focused && showSpeed} route={hazard.hazardRoute}
+        fix={position} progressM={snapshot?.progressM??null} blocked={!!hazard.warning} />
 
       {/* 위험 경고는 하단 패널 바로 위에 올려놓는다(NavigationHazardAlert 의 bottomOffset). */}
       {showAlert && hazard.warning && (
