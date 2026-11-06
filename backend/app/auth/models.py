@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import field_validator
 from sqlmodel import Field, SQLModel, UniqueConstraint
@@ -88,6 +88,10 @@ class UserPublic(SQLModel):
     role: str = "user"
     status: str = "active"
     created_at: datetime
+
+
+class UserStatusUpdate(SQLModel):
+    status: Literal["active", "disabled"]
 
 
 class TokenResponse(SQLModel):

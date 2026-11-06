@@ -1,3 +1,5 @@
+from typing import List
+
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth.store import user_session
@@ -23,6 +25,7 @@ from app.auth.models import (
     TokenResponse,
     User,
     UserPublic,
+    UserStatusUpdate,
     normalize_email,
 )
 from app.auth.social import find_or_create_social_user, verify_google_id_token, verify_kakao_access_token
@@ -105,7 +108,7 @@ def login(body: LoginRequest, request: Request) -> TokenResponse:
     return _password_login(body, request)
 
 
-def _password_login(body: LoginRequest, request: Request, admin_only: bool = False) -> TokenResponse:
+def _password_login(body: LoginRequest, request: Request) -> TokenResponse:
     settings = request.app.state.settings
     with user_session(request) as session:
         user = session.by_email(body.email)
@@ -113,8 +116,6 @@ def _password_login(body: LoginRequest, request: Request, admin_only: bool = Fal
             raise api_error("INVALID_CREDENTIALS")
         if user.status != "active":
             raise api_error("ACCOUNT_DISABLED")
-        if admin_only and user.role != "admin":
-            raise api_error("FORBIDDEN")
         token = create_access_token(user.id, settings)
         return TokenResponse(
             access_token=token,
@@ -272,11 +273,28 @@ def reset_password(body: PasswordResetRequest, request: Request) -> UserPublic:
         return UserPublic.model_validate(user)
 
 
-@router.post("/admin/login", response_model=TokenResponse)
-def admin_login(body: LoginRequest, request: Request) -> TokenResponse:
-    return _password_login(body, request, admin_only=True)
-
-
 @router.get("/admin/me", response_model=UserPublic)
 def admin_me(user: User = Depends(get_admin_user)) -> UserPublic:
     return UserPublic.model_validate(user)
+
+
+@router.get("/admin/users", response_model=List[UserPublic])
+def admin_list_users(request: Request, _: User = Depends(get_admin_user)) -> List[UserPublic]:
+    with user_session(request) as session:
+        return [UserPublic.model_validate(u) for u in session.all_users()]
+
+
+@router.patch("/admin/users/{user_id}/status", response_model=UserPublic)
+def admin_set_user_status(user_id: int, body: UserStatusUpdate, request: Request, admin: User = Depends(get_admin_user)) -> UserPublic:
+    # 자기 계정을 막으면 관리자 화면에서 바로 쫓겨나고 되돌릴 사람이 없을 수 있다.
+    if user_id == admin.id and body.status == "disabled":
+        raise api_error("CANNOT_DISABLE_SELF")
+    with user_session(request) as session:
+        user = session.get(User, user_id)
+        if user is None:
+            raise api_error("USER_NOT_FOUND")
+        user.status = body.status
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return UserPublic.model_validate(user)

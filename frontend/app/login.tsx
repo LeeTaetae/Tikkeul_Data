@@ -12,6 +12,7 @@ import { PrimaryButton } from '../src/components/ui/PrimaryButton';
 import { RoundButton } from '../src/components/ui/RoundButton';
 import { SocialButton } from '../src/components/ui/SocialButton';
 import { TextField } from '../src/components/ui/TextField';
+import type { AuthUser } from '../src/lib/auth/api';
 import { authErrorMessage } from '../src/lib/auth/errorMessage';
 import { useAuth } from '../src/lib/auth/AuthContext';
 import { isKakaoLoginAvailable } from '../src/native/kakaoLogin';
@@ -22,8 +23,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login, loginWithGoogle, loginWithKakao } = useAuth();
   // 비로그인 상태에서 로그인 전용 기능을 누르면 이 화면으로 오는데, 성공하면 원래 가려던 곳으로 돌려보낸다.
-  const { redirect, mode } = useLocalSearchParams<{ redirect?: string; mode?: string }>();
-  const [adminMode, setAdminMode] = useState(mode === 'admin');
+  const { redirect } = useLocalSearchParams<{ redirect?: string }>();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,15 +35,19 @@ export default function LoginScreen() {
 
   const canSubmit = email.trim().includes('@') && password.length > 0 && !submitting;
 
+  // 화면 이동만 role 로 나눈다. 관리자 API 권한은 서버(get_admin_user)가 요청마다 다시 확인한다.
+  const goAfterLogin = (user: AuthUser, fallback: () => void) => {
+    if (user.role === 'admin') router.replace('/admin' as never);
+    else if (redirect) router.replace(redirect as never);
+    else fallback();
+  };
+
   const onSubmit = async () => {
     if (!canSubmit) return;
     setError(null);
     setSubmitting(true);
     try {
-      const user = await login(email.trim(), password, adminMode);
-      if (user.role === 'admin') router.replace('/admin' as never);
-      else if (redirect) router.replace(redirect as never);
-      else router.replace('/');
+      goAfterLogin(await login(email.trim(), password), () => router.replace('/'));
     } catch (e) {
       setError(authErrorMessage(e, t));
     } finally {
@@ -56,9 +60,7 @@ export default function LoginScreen() {
     setError(null);
     setGoogleSubmitting(true);
     try {
-      await loginWithGoogle();
-      if (redirect) router.replace(redirect as never);
-      else router.back();
+      goAfterLogin(await loginWithGoogle(), () => router.back());
     } catch (e) {
       // 사용자가 구글 로그인 창을 취소한 경우는 오류가 아니다.
       if ((e as { code?: string })?.code !== 'GOOGLE_SIGNIN_CANCELLED') setError(authErrorMessage(e, t));
@@ -72,9 +74,7 @@ export default function LoginScreen() {
     setError(null);
     setKakaoSubmitting(true);
     try {
-      await loginWithKakao();
-      if (redirect) router.replace(redirect as never);
-      else router.back();
+      goAfterLogin(await loginWithKakao(), () => router.back());
     } catch (e) {
       // 사용자가 카카오 로그인 창을 취소한 경우는 오류가 아니다.
       if ((e as { code?: string })?.code !== 'KAKAO_LOGIN_CANCELLED') setError(authErrorMessage(e, t));
@@ -91,10 +91,7 @@ export default function LoginScreen() {
 
       <View style={styles.header}>
         <Logo />
-        <Text style={styles.subtitle}>{adminMode ? t('auth.adminLoginTitle') : t('auth.loginSubtitle')}</Text>
-        <Text style={styles.link} onPress={() => { setAdminMode(!adminMode); setError(null); }}>
-          {adminMode ? t('auth.userLoginTitle') : t('auth.adminLoginTitle')}
-        </Text>
+        <Text style={styles.subtitle}>{t('auth.loginSubtitle')}</Text>
       </View>
 
       <View style={styles.form}>
@@ -133,13 +130,13 @@ export default function LoginScreen() {
         loading={submitting}
       />
 
-      {!adminMode && <View style={styles.dividerRow}>
+      <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
         <Text style={styles.dividerText}>{t('auth.orDivider')}</Text>
         <View style={styles.dividerLine} />
-      </View>}
+      </View>
 
-      {!adminMode && Platform.OS !== 'web' && (
+      {Platform.OS !== 'web' && (
         <SocialButton
           icon={<GoogleIcon />}
           label={googleSubmitting ? t('auth.loggingInGoogle') : t('auth.loginWithGoogle')}
@@ -152,7 +149,7 @@ export default function LoginScreen() {
         />
       )}
 
-      {!adminMode && isKakaoLoginAvailable() && (
+      {isKakaoLoginAvailable() && (
         <SocialButton
           icon={<KakaoIcon />}
           label={kakaoSubmitting ? t('auth.loggingInKakao') : t('auth.loginWithKakao')}
@@ -164,12 +161,12 @@ export default function LoginScreen() {
         />
       )}
 
-      {!adminMode && <View style={styles.footer}>
+      <View style={styles.footer}>
         <Text style={styles.footerText}>{t('auth.noAccount')}</Text>
         <Text style={styles.link} onPress={() => router.replace(redirect ? { pathname: '/signup', params: { redirect } } : '/signup')}>
           {t('auth.goSignup')}
         </Text>
-      </View>}
+      </View>
     </Screen>
   );
 }

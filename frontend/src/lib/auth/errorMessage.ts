@@ -7,6 +7,8 @@ export function authErrorMessage(error: unknown, t: TFunction): string {
   if (error instanceof ApiClientError) {
     if (error.code === 'FORBIDDEN') return t('auth.adminRequired');
     if (error.code === 'ACCOUNT_DISABLED') return t('auth.accountDisabled');
+    if (error.code === 'CANNOT_DISABLE_SELF') return t('auth.adminCannotDisableSelf');
+    if (error.code === 'USER_NOT_FOUND') return t('auth.adminUserNotFound');
     if (error.code === 'AUTH_DB_UNAVAILABLE') return t('auth.networkError');
     if (error.code === 'EMAIL_TAKEN') return t('auth.emailTaken');
     if (error.code === 'INVALID_CREDENTIALS') return t('auth.loginFailed');

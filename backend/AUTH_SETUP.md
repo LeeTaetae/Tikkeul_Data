@@ -53,9 +53,10 @@ password with the command above, then delete the initial password file.
 `admin@test.com` is a local development administrator, not an email address whose
 ownership was verified through Resend; do not use it as a production identity.
 
-The login screen has a separate administrator mode. Normal and social login also
-return the account's role. `/api/auth/admin/login` requires valid local credentials
-and the admin role. `/api/auth/admin/me` rechecks the current role and account status
+There is one login screen. Password and social login return the account's role,
+and the app sends admin accounts to the admin page (navigation only, not a
+security check). `/api/auth/admin/me`, `/api/auth/admin/users` and other admin APIs
+require the admin role via `get_admin_user`. `/api/auth/admin/me` rechecks the current role and account status
 in the database on every request, so demotion and suspension apply to existing JWTs.
 This page confirms administrator access; user-management features are not included.
 

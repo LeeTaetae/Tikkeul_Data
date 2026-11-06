@@ -48,3 +48,11 @@ test('박스가 화면 바닥을 넘어서도(가장 가까운 경우) ROI 밖�
   assert.equal(isInRoi(d.box, DEFAULT_ROI), true);
   assert.equal(stageOfDetection(d), 'final');
 });
+
+test('옆 차선·인도(화면 가장자리 아래쪽)의 가까운 객체는 ROI 밖이다', () => {
+  // 주행 영상에서 주차된 차·인도 보행자가 바닥 폭 90% ROI에 걸려 경고가 떴다(ml/eval_video.py).
+  const parkedRight = { x: 0.8, y: 0.5, width: 0.2, height: 0.4 }; // 바닥-중앙 (0.9, 0.9)
+  const sidewalkLeft = { x: 0.05, y: 0.6, width: 0.1, height: 0.3 }; // 바닥-중앙 (0.1, 0.9)
+  assert.equal(isInRoi(parkedRight, DEFAULT_ROI), false);
+  assert.equal(isInRoi(sidewalkLeft, DEFAULT_ROI), false);
+});

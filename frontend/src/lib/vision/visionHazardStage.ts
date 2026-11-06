@@ -11,7 +11,10 @@ export interface RoiTrapezoid {
 }
 
 // 화면 하단-중앙(차량이 실제로 지나갈 도로 경로). docs/ADR/0002 참고.
-export const DEFAULT_ROI: RoiTrapezoid = { topY: 0.55, topHalfWidth: 0.12, bottomY: 1.0, bottomHalfWidth: 0.45 };
+// 바닥 폭 90%(반폭 0.45)였을 때 주행 영상(ml/eval_video.py, 크라쿠프 시내 5분)에서 주차된 차·반대 차선·인도
+// 보행자까지 ROI 안으로 잡혀 최종 경고가 80회 떴다. 내 차선 폭(바닥 50%)으로 좁히니 5회로 줄고, 앞을
+// 가로지르는 트램·횡단보도 보행자는 계속 잡았다. 블랙박스 화각 기준이라 폰 거치대에서는 실기기로 다시 맞춘다.
+export const DEFAULT_ROI: RoiTrapezoid = { topY: 0.55, topHalfWidth: 0.05, bottomY: 1.0, bottomHalfWidth: 0.25 };
 
 // MVP 임시 기준(실측 보정 전까지). box.height(정규화) 가 클수록 카메라에 가깝다(=가까워짐)로 본다.
 export const BOX_HEIGHT_RATIO = { approach: 0.18, final: 0.32 } as const;
