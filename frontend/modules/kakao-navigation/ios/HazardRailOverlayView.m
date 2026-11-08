@@ -60,6 +60,14 @@ static UIColor *TKHex(uint32_t rgb) {
 @property(nonatomic) BOOL hasApplied;
 @property(nonatomic, copy, nullable) NSString *appliedKey;
 @property(nonatomic) CGFloat columnHeight;
+@property(nonatomic, copy, nullable) NSDictionary *warning;
+@property(nonatomic, copy, nullable) NSString *shownWarningKey;
+@property(nonatomic, strong, nullable) UIView *warningView;
+@property(nonatomic) NSUInteger warningGeneration;
+@property(nonatomic, copy, nullable) NSString *detailKey;
+@property(nonatomic, strong, nullable) UIView *detailView;
+@property(nonatomic) CGFloat detailTop;
+@property(nonatomic) NSUInteger detailGeneration;
 @end
 
 @implementation HazardRailOverlayView
@@ -68,7 +76,7 @@ static UIColor *TKHex(uint32_t rgb) {
   self = [super initWithFrame:CGRectZero];
   if (self) {
     _language = [@[@"ko", @"en", @"zh"] containsObject:language] ? [language copy] : @"ko";
-    self.userInteractionEnabled = NO;
+    self.userInteractionEnabled = YES; // 카드·상세·배너만 받는다(hitTest 참고)
     self.backgroundColor = UIColor.clearColor;
     self.clipsToBounds = NO;
     _column = [[UIView alloc] initWithFrame:CGRectZero];
@@ -92,7 +100,15 @@ static UIColor *TKHex(uint32_t rgb) {
   }];
 }
 
+// 카드·상세·배너 밖의 터치는 nil 을 돌려 아래 SDK 화면으로 보낸다
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+  UIView *hit = [super hitTest:point withEvent:event];
+  return (hit == self || hit == self.column) ? nil : hit;
+}
+
 - (void)detach {
+  [self hideDetail];
+  [self hideWarning];
   [self.timer invalidate];
   self.timer = nil;
   [self removeFromSuperview];
@@ -106,6 +122,8 @@ static UIColor *TKHex(uint32_t rgb) {
   dispatch_async(dispatch_get_main_queue(), ^{
     [self setDataFromJSON:json];
     [self relayoutForce:YES];
+    [self showWarning:self.warning];
+    [self refreshDetail];
   });
 }
 
@@ -113,6 +131,7 @@ static UIColor *TKHex(uint32_t rgb) {
 - (void)setDataFromJSON:(NSString *)json {
   self.items = nil;
   self.overflow = 0;
+  self.warning = nil;
   if (![json isKindOfClass:NSString.class]) return;
   NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
   if (!data) return;
@@ -127,9 +146,15 @@ static UIColor *TKHex(uint32_t rgb) {
     NSString *zone = [raw[@"zoneType"] isKindOfClass:NSString.class] ? raw[@"zoneType"] : @"";
     NSString *emphasis = [raw[@"emphasis"] isKindOfClass:NSString.class] ? raw[@"emphasis"] : @"normal";
     NSInteger distance = [raw[@"distanceM"] isKindOfClass:NSNumber.class] ? [raw[@"distanceM"] integerValue] : 0;
-    [out addObject:@{ @"type": type, @"zoneType": zone, @"emphasis": emphasis, @"distanceM": @(distance) }];
+    NSString *key = [raw[@"key"] isKindOfClass:NSString.class] ? raw[@"key"] : @"";
+    NSString *detail = [raw[@"detail"] isKindOfClass:NSString.class] ? raw[@"detail"] : @"";
+    [out addObject:@{ @"key": key, @"type": type, @"zoneType": zone, @"emphasis": emphasis, @"distanceM": @(distance), @"detail": detail }];
   }
   self.items = out;
+  NSDictionary *warning = root[@"warning"];
+  if ([warning isKindOfClass:NSDictionary.class] && [warning[@"key"] isKindOfClass:NSString.class] && [warning[@"text"] isKindOfClass:NSString.class] && [warning[@"key"] length] && [warning[@"text"] length]) {
+    self.warning = @{ @"key": warning[@"key"], @"text": warning[@"text"] };
+  }
   self.overflow = MAX(0, [root[@"overflow"] integerValue]);
 }
 
@@ -200,7 +225,7 @@ static UIColor *TKHex(uint32_t rgb) {
   if (plan.tiles > 0) {
     for (NSInteger i = 0; i < plan.tiles && i < (NSInteger)self.items.count; i++) {
       NSDictionary *it = self.items[i];
-      [key appendFormat:@"%@/%@/%@/%@;", it[@"type"], it[@"zoneType"], it[@"emphasis"], it[@"distanceM"]];
+      [key appendFormat:@"%@/%@/%@/%@/%@/%lu;", it[@"key"], it[@"type"], it[@"zoneType"], it[@"emphasis"], it[@"distanceM"], (unsigned long)[it[@"detail"] hash]];
     }
     [key appendFormat:@"%ld", (long)(self.overflow + (NSInteger)self.items.count - plan.tiles)];
   }
@@ -409,6 +434,9 @@ static UIColor *TKHex(uint32_t rgb) {
   }
   tile.isAccessibilityElement = YES;
   tile.accessibilityLabel = [NSString stringWithFormat:@"%@ %@", name, distance];
+  tile.accessibilityTraits = UIAccessibilityTraitButton;
+  tile.accessibilityIdentifier = item[@"key"];
+  [tile addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tileTapped:)]];
 
   // 위에서부터 아이콘 → 위험 유형 이름 → 거리
   CAShapeLayer *icon = [CAShapeLayer layer];
@@ -438,6 +466,118 @@ static UIColor *TKHex(uint32_t rgb) {
     [tile addSubview:badge];
   }
   return tile;
+}
+
+// ── 아이콘 선택 상세 / 단계 안내 배너 ─────────────────────────────────────────────────────
+// 둘 다 JS 가 보낸 문장을 보여 줄 뿐이다. Android(HazardRailOverlay.kt)와 같은 규칙을 따른다.
+static const NSTimeInterval kDetailSeconds = 10;
+static const NSTimeInterval kWarningSeconds = 8;
+
+- (void)tileTapped:(UITapGestureRecognizer *)tap {
+  NSString *key = tap.view.accessibilityIdentifier;
+  if (key.length == 0) return;
+  if ([self.detailKey isEqualToString:key]) { [self hideDetail]; return; }
+  self.detailKey = key;
+  self.detailTop = [self convertRect:tap.view.bounds fromView:tap.view].origin.y;
+  [self showDetail];
+}
+
+- (NSDictionary *)itemForKey:(NSString *)key {
+  for (NSDictionary *it in self.items) if ([it[@"key"] isEqualToString:key]) return it;
+  return nil;
+}
+
+- (void)showDetail {
+  NSDictionary *item = self.detailKey ? [self itemForKey:self.detailKey] : nil;
+  if (!item) { [self hideDetail]; return; } // 지나간 위험이면 상세도 닫는다
+  [self.detailView removeFromSuperview];
+  NSArray<NSNumber *> *tone = [HazardRailOverlayView tones][item[@"type"]] ?: [HazardRailOverlayView tones][@"accident"];
+  UIEdgeInsets inset = self.host.safeAreaInsets;
+  CGFloat x = inset.left + kLeftInset + kTileW + 8;
+  CGFloat width = MIN(280, self.bounds.size.width - x - 12 - inset.right);
+  UIView *panel = [[UIView alloc] init];
+  panel.backgroundColor = UIColor.whiteColor;
+  panel.layer.cornerRadius = 12;
+  panel.layer.borderWidth = 2;
+  panel.layer.borderColor = TKHex(tone[1].unsignedIntValue).CGColor;
+  UILabel *label = [[UILabel alloc] init];
+  label.numberOfLines = 0;
+  label.textColor = TKHex(0x1E293B);
+  NSString *title = [NSString stringWithFormat:@"%@ · %@", [self nameForItem:item], [self distanceText:[item[@"distanceM"] integerValue]]];
+  NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title attributes:@{ NSFontAttributeName: [UIFont systemFontOfSize:15 weight:UIFontWeightBold] }];
+  if ([item[@"detail"] length]) [text appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n" stringByAppendingString:item[@"detail"]] attributes:@{ NSFontAttributeName: [UIFont systemFontOfSize:13] }]];
+  label.attributedText = text;
+  CGSize fit = [label sizeThatFits:CGSizeMake(width - 24, CGFLOAT_MAX)];
+  CGFloat height = ceil(fit.height) + 20;
+  CGFloat y = MAX(0, MIN(self.detailTop, self.bounds.size.height - height - inset.bottom - 8));
+  panel.frame = CGRectMake(x, y, width, height);
+  label.frame = CGRectMake(12, 10, width - 24, ceil(fit.height));
+  [panel addSubview:label];
+  panel.isAccessibilityElement = YES;
+  panel.accessibilityLabel = text.string;
+  [panel addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(hideDetail)]];
+  [self addSubview:panel];
+  self.detailView = panel;
+  NSUInteger generation = ++self.detailGeneration;
+  __weak typeof(self) weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kDetailSeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (weakSelf.detailGeneration == generation) [weakSelf hideDetail];
+  });
+}
+
+/** 스냅샷이 바뀌었을 때: 선택한 위험이 지나가 목록에서 빠졌으면 닫고, 아니면 거리·문장을 갱신한다 */
+- (void)refreshDetail {
+  if (self.detailKey) [self showDetail];
+}
+
+- (void)hideDetail {
+  self.detailGeneration++;
+  [self.detailView removeFromSuperview];
+  self.detailView = nil;
+  self.detailKey = nil;
+}
+
+- (void)showWarning:(NSDictionary *)warning {
+  if (!warning) return; // 표시는 일정 시간 뒤 스스로 닫힌다
+  NSString *key = warning[@"key"];
+  if ([key isEqualToString:self.shownWarningKey]) return; // 같은 위험의 같은 단계는 한 번만
+  self.shownWarningKey = key;
+  [self hideWarning];
+  UIEdgeInsets inset = self.host.safeAreaInsets;
+  CGFloat top = inset.top + 96;
+  UIView *avoid = self.topAvoidView;
+  if (avoid && !avoid.hidden && avoid.superview) top = MAX(top, CGRectGetMaxY([self convertRect:avoid.bounds fromView:avoid]));
+  top += 8;
+  CGFloat width = self.bounds.size.width - 32;
+  UILabel *label = [[UILabel alloc] init];
+  label.numberOfLines = 0;
+  label.textAlignment = NSTextAlignmentCenter;
+  label.textColor = UIColor.whiteColor;
+  label.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+  label.text = warning[@"text"];
+  CGSize fit = [label sizeThatFits:CGSizeMake(width - 28, CGFLOAT_MAX)];
+  UIView *banner = [[UIView alloc] initWithFrame:CGRectMake(16, top, width, ceil(fit.height) + 20)];
+  banner.backgroundColor = TKHex(0xDC2626);
+  banner.layer.cornerRadius = 12;
+  label.frame = CGRectMake(14, 10, width - 28, ceil(fit.height));
+  [banner addSubview:label];
+  banner.isAccessibilityElement = YES;
+  banner.accessibilityLabel = warning[@"text"];
+  [banner addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(hideWarning)]];
+  [self addSubview:banner];
+  self.warningView = banner;
+  UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, warning[@"text"]);
+  NSUInteger generation = ++self.warningGeneration;
+  __weak typeof(self) weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kWarningSeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (weakSelf.warningGeneration == generation) [weakSelf hideWarning];
+  });
+}
+
+- (void)hideWarning {
+  self.warningGeneration++;
+  [self.warningView removeFromSuperview];
+  self.warningView = nil;
 }
 
 @end

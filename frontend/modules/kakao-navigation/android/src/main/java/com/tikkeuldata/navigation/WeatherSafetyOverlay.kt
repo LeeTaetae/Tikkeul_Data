@@ -52,5 +52,7 @@ internal object WeatherSafetyOverlay {
       if(pending.isNotBlank())handler.postDelayed(expire,20_000)
     }
   }
+  /** 화면에 보이는 배너의 하단(px, 호스트 기준). 안 보이면 0. 다른 상단 배너가 그 아래에 놓이도록 쓴다 */
+  fun visibleBottomPx(): Int = panel?.takeIf { it.visibility == View.VISIBLE && it.height > 0 }?.let { it.top + it.height } ?: 0
   fun detach() { handler.removeCallbacks(expire);panel?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) };panel=null;label=null;pending="" }
 }

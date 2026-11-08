@@ -7,7 +7,7 @@ import type { VerifiedBridge } from './safety';
 import { validMeasurementTime } from '../navigation/nativeWeatherFix';
 
 export const FACILITY_MATCH_POLICY={rangeM:500,rangeReleaseM:540,nearM:100,passMarginM:20,
-  maxLateralM:30,routeLateralM:40,headingToleranceDeg:60,headingMaxAgeMs:10_000,
+  maxLateralM:30,midpointChordRatio:.06,midpointMaxM:120,routeLateralM:40,headingToleranceDeg:60,headingMaxAgeMs:10_000,
   minimumMotionM:12,ambiguityMarginM:8,cameraMaxAgeMs:1500,cameraGpsMaxSkewMs:3000};
 
 export interface FacilityApproach {
@@ -89,7 +89,11 @@ export function createFacilityMatcher() {
       if(chord<5||length/chord<.7||length/chord>1.5||angleDiffDeg(first.bearingDeg,bearingDeg(start,end))>p.headingToleranceDeg||
         angleDiffDeg(last.bearingDeg,bearingDeg(start,end))>p.headingToleranceDeg)continue;
       // Check the corridor midpoint too: endpoint proximity alone can select a detour.
-      const middle=candidates({lat:(a.lat+b.lat)/2,lng:(a.lng+b.lng)/2}).find(v=>v.offsetM>=first.offsetM&&v.offsetM<=last.offsetM);
+      // A curved tunnel's chord midpoint lies off the road by a fraction of the chord (Namsan 2: 50m on a 1.6km chord),
+      // so the allowance grows with the chord instead of staying at the 30m endpoint limit.
+      const midLimit=Math.min(FACILITY_MATCH_POLICY.midpointMaxM,Math.max(p.maxLateralM,chord*FACILITY_MATCH_POLICY.midpointChordRatio));
+      const middle=projectRouteCandidates(route,{latitude:(a.lat+b.lat)/2,longitude:(a.lng+b.lng)/2})
+        .filter(v=>v.lateralM<=midLimit).find(v=>v.offsetM>=first.offsetM&&v.offsetM<=last.offsetM);
       if(!middle)continue;
       spans.push({id,occurrence:`${id}@${Math.round(first.offsetM)}-${Math.round(last.offsetM)}`,name,bridge,a:start,b:end,entry:first.offsetM,exit:last.offsetM,fit:(pa.lateralM+pb.lateralM+middle.lateralM)/3});
       }
@@ -100,8 +104,11 @@ export function createFacilityMatcher() {
     const unique:Span[]=[];
     // Collapse duplicate IDs/near-identical endpoints without merging distinct parallel lanes.
     for(const span of spans.sort((a,b)=>a.fit-b.fit)){
-      if(unique.some(old=>old.bridge===span.bridge&&Math.abs(old.entry-span.entry)<5&&Math.abs(old.exit-span.exit)<5&&(old.id===span.id||
-        (haversineM(old.a,span.a)<3&&haversineM(old.b,span.b)<3))))continue;
+      // One facility projected onto adjacent route vertices yields near-identical candidates (entries a few metres apart);
+      // they are the same corridor, not parallel lanes, so only the best-fitting one is kept.
+      if(unique.some(old=>old.bridge===span.bridge&&(
+        (Math.abs(old.entry-span.entry)<5&&Math.abs(old.exit-span.exit)<5&&(old.id===span.id||(haversineM(old.a,span.a)<3&&haversineM(old.b,span.b)<3)))||
+        (old.id===span.id&&Math.abs(old.entry-span.entry)<p.maxLateralM&&Math.abs(old.exit-span.exit)<p.maxLateralM))))continue;
       unique.push(span);
     }
     const ambiguous=new Set<string>();

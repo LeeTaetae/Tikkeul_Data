@@ -77,9 +77,20 @@ test('유형이 다르면 각각 하나씩 보인다(사고·공사·정체·사
   assert.equal(new Set(reps.map((i) => i.type)).size, reps.length);
 });
 
-test('대표는 확정도를 거리보다 먼저 본다: 가까운 probable 보다 먼 confirmed 가 대표(같은 P등급)', () => {
+test('대표는 P등급보다 거리를 우선한다: 가까운 P2 사고가 먼 P0 사고보다 대표', () => {
+  const reps = pickTypeRepresentatives([item('far', 'accident', 'P0', 'confirmed', 1800), item('near', 'accident', 'P2', 'confirmed', 300)]);
+  assert.deepEqual(reps.map((i) => i.key), ['near']);
+});
+
+test('경로 관련성을 확인하지 못한(probable) 위험은 대표 후보에서 제외된다', () => {
   const reps = pickTypeRepresentatives([item('near', 'accident', 'P2', 'probable', 100), item('far', 'accident', 'P2', 'confirmed', 1800)]);
   assert.deepEqual(reps.map((i) => i.key), ['far']);
+  assert.deepEqual(pickTypeRepresentatives([item('only', 'construction', 'P2', 'probable', 100)]), []);
+});
+
+test('공사 등 다른 유형에도 같은 정책: 가장 가까운 공사가 대표', () => {
+  const reps = pickTypeRepresentatives([item('c1', 'construction', 'P1', 'confirmed', 1500), item('c2', 'construction', 'P3', 'confirmed', 400)]);
+  assert.deepEqual(reps.map((i) => i.key), ['c2']);
 });
 
 test('통과한 위험은 레일에서 해제되고, 같은 유형의 다음 위험이 대표가 된다', () => {

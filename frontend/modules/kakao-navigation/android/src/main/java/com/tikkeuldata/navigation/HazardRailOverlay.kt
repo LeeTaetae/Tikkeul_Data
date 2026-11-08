@@ -49,8 +49,10 @@ internal object HazardRail {
 }
 
 internal class HazardRailOverlay(private val activity: Activity, private val language: String) {
-  private class Item(val type: String, val zoneType: String?, val emphasis: String, val distanceM: Int)
-  private class Data(val items: List<Item>, val overflow: Int)
+  private class Item(val key: String, val type: String, val zoneType: String?, val emphasis: String, val distanceM: Int, val detail: String)
+  /** JS(useHazardWarning)가 단계마다 한 번만 만든 안내. 같은 key 는 한 번만 보여 준다 */
+  private class Warning(val key: String, val text: String)
+  private class Data(val items: List<Item>, val overflow: Int, val warning: Warning?)
   /** tiles==0 이면 숨김. pill=+N 알약, badge=마지막 칸 위의 +N 배지(알약이 안 들어갈 때). top=컨테이너 기준 레일 시작, carShift=차량 버튼을 밀 거리 */
   private data class Plan(val tiles: Int, val pill: Boolean, val badge: Boolean, val top: Int, val carShift: Int, val level: Int = 0)
 
@@ -118,6 +120,7 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
     layoutListener?.let { container?.viewTreeObserver?.removeOnGlobalLayoutListener(it) }
     layoutListener = null
     container?.removeView(column)
+    hideDetail(); hideWarning()
     debugObstacles.forEach { container?.removeView(it.view) }
     debugObstacles.clear()
     container = null
@@ -126,7 +129,7 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
   /** null 이면 비운다. 어느 스레드에서 불러도 UI 스레드에서 처리한다 */
   fun render(json: String?) {
     val parsed = runCatching { parse(json) }.onFailure { Log.w(tag, "parse failed: ${it.javaClass.simpleName} ${it.message}") }.getOrNull()
-    activity.runOnUiThread { data = parsed; relayout(true) }
+    activity.runOnUiThread { data = parsed; relayout(true); showWarning(parsed?.warning); refreshDetail() }
   }
 
   private fun parse(json: String?): Data? {
@@ -134,8 +137,9 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
     val root = JSONObject(json)
     if (root.optInt("v") != 1) return null
     val arr = root.optJSONArray("items") ?: return null
-    val items = (0 until arr.length()).map { arr.getJSONObject(it).let { o -> Item(o.optString("type"), if (o.isNull("zoneType")) null else o.optString("zoneType").ifEmpty { null }, o.optString("emphasis", "normal"), o.optInt("distanceM", 0)) } }
-    return Data(items, root.optInt("overflow", 0))
+    val items = (0 until arr.length()).map { arr.getJSONObject(it).let { o -> Item(o.optString("key"), o.optString("type"), if (o.isNull("zoneType")) null else o.optString("zoneType").ifEmpty { null }, o.optString("emphasis", "normal"), o.optInt("distanceM", 0), o.optString("detail")) } }
+    val warning = root.optJSONObject("warning")?.let { w -> Warning(w.optString("key"), w.optString("text")).takeIf { it.key.isNotEmpty() && it.text.isNotEmpty() } }
+    return Data(items, root.optInt("overflow", 0), warning)
   }
 
   // ── 배치 ─────────────────────────────────────────────────────────────────────────────
@@ -158,7 +162,7 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
     if (plan == previous && !force) return
     applied = plan
     val d = data
-    val key = if (d == null || plan.tiles == 0) "" else "${d.items.take(plan.tiles).joinToString { "${it.type}/${it.zoneType}/${it.emphasis}/${it.distanceM}" }}|${plan.level}|${plan.pill}|${plan.badge}|${d.items.size - plan.tiles + d.overflow}"
+    val key = if (d == null || plan.tiles == 0) "" else "${d.items.take(plan.tiles).joinToString { "${it.key}/${it.type}/${it.zoneType}/${it.emphasis}/${it.distanceM}/${it.detail.hashCode()}" }}|${plan.level}|${plan.pill}|${plan.badge}|${d.items.size - plan.tiles + d.overflow}"
     if (key != appliedKey) { appliedKey = key; rebuild(d, plan) }
     column.visibility = if (plan.tiles == 0) View.GONE else View.VISIBLE
     val firstShow = previous == null || previous.tiles == 0
@@ -313,6 +317,96 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
     )
   }
 
+  // ── 아이콘 선택 상세 / 단계 안내 배너 ─────────────────────────────────────────────────────
+  // 둘 다 JS 가 보낸 문장을 보여 줄 뿐이다. 터치를 가로채는 것은 카드·상세·배너 자신뿐이고 나머지는 SDK 화면으로 간다.
+  private var detailKey: String? = null
+  private var detailTop = 0
+  private var detailView: View? = null
+  private var warningView: View? = null
+  private var shownWarningKey: String? = null
+  private val hideDetailRunnable = Runnable { hideDetail() }
+  private val hideWarningRunnable = Runnable { hideWarning() }
+
+  private fun toggleDetail(key: String, tile: View) {
+    if (detailKey == key) { hideDetail(); return }
+    detailKey = key
+    showDetail(tile, detailTop)
+  }
+
+  private fun showDetail(tile: View, keepTop: Int? = null) {
+    val c = container ?: return
+    val item = data?.items?.firstOrNull { it.key == detailKey } ?: return hideDetail()
+    detailView?.let { c.removeView(it) }
+    // 갱신 때는 방금 다시 만든 카드가 아직 배치되기 전이라 위치를 처음 열 때 값으로 유지한다
+    val top = keepTop ?: rectOf(c, tile).top.coerceIn(0, maxOf(0, c.height - dp(200)))
+    detailTop = top
+    val panel = LinearLayout(activity).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(12), dp(10), dp(12), dp(10))
+      background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(Color.WHITE); setStroke(dp(2), (TONES[item.type] ?: TONES.getValue("accident")).accent) }
+      isClickable = true
+      setOnClickListener { hideDetail() }
+      addView(TextView(activity).apply {
+        text = "${nameOf(item)} · ${formatDistance(item.distanceM)}"; setTextColor(INK); textSize = 15f; typeface = Typeface.DEFAULT_BOLD
+      })
+      if (item.detail.isNotEmpty()) addView(TextView(activity).apply {
+        text = item.detail; setTextColor(INK); textSize = 13f
+      }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
+    }
+    val maxW = minOf(dp(280), c.width - dp(LEFT_DP + TILE_W_DP + 16 + 12))
+    c.addView(panel, FrameLayout.LayoutParams(maxW, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.TOP).apply {
+      marginStart = dp(LEFT_DP + TILE_W_DP + 8)
+      topMargin = top
+    })
+    detailView = panel
+    handler.removeCallbacks(hideDetailRunnable)
+    handler.postDelayed(hideDetailRunnable, DETAIL_MS)
+  }
+
+  /** 스냅샷이 바뀌었을 때: 선택한 위험이 지나갔거나(목록에서 빠짐) 가려졌으면 닫고, 아니면 거리·문장을 갱신한다 */
+  private fun refreshDetail() {
+    val key = detailKey ?: return
+    val index = data?.items?.indexOfFirst { it.key == key } ?: -1
+    val tile = if (index in 0 until column.childCount) column.getChildAt(index) else null
+    if (index < 0 || tile == null) { hideDetail(); return }
+    showDetail(tile)
+  }
+
+  private fun hideDetail() {
+    handler.removeCallbacks(hideDetailRunnable)
+    detailView?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    detailView = null; detailKey = null
+  }
+
+  private fun showWarning(w: Warning?) {
+    if (w == null) { return } // 같은 안내는 사라질 때까지 두지 않는다: 표시는 일정 시간 뒤 스스로 닫힌다
+    if (w.key == shownWarningKey) return // 같은 위험의 같은 단계는 한 번만
+    val c = container ?: return
+    shownWarningKey = w.key
+    hideWarning()
+    val directionBottom = listOf("component_cur_direction", "component_next_direction").mapNotNull { sdkView(c, it)?.takeIf { v -> visible(v) } }.maxOfOrNull { rectOf(c, it).bottom } ?: 0
+    val top = maxOf(directionBottom, WeatherSafetyOverlay.visibleBottomPx(), dp(FALLBACK_BANNER_TOP_DP)) + dp(8)
+    val banner = TextView(activity).apply {
+      text = w.text; setTextColor(Color.WHITE); textSize = 16f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+      contentDescription = w.text
+      setPadding(dp(14), dp(10), dp(14), dp(10))
+      background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(Color.parseColor("#DC2626")) }
+      isClickable = true
+      setOnClickListener { hideWarning() }
+    }
+    c.addView(banner, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+      topMargin = top; marginStart = dp(16); marginEnd = dp(16)
+    })
+    warningView = banner
+    handler.postDelayed(hideWarningRunnable, WARNING_MS)
+  }
+
+  private fun hideWarning() {
+    handler.removeCallbacks(hideWarningRunnable)
+    warningView?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    warningView = null
+  }
+
   private fun itemView(item: Item, size: Size, badgeCount: Int): FrameLayout {
     val type = item.type
     val tone = TONES[type] ?: TONES.getValue("accident")
@@ -330,6 +424,8 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
         if (item.emphasis == "neutral" || item.emphasis.isEmpty()) setStroke(dp(2), stroke, dp(4).toFloat(), dp(3).toFloat()) else setStroke(dp(2), stroke)
       }
       contentDescription = "$name $distance"
+      isClickable = true; isFocusable = true
+      setOnClickListener { toggleDetail(item.key, this) }
       // 위에서부터 아이콘 → 위험 유형 이름 → 거리
       addView(LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
@@ -451,6 +547,9 @@ internal class HazardRailOverlay(private val activity: Activity, private val lan
     const val BADGE_PAD_DP = 8 // +N 배지가 칸 밖으로 걸치는 폭(위 6dp, 오른쪽 4dp)보다 크게
     const val FALLBACK_TOP_DP = 450 // SDK 뷰를 못 찾을 때: 회전 배너 + 속도 + 표지 2개의 최악의 쌓임 아래(상단 기준, 하단 고정 아님)
     const val NO_BLOCKER_RESERVE_DP = 96
+    const val DETAIL_MS = 10_000L
+    const val WARNING_MS = 8_000L
+    const val FALLBACK_BANNER_TOP_DP = 120 // SDK 상단 안내 뷰를 못 찾을 때의 배너 시작 위치
     const val DEBOUNCE_MS = 120L
     const val MOVE_MS = 150L
     const val TICK_MS = 500L

@@ -291,6 +291,7 @@ static NSUInteger sWeatherGeneration = 0;
         [self.weatherSafetyLabel.trailingAnchor constraintEqualToAnchor:self.weatherSafetyPanel.contentLayoutGuide.trailingAnchor constant:-12],
         [self.weatherSafetyLabel.widthAnchor constraintEqualToAnchor:self.weatherSafetyPanel.frameLayoutGuide.widthAnchor constant:-24]
       ]];
+      self.railOverlay.topAvoidView = self.weatherSafetyPanel; // 단계 안내 배너는 날씨 안내 아래에 놓는다
       sActiveController = self;
       if (sLastRailJSON) [self.railOverlay applySnapshotJSON:sLastRailJSON];
     });

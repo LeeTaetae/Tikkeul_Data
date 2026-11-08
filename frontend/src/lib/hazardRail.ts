@@ -84,10 +84,19 @@ export function orderRailItems(items: RailItem[]): RailItem[] {
   );
 }
 
-/** 같은 유형은 대표 하나만 남긴다: orderRailItems 순서에서 유형별 첫 항목. 결과도 그 순서다 */
+/**
+ * 같은 유형은 대표 하나만 남긴다. 대표는 P등급과 무관하게 현재 위치에서 경로상 가장 가까운 위험이다
+ * (가까운 것을 통과하면 레일에서 빠지므로 다음으로 가까운 것으로 바뀐다). 실제 경로 위로 확정된(confirmed) 위험만 후보가 되고,
+ * 경로 관련성을 확인하지 못한(probable) 위험은 대표가 되지 않는다. 결과는 유형 사이 표시 순서(orderRailItems)다.
+ */
 export function pickTypeRepresentatives(items: RailItem[]): RailItem[] {
-  const seen = new Set<AlertType>();
-  return orderRailItems(items).filter((item) => (seen.has(item.type) ? false : (seen.add(item.type), true)));
+  const nearest = new Map<AlertType, RailItem>();
+  for (const item of items) {
+    if (item.matchClass !== 'confirmed') continue;
+    const best = nearest.get(item.type);
+    if (!best || item.distanceM < best.distanceM || (item.distanceM === best.distanceM && item.key < best.key)) nearest.set(item.type, item);
+  }
+  return orderRailItems([...nearest.values()]);
 }
 
 /** 보이는 만큼 자르고, 남은 수를 +N 으로 돌려준다 */

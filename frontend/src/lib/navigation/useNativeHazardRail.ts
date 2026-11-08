@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { clearNativeHazardRail, onNativeGuidanceFeed, setNativeHazardRail } from '../../native/kakaoNavigation';
-import { projectOntoRoute, type Route } from '../routeHazards';
+import { hazardKey, projectOntoRoute, type Route } from '../routeHazards';
 import type { NavRoute } from './guidanceEngine';
 import { parseNativeLocation, parseNativeRoute, type NativePosition } from './nativeGuidanceFeed';
-import { buildNativeRailSnapshot, railChanged, serializeNativeRail, type NativeRailSnapshot } from './nativeHazardRail';
+import { buildNativeRailSnapshot, hazardBannerActive, railChanged, serializeNativeRail, type NativeRailSnapshot } from './nativeHazardRail';
 import { useRouteHazardWarning } from './useRouteHazardWarning';
 import { createNativeWeatherFixGate } from './nativeWeatherFix';
+import { describeHazardForNative } from './nativeHazardText';
 
 /**
  * 카카오 SDK 주행 화면(네이티브)의 위치·경로 이벤트로 기존 위험 훅(useRouteHazardWarning)을 돌리고, 그 결과(rail)를
@@ -20,6 +22,7 @@ import { createNativeWeatherFixGate } from './nativeWeatherFix';
  * 타이머라서 이 동안은 멈춘다. 위험 데이터는 경로·조회 영역이 바뀔 때 다시 받는다.
  */
 export function useNativeHazardRail() {
+  const { t, i18n } = useTranslation();
   const [route, setRoute] = useState<NavRoute | null>(null);
   const [position, setPosition] = useState<NativePosition | null>(null);
   const [weatherFix,setWeatherFix]=useState<import('../tunnel/approach').GpsFix|null>(null);
@@ -73,7 +76,22 @@ export function useNativeHazardRail() {
     if (__DEV__) console.warn('[rail] state', JSON.stringify({ progressKm: Math.round(progressM / 100) / 10, notice: hazard.notice, zones: hazard.zoneCoverage, rail: hazard.rail.length, candidates: hazard.candidates.length }));
   }, [Math.round(progressM / 500), hazard.notice, hazard.zoneCoverage, hazard.rail.length, hazard.candidates.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const snapshot = useMemo(() => buildNativeRailSnapshot(hazard.rail), [hazard.rail]);
+  // 단계 안내(2km 사전 안내·500·300·100m)는 웹과 같은 useHazardWarning 이 단계마다 한 번만 만든다. 위험을 지나면 사라진다.
+  const warning = hazard.warning;
+  const warningKey = warning ? `${hazardKey(warning.alert)}:${warning.stage}` : null;
+  const warningText = warning ? t(warning.message.key, warning.message.params) : null;
+  // 이 단계 안내가 처음 나온 시각. 새 (위험, 단계)가 나올 때만 바뀐다.
+  const warningShownAt = useMemo(() => (warningKey ? Date.now() : null), [warningKey]);
+  const snapshot = useMemo(
+    () =>
+      buildNativeRailSnapshot(hazard.rail, {
+        describe: (item) => describeHazardForNative(item, t, i18n.language),
+        warning: warning && warningKey && warningText ? { key: warningKey, stage: warning.stage, text: warningText } : null,
+      }),
+    // warning 객체는 렌더마다 새로 만들어지므로 키·단계·문장으로 비교한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hazard.rail, warningKey, warning?.stage, warningText, t, i18n.language],
+  );
   const lastSent = useRef<NativeRailSnapshot | null>(null);
   useEffect(() => {
     if (!railChanged(lastSent.current, snapshot)) return;
@@ -85,5 +103,5 @@ export function useNativeHazardRail() {
 
   // 주행 화면이 끝나면 오버레이를 비운다.
   useEffect(() => () => clearNativeHazardRail(), []);
-  return {weatherRoute:hazardRoute,weatherFix,weatherProgressM,positionTrusted,weatherBlocked:!!hazard.warning};
+  return {weatherRoute:hazardRoute,weatherFix,weatherProgressM,positionTrusted,weatherBlocked:hazardBannerActive(warningShownAt,Date.now())};
 }

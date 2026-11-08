@@ -52,13 +52,14 @@ test('최대 3개만 보이고 나머지는 +N: 5유형 모두 있으면 3개 + 
   assert.deepEqual(s.items.map((i) => i.key), ['a', 'c', 'z']); // P0 → P1 → P2(같은 P2 안에서는 가까운 school_zone 600 이 accident_prone 700 보다 앞)
 });
 
-test('같은 P등급이면 confirmed 가 먼저이고, 그다음 가까운 거리 순이다', () => {
+test('유형 사이는 같은 P등급이면 가까운 거리 순이고, 경로 관련성 미확인(probable)은 아이콘이 되지 않는다', () => {
   const rail = [
     railItem('near-probable', 'construction', 'P1', 'probable', 300),
     railItem('far-confirmed', 'accident', 'P1', 'confirmed', 1500),
+    railItem('mid-confirmed', 'congestion', 'P1', 'confirmed', 800),
   ];
   const s = buildNativeRailSnapshot(rail, { now: new Date(NOW) });
-  assert.deepEqual(s.items.map((i) => i.key), ['far-confirmed', 'near-probable']);
+  assert.deepEqual(s.items.map((i) => i.key), ['mid-confirmed', 'far-confirmed']);
 });
 
 test('P등급 우선순위는 유지된다: 먼 P0 가 가까운 P2 보다 앞이다', () => {

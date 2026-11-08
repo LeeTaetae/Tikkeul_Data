@@ -90,13 +90,15 @@ export function createWeatherSafetyTracker() {
 }
 
 const messages={
-  ko:{camera:'강한 비나 눈으로 인해 카메라 객체 탐지 성능이 떨어질 수 있습니다. 주변 상황에 주의해 주세요.',unavailable:'날씨 확인 불가. 기상·노면 상태를 직접 확인해 주세요.',bridge:'전방 교량 구간입니다.',tunnel_entry:'전방 터널 구간입니다.',tunnel_exit:'전방 터널 출구 구간입니다.',slip:'노면이 미끄러울 수 있으니 감속하세요.',ice:'결빙 가능성에 주의하고 감속하세요.',forecast:'강수 예보가 있습니다.'},
-  en:{camera:'Heavy rain or snow may reduce camera detection performance. Watch your surroundings.',unavailable:'Weather unavailable. Check weather and road conditions.',bridge:'Bridge ahead.',tunnel_entry:'Tunnel entrance ahead.',tunnel_exit:'Tunnel exit ahead.',slip:'The road may be slippery. Slow down.',ice:'Possible icing. Slow down.',forecast:'Precipitation is forecast.'},
-  zh:{camera:'强雨雪可能影响摄像头识别，请注意周围情况。',unavailable:'无法确认天气，请留意天气和路面。',bridge:'前方桥梁。',tunnel_entry:'前方隧道入口。',tunnel_exit:'前方隧道出口。',slip:'路面可能湿滑，请减速。',ice:'可能结冰，请减速。',forecast:'预报有降水。'},
+  ko:{camera:'강한 비나 눈으로 인해 카메라 객체 탐지 성능이 떨어질 수 있습니다. 주변 상황에 주의해 주세요.',unavailable:'날씨 확인 불가. 기상·노면 상태를 직접 확인해 주세요.',bridge:'전방 교량 구간입니다.',tunnel_entry:'전방 터널 구간입니다.',tunnel_exit:'전방 터널 출구 구간입니다.',slip:'노면이 미끄러울 수 있으니 감속하세요.',ice:'결빙 가능성에 주의하고 감속하세요.',tunnelIce:'결빙 가능성이 있습니다. 터널 안 노면이 미끄러울 수 있으니 서행하세요.',forecast:'강수 예보가 있습니다.'},
+  en:{camera:'Heavy rain or snow may reduce camera detection performance. Watch your surroundings.',unavailable:'Weather unavailable. Check weather and road conditions.',bridge:'Bridge ahead.',tunnel_entry:'Tunnel entrance ahead.',tunnel_exit:'Tunnel exit ahead.',slip:'The road may be slippery. Slow down.',ice:'Possible icing. Slow down.',tunnelIce:'Possible icing. The road inside the tunnel may be slippery; slow down.',forecast:'Precipitation is forecast.'},
+  zh:{camera:'强雨雪可能影响摄像头识别，请注意周围情况。',unavailable:'无法确认天气，请留意天气和路面。',bridge:'前方桥梁。',tunnel_entry:'前方隧道入口。',tunnel_exit:'前方隧道出口。',slip:'路面可能湿滑，请减速。',ice:'可能结冰，请减速。',tunnelIce:'可能结冰，隧道内路面可能湿滑，请减速。',forecast:'预报有降水。'},
 };
 export function weatherWarningText(w:WeatherWarning,language:string,includeFacility=true) {
   const m=messages[language.startsWith('zh')?'zh':language.startsWith('en')?'en':'ko'];
   if(w.kind==='camera'||w.kind==='unavailable')return m[w.kind];
+  // Icing is only "possible" (weather observation, not a road-surface reading); inside a tunnel it gets its own wording.
+  if(w.kind==='ice'&&(w.facility==='tunnel_entry'||w.facility==='tunnel_exit'))return `${w.forecast?m.forecast+' ':''}${m.tunnelIce}`;
   const label=w.facility==='bridge'&&w.inside?(language.startsWith('zh')?'正在通过桥梁路段。':language.startsWith('en')?'Crossing a bridge section.':'교량 구간 통과 중입니다.'):w.facility?m[w.facility]:'';
   if(w.kind==='facility')return label;
   return `${w.forecast?m.forecast+' ':''}${includeFacility&&label?label+' ':''}${m[w.kind]}`;
